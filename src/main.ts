@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, Tray, type BrowserWindowConstructorOptions, type IpcMainInvokeEvent } from 'electron';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { demoDiscovery, demoHistory, demoSnapshot, previewDevice } from './demo';
 import { classify, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type Settings,
@@ -41,16 +41,61 @@ let balloonDeviceId: string | undefined;
 let trayLow: boolean | undefined;
 let stopMetrics: (() => void) | undefined;
 const offered: { id: string; level: Severity; until: number }[] = [];
+const maintenanceId = process.argv.find(value => /^--maintenance-quit=[0-9a-f]{32}$/.test(value))?.split('=')[1];
+const gate = join(dirname(process.execPath), '.installer-maintenance');
+const gateTime = app.isPackaged ? statSync(gate, { throwIfNoEntry: false })?.mtimeMs : undefined;
+let maintenanceExit = false;
+let maintenancePending = false;
 
-if (!app.requestSingleInstanceLock()) {
+function maintenanceReply(id: string, result: { display?: 'foreground' | 'tray' | 'closed'; error?: string }) {
+  writeFileSync(join(dataDir, '.maintenance-' + id + '.json'), JSON.stringify(result), { flag: 'wx' });
+}
+async function quitForMaintenance(id: string) {
+  if (maintenancePending) return;
+  maintenancePending = true;
+  const main = windows.main;
+  const display = main?.isVisible() && !main.isMinimized() ? 'foreground' : 'tray';
+  stopped = true;
+  try {
+    const error = await monitor?.closeForMaintenance();
+    if (error) {
+      maintenanceReply(id, { error });
+      return;
+    }
+    maintenanceReply(id, { display });
+    maintenanceExit = true;
+    app.quit();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    maintenancePending = false;
+    if (!maintenanceExit) stopped = false;
+  }
+}
+
+if (!maintenanceId && gateTime !== undefined && Date.now() - gateTime < 300_000) {
+  app.exit(0);
+} else if (!app.requestSingleInstanceLock({ maintenanceId, executable: process.execPath })) {
   app.quit();
+} else if (maintenanceId) {
+  try { maintenanceReply(maintenanceId, { display: 'closed' }); app.exit(0); }
+  catch (error) { console.error(error); app.exit(1); }
 } else {
-  app.on('second-instance', () => { if (app.isReady()) openMain(); });
+  app.on('second-instance', (_event, _argv, _cwd, data) => {
+    if (object(data) && typeof data.maintenanceId === 'string' && /^[0-9a-f]{32}$/.test(data.maintenanceId)) {
+      const id = data.maintenanceId;
+      if (typeof data.executable === 'string' && data.executable.toLowerCase() === process.execPath.toLowerCase()) {
+        void app.whenReady().then(() => quitForMaintenance(id));
+      }
+      return;
+    }
+    if (app.isReady() && !stopped) openMain();
+  });
   app.whenReady().then(init).catch(error => { console.error(error); app.exit(1); });
   app.on('before-quit', () => {
     stopped = true;
     stopMetrics?.();
-    monitor?.close();
+    if (!maintenanceExit) monitor?.close();
   });
   app.on('window-all-closed', () => {});
 }
@@ -415,6 +460,7 @@ function saveDeviceSettings(id: string, patch: unknown) {
   }
 }
 async function run(surface: Surface, command: Command): Promise<CommandResult> {
+  if (stopped) throw new Error('应用正在退出');
   if (!object(command) || !actions[surface].includes(command.type)) throw new Error('操作不可用');
   if ('id' in command && command.id !== undefined && !validId(command.id)) throw new Error('设备标识无效');
   const device = 'id' in command ? snapshot.devices.find(item => item.id === command.id) : undefined;
@@ -539,6 +585,7 @@ async function init() {
   powerMonitor.on('suspend', () => { suspended = true; closeToast(); offered.length = 0; monitor?.suspend(true); });
   powerMonitor.on('resume', () => { suspended = false; monitor?.suspend(false); });
   const timer = setInterval(() => {
+    if (stopped) return;
     if (snapshot.mutedUntil && snapshot.mutedUntil <= Date.now()) { snapshot.mutedUntil = 0; refreshTrayMenu(); broadcast(); }
     if (!monitor) return;
     if (toast && !toast.preview && !checking) {

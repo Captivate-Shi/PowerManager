@@ -1,7 +1,7 @@
 {
   "name": "powermanager-h5",
   "productName": "PowerManager H5",
-  "version": "1.4.2",
+  "version": "1.5.1",
   "private": true,
   "main": "dist/main.cjs",
   "engines": {
@@ -17,7 +17,8 @@
     "check": "tsc --noEmit && tsx --test tests/*.test.ts",
     "soak": "node scripts/soak.cjs",
     "metrics": "node scripts/summarize-metrics.cjs",
-    "package": "pnpm run build && node scripts/package.cjs"
+    "package": "pnpm run build && node scripts/package.cjs",
+    "package:installer": "pnpm run build && node scripts/package.cjs --installer"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.15",

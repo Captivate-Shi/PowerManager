@@ -6,6 +6,7 @@ export class Collector {
   private next = 0;
   private pending = new Map<number, { resolve: (data: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private handshake?: Promise<unknown>;
+  private closing = false;
   doubleClickMs = 500;
   get pid() { return this.child?.pid; }
   get pendingCount() { return this.pending.size; }
@@ -58,7 +59,9 @@ export class Collector {
   }
 
   async request<T>(action: string, fields: Record<string, unknown> = {}): Promise<T> {
+    if (this.closing) throw new Error('电量采集程序正在关闭');
     await this.start();
+    if (this.closing) throw new Error('电量采集程序正在关闭');
     return this.send<T>(action, fields);
   }
 
@@ -80,5 +83,28 @@ export class Collector {
   close() {
     this.child?.stdin.end();
     this.child?.kill();
+  }
+
+  closeGracefully(timeoutMs = 10_000): Promise<boolean> {
+    this.closing = true;
+    const child = this.child;
+    if (!child) return Promise.resolve(true);
+    return new Promise(resolve => {
+      const finish = (closed: boolean) => {
+        clearTimeout(timeout);
+        child.removeListener('close', onClose);
+        resolve(closed);
+      };
+      const onClose = () => finish(true);
+      const timeout = setTimeout(() => finish(false), timeoutMs);
+      child.once('close', onClose);
+      child.stdin.end();
+    });
+  }
+
+  allowRestartAfterClose() {
+    const child = this.child;
+    if (child) child.once('close', () => { this.closing = false; });
+    else this.closing = false;
   }
 }

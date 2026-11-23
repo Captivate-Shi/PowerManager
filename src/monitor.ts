@@ -92,6 +92,17 @@ export class Monitor {
     this.markStale();
     this.persist();
   }
+  async closeForMaintenance() {
+    if (!this.persist()) return '无法保存设置或电量历史。';
+    this.closed = true;
+    clearTimeout(this.timer);
+    if (!await this.collector.closeGracefully()) {
+      this.collector.allowRestartAfterClose();
+      this.closed = false;
+      this.schedule(5000, true);
+      return '等待采集程序退出超时。';
+    }
+  }
   suspend(value: boolean) {
     this.suspended = value;
     if (value) {
@@ -124,9 +135,11 @@ export class Monitor {
       this.dirty = false;
       this.lastSave = Date.now();
       this.totals.saves++;
+      return true;
     } catch (error) {
       this.state.error = '无法保存新版设置或历史，详情见诊断日志。';
       this.log(String(error));
+      return false;
     } finally {
       this.totals.saveMs += performance.now() - start;
     }

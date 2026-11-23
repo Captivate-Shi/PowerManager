@@ -1,8 +1,21 @@
-const { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } = require('node:fs');
+const { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } = require('node:fs');
 const { join, dirname } = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { packager } = require('@electron/packager');
 const manifest = require('../package.json');
+
+function buildInstaller(root, output, folder) {
+  const compiler = [
+    process.env.POWER_MANAGER_ISCC,
+    process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs', 'Inno Setup 6', 'ISCC.exe'),
+    process.env['ProgramFiles(x86)'] && join(process.env['ProgramFiles(x86)'], 'Inno Setup 6', 'ISCC.exe'),
+  ].find(path => path && existsSync(path)) || 'ISCC.exe';
+  execFileSync(compiler, [
+    '/DAppVersion=' + manifest.version, '/DAppSource=' + folder, '/O' + output,
+    join(root, 'installer', 'PowerManager.iss'),
+  ], { stdio: 'inherit', windowsHide: true });
+  console.log(join(output, 'PowerManager-Setup-x64.exe'));
+}
 
 async function build() {
   const root = join(__dirname, '..');
@@ -26,6 +39,10 @@ async function build() {
   } finally {
     const target = realpathSync(stage);
     if (dirname(target) === realpathSync(staging)) rmSync(target, { recursive: true });
+  }
+  if (process.argv.includes('--installer')) {
+    buildInstaller(root, output, folder);
+    return;
   }
   const zip = join(output, 'PowerManager-H5-win32-x64.zip');
   execFileSync('tar.exe', ['-a', '-cf', zip, '-C', output, 'PowerManager-H5-win32-x64'], { stdio: 'inherit' });

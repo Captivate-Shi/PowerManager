@@ -1,6 +1,6 @@
 # 外设电量管理器 · Electron
 
-面向 Windows 11 x64 的外设电量监测器。双击便携目录里的 `PowerManager-H5.exe` 打开总览。主窗口关闭后仍在托盘监测，从托盘右键菜单退出应用。
+面向 Windows 11 x64 的外设电量监测器。运行 `PowerManager-Setup-x64.exe` 后从开始菜单打开 **PowerManager**。主窗口关闭后仍在托盘监测，从托盘右键菜单退出应用。
 
 ## 使用
 
@@ -27,10 +27,14 @@ pnpm install --frozen-lockfile
 pnpm run dev
 pnpm run demo
 pnpm run check
-pnpm run package
+pnpm run package:installer
 ```
 
-`out\1.4.2\PowerManager-H5-win32-x64` 是完整便携目录。解压 ZIP 后，保留目录内所有文件并运行其中的 EXE。登录启动采用 Windows 当前用户的启动项，便携目录移动后请重新设置启动项。
+安装包输出为 `out\<版本>\PowerManager-Setup-x64.exe`。需要 Inno Setup 6.7，编译器不在默认路径时，可将 `POWER_MANAGER_ISCC` 设为 `ISCC.exe` 的完整路径。
+
+- 默认安装到 `%LOCALAPPDATA%\Programs\PowerManager`，首次安装可选择其它目录。开始菜单快捷方式自动创建，桌面快捷方式可选。
+- 运行新版安装包即可升级。安装器会等待旧实例和采集进程正常退出，然后按原先的主窗口或托盘状态恢复；应用原先已关闭时，升级后保持关闭。
+- 可在 Windows「设置 → 应用 → 已安装的应用」卸载。默认保留设置、历史及日志，卸载时可选择一并删除。
 
 示例模式使用独立的会话目录、固定样例读数和临时设置，可在开发版或打包版传入 `--demo`。可追加 `--preview=tray`、`--preview=low` 或 `--preview=critical` 单独查看相应窗口。
 
@@ -46,7 +50,7 @@ pnpm run package
 
 报告包含 HID 的 VID/PID、接口号、用途页、输入/输出/Feature 报文长度、设备描述符修订号，以及最近的有限次采样、读数范围、报告类型和错误码。罗技还记录槽位是否取得实体标识。报告保存在本机，不自动发送。应用生成的结构化字段不包含 HID 路径、序列号、MAC、原始输入报文或设备别名。请自行检查填写的说明再分享。
 
-采集进程不可用时报告退回到只读 Windows 枚举。便携版也可以仅运行枚举，用来识别暂未适配的外设以及区分同名不同硬件版本。
+采集进程不可用时报告退回到只读 Windows 枚举。在安装目录中也可以仅运行枚举，用来识别暂未适配的外设以及区分同名不同硬件版本。
 
 ```powershell
 .\resources\collector.exe --inventory
