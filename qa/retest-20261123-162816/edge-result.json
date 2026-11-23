@@ -1,0 +1,78 @@
+{
+  "toast": [
+    {
+      "n": 15,
+      "window": 146,
+      "panel": {
+        "top": 11,
+        "bottom": 131
+      },
+      "title": {
+        "top": 34.703125,
+        "bottom": 83.296875
+      },
+      "message": {
+        "top": 88.296875,
+        "bottom": 107.296875
+      }
+    },
+    {
+      "n": 40,
+      "window": 146,
+      "panel": {
+        "top": 11,
+        "bottom": 131
+      },
+      "title": {
+        "top": 26,
+        "bottom": 98.890625
+      },
+      "message": {
+        "top": 103.890625,
+        "bottom": 122.890625
+      }
+    },
+    {
+      "n": 80,
+      "window": 146,
+      "panel": {
+        "top": 11,
+        "bottom": 131
+      },
+      "title": {
+        "top": 26,
+        "bottom": 171.78125
+      },
+      "message": {
+        "top": 176.78125,
+        "bottom": 195.78125
+      }
+    }
+  ],
+  "outside": [
+    {
+      "delay": 0,
+      "closed": false
+    },
+    {
+      "delay": 0,
+      "closed": false
+    },
+    {
+      "delay": 0,
+      "closed": false
+    },
+    {
+      "delay": 50,
+      "closed": true
+    },
+    {
+      "delay": 120,
+      "closed": true
+    },
+    {
+      "delay": 350,
+      "closed": true
+    }
+  ]
+}

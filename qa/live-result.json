@@ -1,0 +1,47 @@
+{
+  "devicesBefore": [
+    {
+      "name": "Razer Viper V3 HyperSpeed",
+      "status": "no_radio_reply",
+      "reading": null,
+      "connection": "2.4 GHz"
+    },
+    {
+      "name": "Razer BlackWidow V4 Low-profile TKL HyperSpeed",
+      "status": "no_radio_reply",
+      "reading": null,
+      "connection": "2.4 GHz 共享接收器"
+    },
+    {
+      "name": "DualSense",
+      "status": "offline",
+      "reading": null,
+      "connection": "蓝牙"
+    }
+  ],
+  "devicesAfter": [
+    {
+      "name": "Razer Viper V3 HyperSpeed",
+      "status": "no_radio_reply",
+      "reading": null,
+      "connection": "2.4 GHz"
+    },
+    {
+      "name": "Razer BlackWidow V4 Low-profile TKL HyperSpeed",
+      "status": "no_radio_reply",
+      "reading": null,
+      "connection": "2.4 GHz 共享接收器"
+    },
+    {
+      "name": "DualSense",
+      "status": "offline",
+      "reading": null,
+      "connection": "蓝牙"
+    }
+  ],
+  "discoveredDevices": 3,
+  "hiddenWindowAppAlive": true,
+  "leaseConflictRecovered": true,
+  "collectorCrashRecovered": true,
+  "suspendResumeEventsHandled": true
+}

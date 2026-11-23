@@ -1,0 +1,432 @@
+{
+  "generatedAt": "2026-11-23T08:28:36.320Z",
+  "appVersion": "1.4.0",
+  "windowsRelease": "10.0.26200",
+  "capture": "live",
+  "collectorStatus": "ready",
+  "context": "本机验收，未接入待测 VGN 或 Logitech",
+  "hidInterfaces": [
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 0,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 0,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 9,
+      "interfaceNumber": 2,
+      "outputBytes": 2,
+      "pid": 184,
+      "revision": 256,
+      "usage": 6,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 0,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 9,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 2,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 0,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "dualsense-bluetooth",
+      "descriptorAvailable": true,
+      "featureBytes": 547,
+      "inputBytes": 78,
+      "interfaceNumber": -1,
+      "outputBytes": 547,
+      "pid": 3302,
+      "revision": 0,
+      "usage": 5,
+      "usagePage": 1,
+      "vid": 1356
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 2,
+      "pid": 184,
+      "revision": 256,
+      "usage": 6,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 91,
+      "inputBytes": 9,
+      "interfaceNumber": 0,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 2,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": null,
+      "descriptorAvailable": true,
+      "featureBytes": 17,
+      "inputBytes": 0,
+      "interfaceNumber": -1,
+      "outputBytes": 0,
+      "pid": 22274,
+      "revision": 1,
+      "usage": 16,
+      "usagePage": 65417,
+      "vid": 1165
+    },
+    {
+      "candidateProvider": null,
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 9,
+      "interfaceNumber": -1,
+      "outputBytes": 0,
+      "pid": 29108,
+      "revision": 2,
+      "usage": 6,
+      "usagePage": 1,
+      "vid": 24106
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 1,
+      "usagePage": 12,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 3,
+      "interfaceNumber": 0,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 257,
+      "usage": 1,
+      "usagePage": 12,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": null,
+      "descriptorAvailable": true,
+      "featureBytes": 64,
+      "inputBytes": 0,
+      "interfaceNumber": -1,
+      "outputBytes": 0,
+      "pid": 22274,
+      "revision": 1,
+      "usage": 204,
+      "usagePage": 65417,
+      "vid": 1165
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 2,
+      "interfaceNumber": 0,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 257,
+      "usage": 128,
+      "usagePage": 1,
+      "vid": 5426
+    },
+    {
+      "candidateProvider": null,
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 8,
+      "interfaceNumber": -1,
+      "outputBytes": 0,
+      "pid": 29108,
+      "revision": 2,
+      "usage": 2,
+      "usagePage": 1,
+      "vid": 24106
+    },
+    {
+      "candidateProvider": null,
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 6,
+      "interfaceNumber": -1,
+      "outputBytes": 0,
+      "pid": 29108,
+      "revision": 2,
+      "usage": 2,
+      "usagePage": 1,
+      "vid": 24106
+    },
+    {
+      "candidateProvider": "razer-1532-00b8",
+      "descriptorAvailable": true,
+      "featureBytes": 0,
+      "inputBytes": 16,
+      "interfaceNumber": 1,
+      "outputBytes": 0,
+      "pid": 184,
+      "revision": 256,
+      "usage": 128,
+      "usagePage": 1,
+      "vid": 5426
+    }
+  ],
+  "logitechSlotAttempts": [],
+  "recentSamples": [
+    {
+      "elapsedMs": 76,
+      "outcome": {
+        "detail": 4,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "休眠或关机",
+        "reportId": 128,
+        "status": "no_radio_reply"
+      },
+      "pid": 184,
+      "provider": "razer-1532-00b8",
+      "revision": 256,
+      "slot": 0,
+      "transport": "2.4 GHz",
+      "unixMs": 1795422514053,
+      "vid": 5426
+    },
+    {
+      "elapsedMs": 77,
+      "outcome": {
+        "detail": 4,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "休眠或关机",
+        "reportId": 128,
+        "status": "no_radio_reply"
+      },
+      "pid": 184,
+      "provider": "razer-1532-00b8",
+      "revision": 256,
+      "slot": 0,
+      "transport": "2.4 GHz 共享接收器",
+      "unixMs": 1795422514131,
+      "vid": 5426
+    },
+    {
+      "elapsedMs": 0,
+      "outcome": {
+        "detail": 0,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "未连接",
+        "reportId": 0,
+        "status": "offline"
+      },
+      "pid": 3302,
+      "provider": "dualsense-bluetooth",
+      "revision": 0,
+      "slot": 0,
+      "transport": "蓝牙",
+      "unixMs": 1795422514131,
+      "vid": 1356
+    },
+    {
+      "elapsedMs": 69,
+      "outcome": {
+        "detail": 4,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "休眠或关机",
+        "reportId": 128,
+        "status": "no_radio_reply"
+      },
+      "pid": 184,
+      "provider": "razer-1532-00b8",
+      "revision": 256,
+      "slot": 0,
+      "transport": "2.4 GHz",
+      "unixMs": 1795422514704,
+      "vid": 5426
+    },
+    {
+      "elapsedMs": 76,
+      "outcome": {
+        "detail": 4,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "休眠或关机",
+        "reportId": 128,
+        "status": "no_radio_reply"
+      },
+      "pid": 184,
+      "provider": "razer-1532-00b8",
+      "revision": 256,
+      "slot": 0,
+      "transport": "2.4 GHz 共享接收器",
+      "unixMs": 1795422514781,
+      "vid": 5426
+    },
+    {
+      "elapsedMs": 0,
+      "outcome": {
+        "detail": 0,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "未连接",
+        "reportId": 0,
+        "status": "offline"
+      },
+      "pid": 3302,
+      "provider": "dualsense-bluetooth",
+      "revision": 0,
+      "slot": 0,
+      "transport": "蓝牙",
+      "unixMs": 1795422514781,
+      "vid": 1356
+    },
+    {
+      "elapsedMs": 73,
+      "outcome": {
+        "detail": 4,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "休眠或关机",
+        "reportId": 128,
+        "status": "no_radio_reply"
+      },
+      "pid": 184,
+      "provider": "razer-1532-00b8",
+      "revision": 256,
+      "slot": 0,
+      "transport": "2.4 GHz",
+      "unixMs": 1795422514905,
+      "vid": 5426
+    },
+    {
+      "elapsedMs": 77,
+      "outcome": {
+        "detail": 4,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "休眠或关机",
+        "reportId": 128,
+        "status": "no_radio_reply"
+      },
+      "pid": 184,
+      "provider": "razer-1532-00b8",
+      "revision": 256,
+      "slot": 0,
+      "transport": "2.4 GHz 共享接收器",
+      "unixMs": 1795422514982,
+      "vid": 5426
+    },
+    {
+      "elapsedMs": 0,
+      "outcome": {
+        "detail": 0,
+        "feature": 0,
+        "millivolts": null,
+        "reading": null,
+        "reason": "未连接",
+        "reportId": 0,
+        "status": "offline"
+      },
+      "pid": 3302,
+      "provider": "dualsense-bluetooth",
+      "revision": 0,
+      "slot": 0,
+      "transport": "蓝牙",
+      "unixMs": 1795422514982,
+      "vid": 1356
+    }
+  ],
+  "schemaVersion": 1,
+  "windowsDevices": [
+    {
+      "battery": null,
+      "connected": true,
+      "connection": "蓝牙"
+    },
+    {
+      "battery": null,
+      "connected": true,
+      "connection": "USB（直连或接收器）"
+    }
+  ],
+  "windowsQuerySucceeded": true
+}

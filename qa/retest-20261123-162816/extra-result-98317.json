@@ -1,0 +1,6516 @@
+{
+  "results": [
+    {
+      "name": "搜索边界、全部筛选、空白区与设备键盘入口",
+      "result": [
+        "全部设备\n7",
+        "已连接\n5",
+        "低电量\n2",
+        "未连接\n2",
+        "最近提醒\n0"
+      ]
+    },
+    {
+      "name": "名称空白、emoji、长度边界及恢复",
+      "result": "pass"
+    },
+    {
+      "name": "历史下拉遍历、键盘和曲线悬停",
+      "result": [
+        "无线鼠标",
+        "Razer 机械键盘",
+        "DualSense 手柄",
+        "Xbox 游戏手柄",
+        "蓝牙头戴耳机",
+        "无线耳机（入耳式）",
+        "触控笔"
+      ]
+    },
+    {
+      "name": "稍后提醒、忽略本次和全局静音往返",
+      "result": {
+        "afterSnooze": {
+          "dualsense": {
+            "snoozeUntil": 1795424540339
+          }
+        },
+        "afterIgnore": {
+          "dualsense": {
+            "snoozeUntil": 1795424540339
+          },
+          "headset": {
+            "ignored": "low"
+          }
+        }
+      }
+    },
+    {
+      "name": "重新扫描、关闭按钮和点击弹窗外部",
+      "error": "Error: expect(locator).toBeHidden() failed\n\nLocator:  getByRole('dialog')\nExpected: hidden\nReceived: visible\nTimeout:  5000ms\n\nCall log:\n  - Expect \"toBeHidden\" getByRole('dialog') with timeout 5000ms\n  - waiting for getByRole('dialog')\n    14 × locator resolved to <div role=\"dialog\" tabindex=\"-1\" id=\"radix-_r_gl_\" data-state=\"open\" class=\"_modal_1jqsa_322\" aria-labelledby=\"radix-_r_gm_\" aria-describedby=\"radix-_r_gn_\">…</div>\n       - unexpected value \"visible\"\n"
+    },
+    {
+      "name": "通用预览正文点击与指定设备预览的行为差异",
+      "result": {
+        "genericHeading": "低电量提醒",
+        "genericNavigated": false,
+        "linkedNavigated": true
+      }
+    },
+    {
+      "name": "提醒间隔、稍后时间、声音开关和设备排序全部选项",
+      "error": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate"
+    },
+    {
+      "name": "诊断入口和登录启动开关演示往返",
+      "result": {
+        "startupDemo": true,
+        "diagnosticsClick": true
+      }
+    },
+    {
+      "name": "电压记录开关与诊断目录命令反馈",
+      "result": {
+        "demoReportDisabled": true
+      }
+    },
+    {
+      "name": "缩放输入边界、滑块键盘及最小窗口逐页布局",
+      "result": [
+        {
+          "zoom": 75,
+          "tab": "总览",
+          "viewport": 960,
+          "height": 693,
+          "doc": 946,
+          "main": 797,
+          "mainWidth": 797,
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "设备",
+          "viewport": 960,
+          "height": 693,
+          "doc": 946,
+          "main": 797,
+          "mainWidth": 797,
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "提醒",
+          "viewport": 960,
+          "height": 693,
+          "doc": 946,
+          "main": 797,
+          "mainWidth": 797,
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "历史",
+          "viewport": 960,
+          "height": 693,
+          "doc": 960,
+          "main": 810,
+          "mainWidth": 810,
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "设置",
+          "viewport": 960,
+          "height": 693,
+          "doc": 960,
+          "main": 810,
+          "mainWidth": 810,
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "总览",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "设备",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "提醒",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "历史",
+          "viewport": 720,
+          "height": 520,
+          "doc": 720,
+          "main": 660,
+          "mainWidth": 660,
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "设置",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "总览",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "设备",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "提醒",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "历史",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "设置",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "outside": []
+        }
+      ]
+    },
+    {
+      "name": "monkey",
+      "seed": 98317,
+      "actions": 600,
+      "targets": [
+        "Razer 机械键盘，67%，电量中等 · 可提前充电",
+        "Xbox 游戏手柄，78%，电量充足",
+        "历史",
+        "设备",
+        "无线耳机（入耳式），62%，设备未连接",
+        "添加到监测",
+        "重新扫描",
+        "打开设备详情",
+        "更多操作",
+        "立即刷新",
+        "搜索设备",
+        "网格视图",
+        "应用",
+        "总览",
+        "查看提醒",
+        "忽略本次",
+        "静音 1 小时",
+        "蓝牙头戴耳机",
+        "最近提醒0",
+        "设置",
+        "记录 DualSense 电池电压",
+        "提醒",
+        "查看离线设备",
+        "设备排序",
+        "按状态排序",
+        "全屏提示音",
+        "稍后提醒",
+        "预览低电量",
+        "重复提醒间隔",
+        "120 分钟",
+        "DualSense 手柄",
+        "已连接6",
+        "历史设备",
+        "查找设备",
+        "关闭对话框",
+        "稍后提醒时间",
+        "compatibility-context",
+        "静音此设备",
+        "全部设备8",
+        "设备低电量阈值",
+        "蓝牙音箱，41%，电量中等 · 可提前充电",
+        "主界面缩放滑块",
+        "托盘浮窗缩放滑块",
+        "预览紧急提醒",
+        "30 分钟",
+        "5 分钟",
+        "蓝牙头戴耳机，18%，电量较低 · 请尽快充电",
+        "触控笔，36%，设备未连接",
+        "未连接2",
+        "编辑设备名称",
+        "设备名称",
+        "保存名称",
+        "低电量2",
+        "15 分钟",
+        "DualSense 手柄，12%，电量较低 · 请尽快充电",
+        "全局紧急阈值",
+        "主界面缩放百分比",
+        "蓝牙头戴耳机18%需充电",
+        "托盘浮窗缩放百分比"
+      ],
+      "frames": {
+        "n": 332,
+        "p50": 16.69999999999709,
+        "p95": 16.799999999999272,
+        "p99": 16.80000000000291,
+        "max": 33.30000000000291,
+        "over50": 0
+      },
+      "longTasks": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null,
+        "over50": 0
+      },
+      "eventTimings": {
+        "n": 5956,
+        "p50": 24,
+        "p95": 48,
+        "p99": 48,
+        "max": 48,
+        "over50": 0
+      },
+      "errors": []
+    }
+  ],
+  "errors": [],
+  "actions": [
+    {
+      "kind": "random",
+      "key": null,
+      "x": 0,
+      "y": 231,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "Razer 机械键盘，67%，电量中等 · 可提前充电",
+      "x": 509.9140625,
+      "y": 431.734375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "Xbox 游戏手柄，78%，电量充足",
+      "x": 916.0703125,
+      "y": 441.7109375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 843,
+      "y": 605,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 742,
+      "y": 303,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 357,
+      "y": 217,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 19,
+      "y": 116,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 517,
+      "y": 641,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 78,
+      "y": 499,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 489,
+      "y": 725,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 877,
+      "y": 463,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Home",
+      "x": 340,
+      "y": 808,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1115,
+      "y": 355,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowUp",
+      "x": 397,
+      "y": 400,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "无线耳机（入耳式），62%，设备未连接",
+      "x": 684.09375,
+      "y": 545.1640625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1189,
+      "y": 80,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "添加到监测",
+      "x": 858,
+      "y": 411.390625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重新扫描",
+      "x": 386.5,
+      "y": 351.390625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 839,
+      "y": 778,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 930,
+      "y": 311,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "打开设备详情",
+      "x": 867.65625,
+      "y": 810.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "Xbox 游戏手柄，78%，电量充足",
+      "x": 301.8515625,
+      "y": 545.1640625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "更多操作",
+      "x": 1132.1875,
+      "y": 810.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1227,
+      "y": 765,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "立即刷新",
+      "x": 1122,
+      "y": 696.5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1198,
+      "y": 809,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1134,
+      "y": 438,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 853,
+      "y": 563,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "搜索设备",
+      "x": 393.4921875,
+      "y": 46.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1186,
+      "y": 765,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "网格视图",
+      "x": 717.15625,
+      "y": 97.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 412,
+      "y": 12,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "应用",
+      "x": 1157.203125,
+      "y": 608.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 736,
+      "y": 186,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 416,
+      "y": 713,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowUp",
+      "x": 686,
+      "y": 84,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1239,
+      "y": 766,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 752,
+      "y": 211,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1071,
+      "y": 640,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Escape",
+      "x": 312,
+      "y": 718,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "网格视图",
+      "x": 717.15625,
+      "y": 173.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "立即刷新",
+      "x": 1069.203125,
+      "y": 71.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Space",
+      "x": 1139,
+      "y": 407,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 180,
+      "y": 2,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 476,
+      "y": 570,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 178,
+      "y": 519,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 74,
+      "y": 732,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 809,
+      "y": 794,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 1211,
+      "y": 145,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 1004,
+      "y": 329,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 632,
+      "y": 558,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1001,
+      "y": 383,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 224,
+      "y": 442,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 389,
+      "y": 204,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 144,
+      "y": 99,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 202,
+      "y": 137,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 691,
+      "y": 603,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 408,
+      "y": 294,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 325,
+      "y": 323,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 113,
+      "y": 388,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 535,
+      "y": 86,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1235,
+      "y": 209,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 250,
+      "y": 581,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 735,
+      "y": 420,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 1107,
+      "y": 246,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 52,
+      "y": 573,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 341,
+      "y": 308,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 679,
+      "y": 442,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 547,
+      "y": 359,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 469,
+      "y": 517,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowUp",
+      "x": 718,
+      "y": 647,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1022,
+      "y": 19,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 42,
+      "y": 579,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1223,
+      "y": 669,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 1094,
+      "y": 137,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1212,
+      "y": 783,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Enter",
+      "x": 1168,
+      "y": 251,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1113,
+      "y": 317,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 185,
+      "y": 759,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 269,
+      "y": 656,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1055,
+      "y": 59,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 396,
+      "y": 5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 975,
+      "y": 302,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1076,
+      "y": 662,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 931,
+      "y": 464,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 106,
+      "y": 610,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 584,
+      "y": 613,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 25,
+      "y": 528,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 854,
+      "y": 201,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 277,
+      "y": 24,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 507,
+      "y": 331,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 1168,
+      "y": 364,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 113,
+      "y": 451,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 170,
+      "y": 356,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 391,
+      "y": 71,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Enter",
+      "x": 344,
+      "y": 761,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 373,
+      "y": 591,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 340,
+      "y": 79,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 456,
+      "y": 9,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 114,
+      "y": 624,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 114,
+      "y": 609,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Enter",
+      "x": 480,
+      "y": 759,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 673,
+      "y": 663,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1131,
+      "y": 414,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 710,
+      "y": 0,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 1028,
+      "y": 373,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 630,
+      "y": 690,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 737,
+      "y": 184,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 804,
+      "y": 792,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 1135,
+      "y": 694,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 1236,
+      "y": 479,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 745,
+      "y": 561,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 79,
+      "y": 629,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 512,
+      "y": 175,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 538,
+      "y": 522,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 454,
+      "y": 321,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 496,
+      "y": 356,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1199,
+      "y": 407,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Escape",
+      "x": 219,
+      "y": 358,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1072,
+      "y": 742,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查看提醒",
+      "x": 624.359375,
+      "y": 226.28125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 975,
+      "y": 257,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 540,
+      "y": 315,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "忽略本次",
+      "x": 1144.203125,
+      "y": 382.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 141,
+      "y": 694,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 857,
+      "y": 425,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 933,
+      "y": 254,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 829,
+      "y": 545,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 973,
+      "y": 426,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 857,
+      "y": 704,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "静音 1 小时",
+      "x": 378.5390625,
+      "y": 237.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 672,
+      "y": 681,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙头戴耳机",
+      "x": 837.84375,
+      "y": 365.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1214,
+      "y": 416,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 335,
+      "y": 715,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 337,
+      "y": 374,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "最近提醒0",
+      "x": 1157.40625,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "最近提醒0",
+      "x": 1167.40625,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Home",
+      "x": 1132,
+      "y": 34,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 404,
+      "y": 706,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "记录 DualSense 电池电压",
+      "x": 1177.203125,
+      "y": 253.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Escape",
+      "x": 109,
+      "y": 264,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 958,
+      "y": 574,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 657,
+      "y": 56,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 426,
+      "y": 322,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowDown",
+      "x": 1138,
+      "y": 378,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 417,
+      "y": 642,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查看离线设备",
+      "x": 1153.203125,
+      "y": 810.640625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Enter",
+      "x": 412,
+      "y": 629,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备排序",
+      "x": 629.15625,
+      "y": 183.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 311,
+      "y": 455,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备排序",
+      "x": 629.15625,
+      "y": 183.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1179,
+      "y": 263,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "按状态排序",
+      "x": 631.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 146,
+      "y": 232,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 519,
+      "y": 811,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 314,
+      "y": 445,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 1029,
+      "y": 359,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "全屏提示音",
+      "x": 637.34375,
+      "y": 492.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒",
+      "x": 1049.203125,
+      "y": 308.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "预览低电量",
+      "x": 768.84375,
+      "y": 568.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 952,
+      "y": 307,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 449,
+      "y": 736,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Enter",
+      "x": 892,
+      "y": 718,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 611,
+      "y": 39,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 298,
+      "y": 238,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1170,
+      "y": 580,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 890,
+      "y": 216,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 60,
+      "y": 786,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重复提醒间隔",
+      "x": 606.2578125,
+      "y": 434.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 629,
+      "y": 252,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Tab",
+      "x": 829,
+      "y": 577,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1026,
+      "y": 773,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "120 分钟",
+      "x": 608.7421875,
+      "y": 619,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "DualSense 手柄",
+      "x": 845.7421875,
+      "y": 291.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "已连接6",
+      "x": 888.125,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 879,
+      "y": 139,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1057,
+      "y": 104,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 788,
+      "y": 569,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重复提醒间隔",
+      "x": 606.2578125,
+      "y": 434.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 333,
+      "y": 369,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 757,
+      "y": 321,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "DualSense 手柄",
+      "x": 845.7421875,
+      "y": 291.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 927,
+      "y": 440,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 1217,
+      "y": 0,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 153,
+      "y": 731,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 881,
+      "y": 536,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 502,
+      "y": 490,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 872,
+      "y": 647,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1157,
+      "y": 482,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史设备",
+      "x": 1124.8359375,
+      "y": 145.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙头戴耳机",
+      "x": 1129,
+      "y": 330.5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史设备",
+      "x": 1131.703125,
+      "y": 145.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 120,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 874,
+      "y": 471,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史设备",
+      "x": 1131.703125,
+      "y": 145.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 649,
+      "y": 502,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 1015,
+      "y": 534,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Space",
+      "x": 553,
+      "y": 744,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 349,
+      "y": 246,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 92,
+      "y": 104,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1188,
+      "y": 303,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1019,
+      "y": 381,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 993,
+      "y": 87,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 588,
+      "y": 366,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1166,
+      "y": 768,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowUp",
+      "x": 910,
+      "y": 248,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 459,
+      "y": 189,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 132,
+      "y": 19,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 714,
+      "y": 374,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Tab",
+      "x": 1213,
+      "y": 724,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1139,
+      "y": 515,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 82,
+      "y": 262,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1007,
+      "y": 542,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 291,
+      "y": 7,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Home",
+      "x": 56,
+      "y": 641,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 176,
+      "y": 654,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1011,
+      "y": 22,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 874,
+      "y": 15,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查找设备",
+      "x": 1150.703125,
+      "y": 81.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "关闭对话框",
+      "x": 898,
+      "y": 307.890625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 397,
+      "y": 182,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1014,
+      "y": 305,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1159,
+      "y": 193,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1006,
+      "y": 742,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "忽略本次",
+      "x": 1144.203125,
+      "y": 308.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 175,
+      "y": 514,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 56,
+      "y": 397,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒时间",
+      "x": 610.140625,
+      "y": 608.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowDown",
+      "x": 1233,
+      "y": 375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 750,
+      "y": 340,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1099,
+      "y": 2,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒时间",
+      "x": 610.140625,
+      "y": 608.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 50,
+      "y": 500,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 741,
+      "y": 640,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1117,
+      "y": 636,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1221,
+      "y": 532,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "记录 DualSense 电池电压",
+      "x": 1177.203125,
+      "y": 253.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "compatibility-context",
+      "x": 968.1015625,
+      "y": 391.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1222,
+      "y": 401,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "静音此设备",
+      "x": 1159.703125,
+      "y": 688.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 971,
+      "y": 657,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1083,
+      "y": 136,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 417,
+      "y": 705,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "全部设备8",
+      "x": 794.03125,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备低电量阈值",
+      "x": 1092.703125,
+      "y": 694.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Escape",
+      "x": 1236,
+      "y": 469,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙音箱，41%，电量中等 · 可提前充电",
+      "x": 305.8359375,
+      "y": 669.6640625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1233,
+      "y": 432,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 936,
+      "y": 472,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 885,
+      "y": 8,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 192,
+      "y": 198,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重复提醒间隔",
+      "x": 606.2578125,
+      "y": 434.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 505,
+      "y": 814,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 409,
+      "y": 76,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 408,
+      "y": 185,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 592,
+      "y": 174,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒",
+      "x": 1049.203125,
+      "y": 382.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1044,
+      "y": 260,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "DualSense 手柄",
+      "x": 845.7421875,
+      "y": 291.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备排序",
+      "x": 629.15625,
+      "y": 183.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "按状态排序",
+      "x": 631.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 520,
+      "y": 480,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 853,
+      "y": 544,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 658,
+      "y": 668,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1003,
+      "y": 256,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 677,
+      "y": 182,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 799,
+      "y": 352,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 137,
+      "y": 691,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 618,
+      "y": 64,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 540,
+      "y": 13,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 522,
+      "y": 759,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 511,
+      "y": 16,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 471,
+      "y": 646,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 578,
+      "y": 759,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Enter",
+      "x": 881,
+      "y": 88,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowDown",
+      "x": 867,
+      "y": 98,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 140,
+      "y": 42,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "主界面缩放滑块",
+      "x": 368.6640625,
+      "y": 216.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "托盘浮窗缩放滑块",
+      "x": 368.6640625,
+      "y": 292.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 908,
+      "y": 598,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 391,
+      "y": 732,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 585,
+      "y": 548,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒",
+      "x": 1049.203125,
+      "y": 382.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "预览紧急提醒",
+      "x": 905.84375,
+      "y": 568.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1124,
+      "y": 144,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 116,
+      "y": 342,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "全屏提示音",
+      "x": 637.34375,
+      "y": 492.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "应用",
+      "x": 636.84375,
+      "y": 368.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 189,
+      "y": 736,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1068,
+      "y": 590,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1200,
+      "y": 224,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 124,
+      "y": 35,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 809,
+      "y": 305,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重复提醒间隔",
+      "x": 606.2578125,
+      "y": 434.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 700,
+      "y": 298,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "30 分钟",
+      "x": 608.7421875,
+      "y": 548.5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒",
+      "x": 1049.203125,
+      "y": 308.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 778,
+      "y": 576,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Space",
+      "x": 543,
+      "y": 585,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒时间",
+      "x": 610.140625,
+      "y": 608.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1131,
+      "y": 578,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 678,
+      "y": 150,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "5 分钟",
+      "x": 611.96875,
+      "y": 652.5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙头戴耳机",
+      "x": 837.84375,
+      "y": 365.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 939,
+      "y": 518,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 845,
+      "y": 760,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 17,
+      "y": 200,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 138,
+      "y": 527,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 948,
+      "y": 360,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1071,
+      "y": 273,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "更多操作",
+      "x": 1132.1875,
+      "y": 746.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 525,
+      "y": 39,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1082,
+      "y": 132,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 788,
+      "y": 760,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 758,
+      "y": 306,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙头戴耳机，18%，电量较低 · 请尽快充电",
+      "x": 492.96875,
+      "y": 538.1640625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Home",
+      "x": 847,
+      "y": 134,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "触控笔，36%，设备未连接",
+      "x": 492.96875,
+      "y": 764.1171875,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 417,
+      "y": 81,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "更多操作",
+      "x": 1132.1875,
+      "y": 803.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 739,
+      "y": 719,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "静音此设备",
+      "x": 1159.703125,
+      "y": 746.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 20,
+      "y": 695,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 673,
+      "y": 504,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 130,
+      "y": 748,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "未连接2",
+      "x": 1063.3125,
+      "y": 127.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 590,
+      "y": 710,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "编辑设备名称",
+      "x": 1175.203125,
+      "y": 205.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 312,
+      "y": 342,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备名称",
+      "x": 574,
+      "y": 419.390625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "保存名称",
+      "x": 865,
+      "y": 419.390625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 814,
+      "y": 336,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 532,
+      "y": 808,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 705,
+      "y": 609,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1224,
+      "y": 157,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "低电量2",
+      "x": 975.71875,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1224,
+      "y": 369,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1049,
+      "y": 790,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1118,
+      "y": 286,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 410,
+      "y": 595,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "compatibility-context",
+      "x": 968.1015625,
+      "y": 391.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 38,
+      "y": 54,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "忽略本次",
+      "x": 1144.203125,
+      "y": 382.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Tab",
+      "x": 624,
+      "y": 383,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 843,
+      "y": 166,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒时间",
+      "x": 614.03125,
+      "y": 608.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 751,
+      "y": 123,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 40,
+      "y": 578,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "30 分钟",
+      "x": 616.1953125,
+      "y": 723.5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 769,
+      "y": 180,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 227,
+      "y": 596,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 784,
+      "y": 694,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 381,
+      "y": 629,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 840,
+      "y": 432,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 345,
+      "y": 242,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 415,
+      "y": 729,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒时间",
+      "x": 610.140625,
+      "y": 608.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 896,
+      "y": 199,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "15 分钟",
+      "x": 611.96875,
+      "y": 687.5,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "静音 1 小时",
+      "x": 378.5390625,
+      "y": 237.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备排序",
+      "x": 629.15625,
+      "y": 183.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 620,
+      "y": 356,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 730,
+      "y": 796,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 730,
+      "y": 235,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "应用",
+      "x": 1157.203125,
+      "y": 694.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1089,
+      "y": 381,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 174,
+      "y": 306,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 137,
+      "y": 339,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 398,
+      "y": 715,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 363,
+      "y": 478,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 179,
+      "y": 109,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "全屏提示音",
+      "x": 637.34375,
+      "y": 492.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 399,
+      "y": 388,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 455,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 844,
+      "y": 520,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 501,
+      "y": 64,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 472,
+      "y": 75,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 281,
+      "y": 600,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 972,
+      "y": 477,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 828,
+      "y": 155,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "静音此设备",
+      "x": 1159.703125,
+      "y": 775.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 213,
+      "y": 369,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 409,
+      "y": 321,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 373,
+      "y": 88,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 209,
+      "y": 182,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 222,
+      "y": 524,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "DualSense 手柄，12%，电量较低 · 请尽快充电",
+      "x": 301.8515625,
+      "y": 319.2109375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查找设备",
+      "x": 1150.703125,
+      "y": 81.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重新扫描",
+      "x": 386.5,
+      "y": 351.390625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "x": 997,
+      "y": 428,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 421,
+      "y": 210,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 820,
+      "y": 781,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "编辑设备名称",
+      "x": 1175.203125,
+      "y": 205.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 800,
+      "y": 502,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 648,
+      "y": 762,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 581,
+      "y": 654,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "稍后提醒",
+      "x": 1049.203125,
+      "y": 382.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 314,
+      "y": 140,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "忽略本次",
+      "x": 1144.203125,
+      "y": 382.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 47,
+      "y": 709,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 854,
+      "y": 495,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 74,
+      "y": 100,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 466,
+      "y": 521,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 492,
+      "y": 165,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 754,
+      "y": 583,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1015,
+      "y": 497,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "全局紧急阈值",
+      "x": 574.34375,
+      "y": 368.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 2,
+      "y": 543,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1016,
+      "y": 620,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙头戴耳机",
+      "x": 837.84375,
+      "y": 365.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "打开设备详情",
+      "x": 867.65625,
+      "y": 746.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Home",
+      "x": 394,
+      "y": 34,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "编辑设备名称",
+      "x": 1114,
+      "y": 167,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowDown",
+      "x": 123,
+      "y": 491,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1019,
+      "y": 44,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowDown",
+      "x": 317,
+      "y": 344,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 167,
+      "y": 59,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1187,
+      "y": 117,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1163,
+      "y": 121,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "搜索设备",
+      "x": 393.4921875,
+      "y": 132.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 112,
+      "y": 451,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1013,
+      "y": 694,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 754,
+      "y": 708,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 89,
+      "y": 451,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 502,
+      "y": 112,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Shift+Tab",
+      "x": 264,
+      "y": 604,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 477,
+      "y": 103,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 916,
+      "y": 281,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 177,
+      "y": 45,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 417,
+      "y": 87,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 830,
+      "y": 552,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 560,
+      "y": 25,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 931,
+      "y": 356,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Home",
+      "x": 534,
+      "y": 734,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "主界面缩放滑块",
+      "x": 368.6640625,
+      "y": 216.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 309,
+      "y": 180,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 592,
+      "y": 212,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 534,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 228,
+      "y": 162,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查看提醒",
+      "x": 624.359375,
+      "y": 226.28125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 911,
+      "y": 569,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 659,
+      "y": 206,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 626,
+      "y": 422,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "预览紧急提醒",
+      "x": 905.84375,
+      "y": 568.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 64,
+      "y": 796,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 493,
+      "y": 485,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 893,
+      "y": 249,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "End",
+      "x": 713,
+      "y": 680,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 401,
+      "y": 409,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 265,
+      "y": 812,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 378,
+      "y": 526,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Space",
+      "x": 463,
+      "y": 609,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 210,
+      "y": 48,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 749,
+      "y": 435,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "主界面缩放百分比",
+      "x": 543.03125,
+      "y": 216.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 999,
+      "y": 231,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 656,
+      "y": 361,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 10,
+      "y": 87,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 771,
+      "y": 491,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1145,
+      "y": 744,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查看离线设备",
+      "x": 1153.203125,
+      "y": 770.734375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 387,
+      "y": 424,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "蓝牙头戴耳机18%需充电",
+      "x": 1001.25,
+      "y": 242.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Escape",
+      "x": 25,
+      "y": 279,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "托盘浮窗缩放百分比",
+      "x": 543.03125,
+      "y": 292.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 966,
+      "y": 97,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "Space",
+      "x": 97,
+      "y": 454,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowUp",
+      "x": 71,
+      "y": 339,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "Razer 机械键盘，67%，电量中等 · 可提前充电",
+      "x": 492.96875,
+      "y": 319.2109375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 649,
+      "y": 676,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 322,
+      "y": 394,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "静音此设备",
+      "x": 1159.703125,
+      "y": 752.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 537,
+      "y": 304,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1189,
+      "y": 794,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 1134,
+      "y": 64,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 422,
+      "y": 547,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 699,
+      "y": 111,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 259,
+      "y": 446,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 633,
+      "y": 468,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1085,
+      "y": 290,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1021,
+      "y": 812,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1233,
+      "y": 534,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 677,
+      "y": 375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 320,
+      "y": 617,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 929,
+      "y": 127,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "key",
+      "key": "ArrowUp",
+      "x": 497,
+      "y": 596,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 963,
+      "y": 672,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 778,
+      "y": 52,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1171,
+      "y": 63,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 963,
+      "y": 534,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 566,
+      "y": 388,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1046,
+      "y": 722,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 454,
+      "y": 456,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 223,
+      "y": 455,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 1075,
+      "y": 150,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 1122,
+      "y": 148,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 783,
+      "y": 110,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 525,
+      "y": 636,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 623,
+      "y": 76,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "x": 367,
+      "y": 650,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 435,
+      "y": 682,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 15,
+      "y": 475,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "应用",
+      "x": 1093,
+      "y": 636.078125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 129.578125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 178,
+      "y": 562,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 645,
+      "y": 105,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1066,
+      "y": 732,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "Xbox 游戏手柄，78%，电量充足",
+      "x": 909.0703125,
+      "y": 441.7109375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "打开设备详情",
+      "x": 1153.203125,
+      "y": 307.734375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 76,
+      "y": 265,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 437,
+      "y": 150,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 87,
+      "y": 192,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 1028,
+      "y": 532,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 259,
+      "y": 750,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 252,
+      "y": 422,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 205,
+      "y": 370,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 768,
+      "y": 271,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 1066,
+      "y": 286,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 997,
+      "y": 633,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "未连接2",
+      "x": 1063.3125,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 424,
+      "y": 728,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    }
+  ]
+}

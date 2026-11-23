@@ -1,0 +1,10 @@
+/build/
+node_modules/
+dist/
+out/
+.tools/
+.native/
+.stage/
+test-results/
+qa/.profiles/
+qa/**/.profiles/

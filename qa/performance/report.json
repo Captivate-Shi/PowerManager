@@ -1,0 +1,61 @@
+{
+  "session": "40344-1795377807391",
+  "start": "2026-11-22T20:03:30.021Z",
+  "end": "2026-11-22T20:08:17.530Z",
+  "sampleCount": 30,
+  "durationSeconds": 287.509,
+  "backgroundCpu": {
+    "intervals": 29,
+    "nativePairs": 29,
+    "averagePercent": 0.046,
+    "peakPercent": 0.083
+  },
+  "steadySamples": 28,
+  "electronPrivateMiB": {
+    "count": 28,
+    "peak": 434.27,
+    "drift": -9.715
+  },
+  "mainHeapMiB": {
+    "count": 28,
+    "peak": 4.482,
+    "drift": -0.089
+  },
+  "nativePrivateMiB": {
+    "count": 28,
+    "peak": 2.145,
+    "drift": 0
+  },
+  "nativeHandles": {
+    "count": 28,
+    "peak": 180,
+    "drift": 2
+  },
+  "eventLoopAverageActivePercent": 0,
+  "localCollectPeakMs": 0.496,
+  "logWritePeakMs": 1.462,
+  "pollCount": 189,
+  "failedPolls": 0,
+  "collectorExits": 0,
+  "meanPollMs": 21.694,
+  "maxPollMsSinceLaunch": 295.276,
+  "pendingPeak": 0,
+  "historyPointGrowth": 0,
+  "devices": [
+    {
+      "name": "Razer Viper V3 HyperSpeed",
+      "status": "no_radio_reply",
+      "hasReading": false
+    },
+    {
+      "name": "Razer BlackWidow V4 Low-profile TKL HyperSpeed",
+      "status": "no_radio_reply",
+      "hasReading": false
+    },
+    {
+      "name": "DualSense",
+      "status": "offline",
+      "hasReading": false
+    }
+  ]
+}

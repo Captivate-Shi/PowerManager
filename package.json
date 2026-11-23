@@ -1,0 +1,46 @@
+{
+  "name": "powermanager-h5",
+  "productName": "PowerManager H5",
+  "version": "1.4.2",
+  "private": true,
+  "main": "dist/main.cjs",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "pnpm run build && electron .",
+    "demo": "pnpm run build:web && electron . --demo",
+    "build:web": "vite build && esbuild src/main.ts src/preload.ts --bundle --platform=node --external:electron --format=cjs --outdir=dist --out-extension:.js=.cjs",
+    "build": "pnpm run build:native && pnpm run build:web",
+    "build:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1",
+    "check": "tsc --noEmit && tsx --test tests/*.test.ts",
+    "soak": "node scripts/soak.cjs",
+    "metrics": "node scripts/summarize-metrics.cjs",
+    "package": "pnpm run build && node scripts/package.cjs"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "1.1.15",
+    "@radix-ui/react-dropdown-menu": "2.1.16",
+    "@radix-ui/react-select": "2.2.6",
+    "@radix-ui/react-switch": "1.2.6",
+    "lucide-react": "0.468.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-is": "19.2.0",
+    "recharts": "3.11.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^19.0.0",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "45.4.1",
+    "esbuild": "^0.27.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0"
+  }
+}

@@ -1,0 +1,1038 @@
+{
+  "results": [
+    {
+      "name": "搜索边界、全部筛选、空白区与设备键盘入口",
+      "result": [
+        "全部设备\n7",
+        "已连接\n5",
+        "低电量\n2",
+        "未连接\n2",
+        "最近提醒\n0"
+      ]
+    },
+    {
+      "name": "名称空白、emoji、长度边界及恢复",
+      "result": "pass"
+    },
+    {
+      "name": "历史下拉遍历、键盘和曲线悬停",
+      "result": [
+        "无线鼠标",
+        "Razer 机械键盘",
+        "DualSense 手柄",
+        "Xbox 游戏手柄",
+        "蓝牙头戴耳机",
+        "无线耳机（入耳式）",
+        "触控笔"
+      ]
+    },
+    {
+      "name": "稍后提醒、忽略本次和全局静音往返",
+      "result": {
+        "afterSnooze": {
+          "dualsense": {
+            "snoozeUntil": 1795424596405
+          }
+        },
+        "afterIgnore": {
+          "dualsense": {
+            "snoozeUntil": 1795424596405
+          },
+          "headset": {
+            "ignored": "low"
+          }
+        }
+      }
+    },
+    {
+      "name": "重新扫描、关闭按钮和点击弹窗外部",
+      "error": "Error: expect(locator).toBeHidden() failed\n\nLocator:  getByRole('dialog')\nExpected: hidden\nReceived: visible\nTimeout:  5000ms\n\nCall log:\n  - Expect \"toBeHidden\" getByRole('dialog') with timeout 5000ms\n  - waiting for getByRole('dialog')\n    14 × locator resolved to <div role=\"dialog\" tabindex=\"-1\" id=\"radix-_r_g7_\" data-state=\"open\" class=\"_modal_1jqsa_322\" aria-labelledby=\"radix-_r_g8_\" aria-describedby=\"radix-_r_g9_\">…</div>\n       - unexpected value \"visible\"\n"
+    },
+    {
+      "name": "通用预览正文点击与指定设备预览的行为差异",
+      "result": {
+        "genericHeading": "低电量提醒",
+        "genericNavigated": false,
+        "linkedNavigated": true
+      }
+    },
+    {
+      "name": "提醒间隔、稍后时间、声音开关和设备排序全部选项",
+      "error": "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: true\nReceived: false\n\nCall Log:\n- Timeout 5000ms exceeded while waiting on the predicate"
+    },
+    {
+      "name": "诊断入口和登录启动开关演示往返",
+      "result": {
+        "startupDemo": true,
+        "diagnosticsClick": true
+      }
+    },
+    {
+      "name": "电压记录开关与诊断目录命令反馈",
+      "result": {
+        "demoReportDisabled": true
+      }
+    },
+    {
+      "name": "缩放输入边界、滑块键盘及最小窗口逐页布局",
+      "result": [
+        {
+          "zoom": 75,
+          "tab": "总览",
+          "viewport": 960,
+          "height": 693,
+          "doc": 946,
+          "main": 797,
+          "mainWidth": 797,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "设备",
+          "viewport": 960,
+          "height": 693,
+          "doc": 946,
+          "main": 797,
+          "mainWidth": 797,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "提醒",
+          "viewport": 960,
+          "height": 693,
+          "doc": 946,
+          "main": 797,
+          "mainWidth": 797,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "历史",
+          "viewport": 960,
+          "height": 693,
+          "doc": 960,
+          "main": 810,
+          "mainWidth": 810,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 75,
+          "tab": "设置",
+          "viewport": 960,
+          "height": 693,
+          "doc": 960,
+          "main": 810,
+          "mainWidth": 810,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "总览",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "设备",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "提醒",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "历史",
+          "viewport": 720,
+          "height": 520,
+          "doc": 720,
+          "main": 660,
+          "mainWidth": 660,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 100,
+          "tab": "设置",
+          "viewport": 720,
+          "height": 520,
+          "doc": 710,
+          "main": 650,
+          "mainWidth": 650,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "总览",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "设备",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "提醒",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "历史",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "nav": [
+            [
+              "总览",
+              160
+            ],
+            [
+              "设备",
+              209
+            ],
+            [
+              "提醒",
+              258
+            ],
+            [
+              "历史",
+              307
+            ],
+            [
+              "设置",
+              356
+            ]
+          ],
+          "outside": []
+        },
+        {
+          "zoom": 150,
+          "tab": "设置",
+          "viewport": 480,
+          "height": 347,
+          "doc": 473,
+          "main": 413,
+          "mainWidth": 413,
+          "nav": [
+            [
+              "总览",
+              151
+            ],
+            [
+              "设备",
+              200
+            ],
+            [
+              "提醒",
+              249
+            ],
+            [
+              "历史",
+              298
+            ],
+            [
+              "设置",
+              347
+            ]
+          ],
+          "outside": []
+        }
+      ]
+    },
+    {
+      "name": "monkey",
+      "seed": 10003,
+      "actions": 40,
+      "targets": [
+        "无线耳机（入耳式），62%，设备未连接",
+        "查看离线设备",
+        "提醒",
+        "历史",
+        "总览",
+        "设置",
+        "查找设备",
+        "重新扫描",
+        "DualSense 手柄，12%，电量较低 · 请尽快充电",
+        "右下角弹窗",
+        "设备",
+        "未连接2",
+        "搜索设备",
+        "应用",
+        "全部设备7",
+        "列表视图",
+        "无线鼠标，92%，电量充足"
+      ],
+      "frames": {
+        "n": 22,
+        "p50": 16.700000000000728,
+        "p95": 16.80000000000291,
+        "p99": 16.80000000000291,
+        "max": 16.80000000000291,
+        "over50": 0
+      },
+      "longTasks": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "p99": null,
+        "max": null,
+        "over50": 0
+      },
+      "eventTimings": {
+        "n": 502,
+        "p50": 24,
+        "p95": 32,
+        "p99": 32,
+        "max": 32,
+        "over50": 0
+      },
+      "errors": []
+    }
+  ],
+  "errors": [],
+  "actions": [
+    {
+      "kind": "target",
+      "key": null,
+      "target": "无线耳机（入耳式），62%，设备未连接",
+      "x": 458.1484375,
+      "y": 644.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "无线耳机（入耳式），62%，设备未连接",
+      "x": 458.1484375,
+      "y": 666.1875,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "无线耳机（入耳式），62%，设备未连接",
+      "x": 458.1484375,
+      "y": 666.1875,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查看离线设备",
+      "x": 1163.203125,
+      "y": 582.6875,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 446,
+      "y": 99,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 643,
+      "y": 605,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 423,
+      "y": 575,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "历史",
+      "x": 92.5,
+      "y": 277,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "设置",
+      "x": 92.5,
+      "y": 326,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "总览",
+      "x": 92.5,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 375,
+      "y": 21,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 29,
+      "y": 762,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "查找设备",
+      "x": 1160.703125,
+      "y": 81.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 908,
+      "y": 355,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "wheel",
+      "key": null,
+      "x": 388,
+      "y": 130,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "重新扫描",
+      "x": 386.5,
+      "y": 351.390625,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 979,
+      "y": 792,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "DualSense 手柄，12%，电量较低 · 请尽快充电",
+      "x": 712.9921875,
+      "y": 441.7109375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 1089,
+      "y": 665,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 404,
+      "y": 412,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "提醒",
+      "x": 92.5,
+      "y": 228,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "move",
+      "key": null,
+      "x": 760,
+      "y": 704,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 738,
+      "y": 783,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "右下角弹窗",
+      "x": 1177.203125,
+      "y": 523.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "nav",
+      "key": null,
+      "target": "设备",
+      "x": 92.5,
+      "y": 179,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "未连接2",
+      "x": 1073.3125,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "无线耳机（入耳式），62%，设备未连接",
+      "x": 301.8515625,
+      "y": 319.2109375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 177,
+      "y": 720,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "random",
+      "key": null,
+      "x": 385,
+      "y": 492,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "搜索设备",
+      "x": 393.4921875,
+      "y": 132.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "应用",
+      "x": 1157.203125,
+      "y": 694.8125,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "全部设备7",
+      "x": 794.03125,
+      "y": 131.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "double",
+      "key": null,
+      "x": 64,
+      "y": 350,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "列表视图",
+      "x": 755.15625,
+      "y": 183.234375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "right",
+      "key": null,
+      "x": 637,
+      "y": 485,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    },
+    {
+      "kind": "target",
+      "key": null,
+      "target": "无线鼠标，92%，电量充足",
+      "x": 492.9765625,
+      "y": 249.734375,
+      "view": {
+        "width": 1240,
+        "height": 820
+      }
+    }
+  ]
+}
