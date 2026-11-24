@@ -1,0 +1,15 @@
+.motion {
+  position: absolute;
+  top: 48px;
+  inset-inline: 0;
+  width: 100%;
+  height: clamp(480px, calc(100vh - 48px), 1050px);
+  object-fit: cover;
+  object-position: center 60%;
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease-out;
+}
+.motion[data-playing] { opacity: .7; }
+@media (prefers-reduced-motion: reduce) { .motion { display: none; } }

@@ -2,6 +2,7 @@ import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
 import { canProbeBluetooth, inventoryState, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
@@ -182,6 +183,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
   };
   return <div className={s.shell + ' ' + look.shell + ' ' + preferences.mainPalette} data-theme={palette} data-view={detailed ? 'detail' : page}
     style={{ '--studio-stage': `url("${studioPath('stage.webp')}")` } as CSSProperties}>
+    <ColdStartMotion cold={inventory === 'cold'} visible={page === 'overview' && !detailed} />
     <a className={s.skipLink} href="#main-content">跳到主要内容</a>
     <header className={s.topbar + ' ' + look.topbar}>
       <Brand />
