@@ -17,7 +17,17 @@ async function main() {
     page.on('request', request => { if (/^https?:/.test(request.url())) http.push(request.url()); });
     await page.goto(target);
     const hero = page.getByRole('region', { name: '主设备' });
-    await expect(hero.getByText('10–20%', { exact: true })).toBeVisible();
+    const rail = page.getByRole('region', { name: '切换设备' });
+    const walkthrough = process.env.STUDIO_REVIEW_WALKTHROUGH === '1';
+    const startup = async () => {
+      if (walkthrough) {
+        await expect(hero.getByRole('heading', { name: '正在识别设备' })).toBeVisible();
+        await expect(hero.getByRole('heading', { name: 'Xbox 无线手柄' })).toBeVisible();
+        await rail.getByRole('button', { name: 'DualSense', exact: true }).click();
+      }
+      await expect(hero.getByText('10–20%', { exact: true })).toBeVisible();
+    };
+    await startup();
     const nav = page.getByRole('navigation', { name: '主导航' });
     const go = name => nav.getByRole('button', { name, exact: true }).click();
     const photos = await page.locator('img[data-device-art]:visible').evaluateAll(async imgs => {
@@ -34,9 +44,16 @@ async function main() {
     await expect(hero.getByText('20–30%', { exact: true })).toBeVisible();
     await hero.getByRole('button', { name: '查看详情' }).click();
     await expect(page.getByRole('region', { name: '设备详情' })).toBeVisible();
+    if (walkthrough) {
+      const detail = page.getByRole('region', { name: '设备详情' });
+      await detail.getByRole('button', { name: '调整提醒' }).click();
+      await detail.getByRole('button', { name: '35%', exact: true }).click();
+      await expect(detail.getByRole('slider', { name: '设备低电量阈值' })).toHaveValue('35');
+      await expect.poll(() => page.evaluate(async () => (await window.powerManager.snapshot()).deviceSettings.dual?.low)).toBe(35);
+      expect(await page.evaluate(() => window.studioReview.inspections)).toEqual([]);
+    }
     await page.getByRole('button', { name: '返回总览' }).click();
     const stage = page.getByRole('group', { name: '主设备视觉展示' });
-    const rail = page.getByRole('region', { name: '切换设备' });
     for (const [name, art, reading] of [
       ['Xbox 无线手柄', 'xbox', '46%'], ['无线鼠标', 'mouse', '92%'], ['机械键盘', 'keyboard', '67%'], ['DualSense', 'dualsense', '20–30%'],
     ]) {
@@ -48,13 +65,18 @@ async function main() {
       const embedded = Buffer.from(src.split(',')[1], 'base64');
       expect(hash(embedded)).toBe(hash(readFileSync(join(__dirname, '../public/assets/studio-v2', art + '-hero.webp'))));
     }
+    if (walkthrough) {
+      await expect.poll(() => page.evaluate(() => window.studioReview.inspections), {timeout:10000})
+        .toMatchObject([{id:'dual', severity:'low', reading:{low:22, high:27}}]);
+      await expect(hero.getByRole('meter', { name: '电量' })).toHaveAttribute('aria-valuetext','22–27%');
+    }
     await go('提醒');
     const toastTransition = page.waitForURL(/surface=toast/);
     await page.getByRole('button', { name: '发送低电量测试通知' }).click();
     await toastTransition;
     await expect(page.getByRole('main', { name: '桌面电量提醒' })).toBeVisible();
     await page.getByRole('button', { name: '关闭通知' }).click();
-    await expect(hero.getByText('10–20%', { exact: true })).toBeVisible();
+    await startup();
     await nav.getByRole('button', { name: /^(记录|历史)$/ }).click();
     await expect(page.locator('[data-trace=range]:not([d=""])').first()).toBeVisible();
     await go('设置');

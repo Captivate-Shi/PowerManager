@@ -76,7 +76,7 @@ export function HistoryComparison({ devices, threshold, anchor, large = true }: 
   return <div className={s.chartFrame} data-large={large}>
     <div className={s.chartPlot} data-large={large} aria-busy={pending}>
       {activeSeries.length ? <Graph series={activeSeries} start={start} end={end} threshold={threshold} /> : pending ?
-        <ChartSkeleton /> : <div className={s.chartEmpty} data-large={large} role="status">
+        <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large} role="status">
           {errors.length ? '暂时无法读取电量记录' : '近 24 小时暂无设备读数'}
         </div>}
     </div>

@@ -30,6 +30,11 @@ export type Snapshot = {
   collector: 'starting' | 'ready' | 'occupied' | 'retrying'; refreshing: boolean;
   mutedUntil: number; alerts: Record<string, AlertState>; demo: boolean; error?: string;
 };
+export function inventoryState(snapshot: Pick<Snapshot, 'devices' | 'collector'>) {
+  if (snapshot.collector === 'ready') return 'ready';
+  if (snapshot.devices.length) return 'cached';
+  return snapshot.collector === 'starting' ? 'cold' : 'unavailable';
+}
 export type Surface = 'main' | 'tray' | 'toast';
 export type Command =
   | { type: 'refresh' | 'discover' | 'diagnostics' | 'mute' | 'pin' | 'closeSurface' }

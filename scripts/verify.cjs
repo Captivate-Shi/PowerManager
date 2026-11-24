@@ -71,7 +71,7 @@ async function verifyDemo() {
     main.on('pageerror', error => failures.push(String(error)));
     await till(main, '我的桌面');
     await resize(app, 1600, 1000);
-    await expect(main.getByRole('region', { name: '切换设备' }).locator('button[aria-pressed]')).toHaveCount(7);
+    await expect(main.getByRole('region', { name: '切换设备' }).locator('button[title][aria-pressed]')).toHaveCount(7);
     await main.getByRole('button', { name: /^无线鼠标/ }).hover();
     await screenshot(main, '01-overview-1600');
     await main.getByRole('button', { name: '设备', exact: true }).click();
@@ -95,7 +95,7 @@ async function verifyDemo() {
     await detailSource.press('Enter');
     await till(main, 'DualSense 手柄');
     await main.getByRole('button', { name: '调整提醒' }).press('Enter');
-    await expect(main.getByRole('spinbutton', { name: '设备低电量阈值' })).toBeVisible();
+    await expect(main.getByRole('slider', { name: '设备低电量阈值' })).toBeVisible();
     await main.keyboard.press('Escape');
     await expect(detailSource).toBeFocused();
     await main.getByRole('searchbox', { name: '搜索设备' }).or(main.getByRole('textbox', { name: '搜索设备' })).fill('蓝牙');
@@ -111,7 +111,7 @@ async function verifyDemo() {
     await main.getByRole('heading', { name: 'DualSense 手柄', exact: true }).waitFor();
 
     await main.getByRole('button', { name: '提醒', exact: true }).click();
-    await till(main, '提醒中心');
+    await till(main, '提醒');
     await screenshot(main, '03-alerts-1600');
     const pendingToast = app.waitForEvent('window');
     const focusedBefore = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id);
@@ -150,7 +150,7 @@ async function verifyDemo() {
     const closedBody = dismissed.waitForEvent('close');
     await dismissed.getByRole('button', { name: /电量较低/ }).click();
     await closedBody;
-    await till(main, '提醒中心');
+    await till(main, '提醒');
     const linked = await lowPreview();
     await linked.getByRole('button', { name: '查看详情' }).click();
     await till(main, 'DualSense 手柄');
@@ -270,7 +270,7 @@ async function verifyDemo() {
       return (await window.webContents.capturePage()).toPNG().toString('base64');
     });
     writeFileSync(join(output, '18-minimum-window-navigation.png'), Buffer.from(pixels, 'base64'));
-    for (const [tab, heading] of [['设备', '我的设备'], ['提醒', '提醒中心'], ['记录', '电量记录'], ['设置', '设置']]) {
+    for (const [tab, heading] of [['设备', '我的设备'], ['提醒', '提醒'], ['记录', '电量对比'], ['设置', '设置']]) {
       await main.getByRole('button', { name: tab, exact: true }).click();
       await till(main, heading);
       assert.equal(await main.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, tab);
@@ -396,34 +396,30 @@ async function verifyThresholds() {
     const go = name => main.getByRole('button', { name, exact: true }).click();
     const detail = main.getByRole('region', { name: '设备预览' });
     const chooseHeadset = () => main.getByRole('button', { name: '蓝牙头戴耳机', exact: true }).click();
-    const input = detail.getByRole('spinbutton', { name: '设备低电量阈值' });
-    const apply = () => detail.getByRole('button', { name: '应用', exact: true }).click();
+    const input = detail.getByRole('slider', { name: '设备低电量阈值' });
+    const thresholdSettings = () => main.evaluate(async () => (await window.powerManager.snapshot()).deviceSettings);
+    const choosePreset = value => detail.getByRole('group', { name: '快速选择低电量阈值' })
+      .getByRole('button', { name: value + '%', exact: true }).click();
 
     await go('设备');
     await chooseHeadset();
     await expect(input).toHaveValue('20');
-    await input.hover();
-    const bounds = await input.boundingBox();
-    assert.ok(bounds);
-    await main.mouse.click(bounds.x + bounds.width - 14, bounds.y + bounds.height / 4);
-    await expect(input).toHaveValue('21');
-    await input.press('ArrowDown');
+    await expect(input).toHaveAttribute('min', '1');
+    await expect(input).toHaveAttribute('max', '50');
+    await input.press('End');
+    await expect(input).toHaveValue('50');
     await input.press('ArrowUp');
-    await expect(input).toHaveValue('21');
-    await input.press('ArrowDown');
-    await expect(input).toHaveValue('20');
-    await input.fill('95');
-    await input.press('ArrowUp');
-    await expect(input).toHaveValue('95');
-    await input.fill('1');
+    await expect(input).toHaveValue('50');
+    await input.press('Home');
+    await expect(input).toHaveValue('1');
     await input.press('ArrowDown');
     await expect(input).toHaveValue('1');
-    await input.fill('0');
-    await apply();
-    assert.equal(await main.evaluate(async () => (await window.powerManager.snapshot()).deviceSettings.headset?.low), undefined);
-    await input.fill('15');
-    await apply();
-    await expect(detail.getByText('自定义 15% · 紧急线 10%')).toBeVisible();
+    await expect.poll(async () => (await thresholdSettings()).headset?.low).toBe(1);
+    await choosePreset(15);
+    await expect(input).toHaveValue('15');
+    await expect(detail.getByRole('status').filter({ hasText: '已保存' })).toBeVisible();
+    await expect.poll(async () => (await thresholdSettings()).headset?.low).toBe(15);
+    await expect(detail.getByText(/设备自定义 · 紧急线 10%/)).toBeVisible();
 
     await go('提醒');
     const normal = main.locator('[data-level="low"]');
@@ -434,32 +430,33 @@ async function verifyThresholds() {
     const globalCritical = main.getByRole('spinbutton', { name: '全局紧急阈值' });
     await globalLow.fill('19');
     await globalCritical.fill('19');
-    await go('应用');
-    await expect(main.getByRole('alert')).toContainText('紧急阈值必须低于低电量阈值');
+    await go('应用阈值');
+    await expect(main.getByRole('alert')).toContainText('紧急阈值需低于低电量阈值');
     await globalLow.fill('25');
     await globalCritical.fill('20');
-    await go('应用');
+    await go('应用阈值');
     await expect(main.getByRole('alert')).toHaveCount(0);
     await expect(critical.getByRole('button', { name: headset, exact: true })).toBeVisible();
     await expect(critical.getByRole('button', { name: 'DualSense 手柄', exact: true })).toBeVisible();
 
     await critical.getByRole('button', { name: headset, exact: true }).click();
     await expect(input).toHaveValue('15');
-    await expect(detail.getByText(/直接进入紧急提醒/)).toBeVisible();
+    await expect(detail.getByText(/紧急线 20% 优先/)).toBeVisible();
     await detail.getByRole('switch', { name: '静音此设备' }).click();
     await go('提醒');
-    const headsetRow = critical.getByRole('button', { name: headset, exact: true }).locator('../..');
+    const headsetRow = critical.getByRole('button', { name: headset, exact: true }).locator('xpath=ancestor::article');
     await expect(headsetRow.getByText('已静音', { exact: true })).toBeVisible();
     const rules = await main.evaluate(async () => (await window.powerManager.snapshot()).deviceSettings);
     assert.equal(rules.headset.muted, true);
     assert.equal(rules.dualsense?.muted, undefined);
 
     await globalCritical.fill('10');
-    await go('应用');
+    await go('应用阈值');
     await go('设备');
     await chooseHeadset();
     await detail.getByRole('button', { name: '恢复全局阈值', exact: true }).click();
     await expect(input).toHaveValue('25');
+    await expect.poll(async () => (await thresholdSettings()).headset?.low).toBeUndefined();
     await input.press('ArrowUp');
     await expect(input).toHaveValue('26');
     await input.press('ArrowDown');
@@ -649,10 +646,15 @@ async function verifyDeviceCountsAndMute() {
     const healthy = baseline.devices.find(device => device.id === 'mouse');
     assert.ok(healthy);
     await resize(app, 1240, 820);
-    await publish([healthy], 'starting');
+    // The collector has no inventory on a true first launch.
+    await publish([], 'starting');
     const deskHero = main.getByRole('region', { name: '主设备' });
     const deskRail = main.getByRole('region', { name: '切换设备' });
+    await expect(main.locator('[data-load-state="initial"]')).toBeVisible();
+    await expect(deskHero.getByRole('heading', { name: '正在识别设备' })).toBeVisible();
     await expect(deskHero.getByRole('status')).toContainText('正在读取设备');
+    await expect(deskHero.locator('img[src*="dualsense-"]')).toHaveCount(0);
+    await expect(deskRail.locator('button[title][aria-pressed]')).toHaveCount(0);
     await expect(button('立即刷新')).toBeDisabled();
     await expect(deskHero.getByRole('progressbar', { name: '正在读取电量' })).not.toHaveAttribute('aria-valuenow');
     await expect(deskHero.getByRole('meter')).toHaveCount(0);
@@ -660,6 +662,17 @@ async function verifyDeviceCountsAndMute() {
     await button('设备').click();
     await expect(main.getByRole('searchbox')).toHaveCount(0);
     await button('总览').click();
+    // A warm start restores the known identity and the previous reading, not a new scan result.
+    assert.ok(healthy.reading);
+    await publish([{ ...healthy, status: 'stale', reason: '等待新读数' }], 'starting');
+    await expect(main.locator('[data-load-state="cached"]')).toBeVisible();
+    await expect(deskHero.getByRole('heading', { name: healthy.name, exact: true })).toBeVisible();
+    await expect(deskHero.getByRole('progressbar')).toHaveCount(0);
+    const cachedReading = healthy.reading.low === healthy.reading.high
+      ? healthy.reading.low + '%' : healthy.reading.low + '–' + healthy.reading.high + '%';
+    await expect(deskHero.getByRole('meter', { name: '上次电量' })).toHaveAttribute('aria-valuetext', cachedReading);
+    await expect(deskRail.getByRole('button', { name: healthy.name, exact: true })).toBeEnabled();
+    await screenshot(main, '19b-warm-cache');
     await publish([], 'occupied');
     await expect(main.getByRole('status')).toContainText('自动接管');
     await publish([]);
@@ -669,7 +682,7 @@ async function verifyDeviceCountsAndMute() {
     await expect(deskHero.getByText(/上次电量/)).toBeVisible();
     await publish([healthy]);
     await expect(main.getByRole('region', { name: '主设备' }).getByText(healthy.name)).toBeVisible();
-    await expect(deskRail.locator('button[aria-pressed]')).toHaveCount(1);
+    await expect(deskRail.locator('button[title][aria-pressed]')).toHaveCount(1);
     await screenshot(main, '20-one-device');
 
     const many = Array.from({ length: 48 }, (_, index) => {
@@ -678,11 +691,11 @@ async function verifyDeviceCountsAndMute() {
         name: '测试外设 ' + String(index + 1).padStart(2, '0') + (index === 47 ? ' ' + '长名称'.repeat(20) : '') };
     });
     await publish(many);
-    await expect(deskRail.locator('button[aria-pressed]')).toHaveCount(48);
+    await expect(deskRail.locator('button[title][aria-pressed]')).toHaveCount(48);
     await expect(main.getByRole('region', { name: '主设备' }).getByText('建议充电')).toBeVisible();
     await screenshot(main, '21-many-devices');
     await main.getByRole('button', { name: '管理提醒' }).click();
-    await till(main, '提醒中心');
+    await till(main, '提醒');
     await button('设备').click();
     await expect(main.getByRole('table', { name: '设备（48）' })).toBeVisible();
     await main.getByRole('searchbox').fill('测试外设 48');
@@ -707,6 +720,8 @@ async function verifyDeviceCountsAndMute() {
 
     await publish(baseline.devices);
     await button('提醒').click();
+    const muteOptions = main.locator('summary').filter({ hasText: '通知与静音' });
+    if (!await muteOptions.evaluate(summary => summary.parentElement.open)) await muteOptions.click();
     const duration = main.getByRole('combobox', { name: '全局静音时长' });
     const choose = async label => {
       await duration.click();

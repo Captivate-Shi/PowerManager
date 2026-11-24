@@ -440,11 +440,10 @@
 .chartPlot, .chartSkeleton { height: 158px; min-width: 0; }
 .chartPlot[data-large="true"], .chartSkeleton[data-large="true"] { height: clamp(224px, 36vh, 390px); }
 .detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(208px, 31vh, 320px); }
-.chartPlot .chartSkeleton, .chartPlot .chartEmpty { height: 100%; }
-.chartSkeleton { position: relative; display: grid; overflow: hidden; place-items: center; color: var(--muted); border-radius: 9px; font-size: 12px; background: var(--panel); }
-.chartSkeleton svg { position: absolute; inset: 24px 24px 49px 65px; width: calc(100% - 89px); height: calc(100% - 73px); fill: none; stroke: var(--line); stroke-width: 1; }
-.chartSkeleton span { z-index: 1; padding: 4px 9px; background: var(--panel); border-radius: 4px; }
-.chartSkeleton::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 25%, #b8c6de0c 45%, transparent 65%); transform: translateX(-100%); animation: history-shimmer 1.25s ease-in-out 2; }
+.chartPlot > .chartSkeleton[data-large], .chartPlot .chartEmpty { height: 100%; }
+.chartSkeleton { position: relative; display: grid; overflow: hidden; place-items: center; color: var(--muted); font-size: 12px; background: transparent; }
+.chartSkeleton svg { position: absolute; inset: 24px 24px 49px 65px; width: calc(100% - 89px); height: calc(100% - 73px); fill: none; stroke: #b3c2e32b; stroke-width: 1; }
+.chartSkeleton span { z-index: 1; padding: 3px 0; }
 @keyframes history-shimmer { to { transform: translateX(100%); } }
 .chartMeta, .chartGuide, .chartNotice { display: flex; flex-wrap: wrap; align-items: center; }
 .chartMeta { gap: 4px 16px; padding-top: 8px; min-height: 28px; }
@@ -479,9 +478,6 @@
 .historyChoice[data-series="0"] i { color: #a8c8ed; }
 .historyChoice[data-series="1"] i { color: #c3adf7; border-top-style: dashed; }
 .historyChoice[data-series="2"] i { color: #82d9be; border-top-style: dotted; }
-@media (prefers-reduced-motion: reduce) {
-  .chartSkeleton::after { animation: none; }
-}
 
 .eventLaneLabel, .historyChoice small { font-size: 10px; font-variant-numeric: tabular-nums; }
 .historyChoice small { color: var(--muted); }
@@ -518,8 +514,6 @@
 .history .chartFrame, .history > .chartSkeleton { margin-top: clamp(14px, 2vw, 28px); }
 .chartPlot[data-large="true"], .chartSkeleton[data-large="true"] { height: clamp(265px, 49vh, 515px); }
 .detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(225px, 38vh, 360px); }
-.chartSkeleton { background: #ffffff03; border-radius: 0; }
-.chartSkeleton span { background: var(--window); }
 .graphGrid { stroke: #aab0bd3a; }
 .graphAxis { stroke: #c6cbd87b; stroke-width: 1; }
 .graphLabel { fill: #d8dce5; font-size: clamp(11px, 1.05vw, 14px); }

@@ -1,10 +1,10 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import type { Snapshot, Toast } from './model';
-import { api } from './ui';
+import { api, Brand } from './ui';
 import { Dashboard } from './dashboard';
 import { QuickPanel, ToastPanel } from './surfaces';
-import s from './panel.module.css';
+import startup from './startup.module.css';
 
 const surface = new URLSearchParams(location.search).get('surface') ?? 'main';
 document.body.dataset.surface = surface;
@@ -16,14 +16,26 @@ function App() {
   useEffect(() => {
     let active = true;
     let received = false;
-    const remove = api.onSnapshot(value => { received = true; setState(value); });
-    void api.snapshot().then(value => { if (active && !received) setState(value); }).catch(() => setError('无法连接应用主进程，请从托盘退出后重试。'));
+    const remove = api.onSnapshot(value => {
+      if (!active) return;
+      received = true;
+      setState(value);
+      setError('');
+    });
+    void api.snapshot().then(value => { if (active && !received) setState(value); }).catch(() => {
+      if (active && !received) setError('暂时无法连接应用主进程。可等待恢复，或从托盘退出后重试。');
+    });
     if (surface === 'toast') void api.toast().then(value => { if (active) setToast(value); });
     return () => { active = false; remove(); };
   }, []);
-  if (error) return <div className={s.loading} role="alert">{error}</div>;
   if (surface === 'toast') return toast ? <ToastPanel toast={toast} /> : null;
-  if (!state) return <div className={s.loading}>正在载入外设电量管理器…</div>;
+  if (!state) return <main className={startup.shell}>
+    <div className={startup.brand}><Brand /></div>
+    <div className={startup.waiting} role={error ? 'alert' : 'status'}>
+      <p>{error || '正在连接应用主进程…'}</p>
+      {!error && <i aria-hidden="true" />}
+    </div>
+  </main>;
   return surface === 'tray' ? <QuickPanel state={state} /> : <Dashboard state={state} />;
 }
 

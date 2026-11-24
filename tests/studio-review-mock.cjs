@@ -2,14 +2,19 @@
 function installMock(options = {}) {
   const value = (low, high = low, power = 'discharging') => ({ low, high, raw: low, power, source: 'hid' });
   const now = Date.now();
-  const state = {
-    devices: [
+  const toastQuery = new URLSearchParams(location.search);
+  const scenario = options.scenario || (options.walkthrough && toastQuery.get('scenario') === 'warm' ? 'warm' : options.walkthrough ? 'cold' : 'legacy');
+  const catalog = [
       { id: 'mouse', art: 'mouse', name: '无线鼠标', reading: value(92), connection: '无线 2.4G' },
       { id: 'dual', art: 'dualsense', name: 'DualSense', reading: value(10, 20), connection: '蓝牙' },
       { id: 'keyboard', art: 'keyboard', name: '机械键盘', reading: value(67), connection: '无线 2.4G' },
       { id: 'headset', art: 'headset', name: '头戴耳机', reading: value(9), connection: '蓝牙' },
       { id: 'xbox', art: 'xbox', name: 'Xbox 无线手柄', reading: value(46), connection: '蓝牙' },
-    ].map(item => ({ ...item, status: 'current', lastRead: now, watched: true, reason: '设备读数正常' })),
+    ].map(item => ({ ...item, status: 'current', lastRead: now, watched: true, reason: '设备读数正常' }));
+  const copies = () => structuredClone(catalog);
+  const state = {
+    devices: scenario === 'cold' && !toastQuery.has('detail') ? []
+      : scenario === 'warm' ? [{ ...catalog[1], status: 'stale', lastRead: now - 3_600_000, reason: '等待读数' }] : copies(),
     settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, soundOnly: false, voltage: false,
       startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60 },
     deviceSettings: {}, alerts: {}, collector: 'starting', refreshing: false, mutedUntil: 0, demo: true,
@@ -41,9 +46,8 @@ function installMock(options = {}) {
   const headset = seq.map(i => ({ time: stamp(i), reading: value(Math.round(70 - i * 61 / 1440)) }));
   const xbox = seq.map(i => ({ time: stamp(i), reading: value(Math.round(ease(i, 0, 1440, 64, 46))) }));
   const histories = { mouse, dual: range, keyboard, headset, xbox };
-  const toastQuery = new URLSearchParams(location.search);
   const toastSeverity = toastQuery.get('kind') === 'low' ? 'low' : 'critical';
-  const toastDevice = state.devices.find(d => d.id === toastQuery.get('device')) ?? state.devices[3];
+  const toastDevice = catalog.find(d => d.id === toastQuery.get('device')) ?? catalog[3];
   const shownToastDevice = {
     ...toastDevice,
     ...(toastQuery.get('long') === '1' ? { name: '用于长设备名称验证的无线头戴式蓝牙游戏耳机名称' } : {}),
@@ -53,10 +57,56 @@ function installMock(options = {}) {
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   let notify;
   let completeRefresh;
+  let inspectionTimer;
+  const inspectedAlerts = [];
   const publish = () => notify?.(structuredClone(state));
+  const sample = (id, low, high) => {
+    const device = state.devices.find(item => item.id === id);
+    if (!device) return;
+    device.reading = value(low, high);
+    device.lastRead = Date.now();
+    histories[id]?.push({ time: device.lastRead, reading: device.reading });
+    return device;
+  };
+  const runInspection = (id, low, high) => {
+    if (state.refreshing) throw Error('Fixture inspection cannot be conflated with manual refresh');
+    const device = sample(id, low, high);
+    if (!device) throw Error('Unknown fixture device: ' + id);
+    const critical = device.reading.high <= state.settings.critical;
+    const lowBand = device.reading.high <= Math.max(state.deviceSettings[id]?.low ?? state.settings.low, state.settings.critical);
+    const result = { id, reading: device.reading, severity: critical ? 'critical' : lowBand ? 'low' : null };
+    if (result.severity) state.alerts[id] = { ...(state.alerts[id] || {}), [critical ? 'criticalAt' : 'lowAt']: device.lastRead,
+      lastNoticeAt: device.lastRead };
+    inspectedAlerts.push(result);
+    publish();
+  };
+  const scheduleDemoInspection = () => {
+    clearTimeout(inspectionTimer);
+    const tick = () => {
+      if (!Number.isFinite(state.deviceSettings.dual?.low)) return;
+      if (state.refreshing) { inspectionTimer = setTimeout(tick, 700); return; }
+      runInspection('dual', 22, 27);
+    };
+    inspectionTimer = setTimeout(tick, 6500);
+  };
   window.studioReview = {
     commands,
-    ready: () => { state.collector = 'ready'; publish(); },
+    inspections: inspectedAlerts,
+    ready: () => { if (!state.devices.length) state.devices = copies(); state.collector = 'ready'; publish(); },
+    detect: id => {
+      const device = copies().find(item => item.id === id);
+      if (!device) throw Error('Unknown fixture device: ' + id);
+      state.devices = [device];
+      state.collector = 'ready';
+      publish();
+    },
+    revealAll: () => {
+      const live = new Map(state.devices.map(item => [item.id, item]));
+      state.devices = copies().map(item => live.get(item.id)?.status === 'current' ? live.get(item.id) : item);
+      state.collector = 'ready';
+      publish();
+    },
+    runInspection,
     readAs: (id, percent) => {
       const device = state.devices.find(item => item.id === id);
       if (!device) throw Error('Unknown fixture device: ' + id);
@@ -67,9 +117,8 @@ function installMock(options = {}) {
     finishRefresh: () => {
       if (!completeRefresh) throw Error('Refresh was not requested');
       state.refreshing = false;
-      state.devices[1].reading = value(20, 30);
-      state.devices[1].lastRead = Date.now();
-      range.push({ time: state.devices[1].lastRead, reading: state.devices[1].reading });
+      // Manual re-read refreshes display/history but does not deliver an alert.
+      sample('dual', 20, 30);
       publish();
       completeRefresh({ ok: true });
       completeRefresh = undefined;
@@ -87,7 +136,7 @@ function installMock(options = {}) {
     command: async command => {
       commands.push(command);
       if (command.type === 'history') {
-        await delay(1100);
+        await delay(options.historyDelay || 1100);
         return { ok: true, history: structuredClone(histories[command.id] || []) };
       }
       if (command.type === 'refresh') {
@@ -97,9 +146,16 @@ function installMock(options = {}) {
         return new Promise(done => { completeRefresh = done; });
       }
       if (command.type === 'settings') Object.assign(state.settings, command.patch);
+      if (command.type === 'deviceSettings') {
+        const next = { ...(state.deviceSettings[command.id] || {}), ...command.patch };
+        state.deviceSettings[command.id] = next;
+        if (options.portable && options.walkthrough && scenario !== 'legacy' && command.id === 'dual' && 'low' in command.patch) {
+          scheduleDemoInspection();
+        }
+      }
       if (command.type === 'toggleAlertSetting') state.settings[command.key] = !state.settings[command.key];
       if (command.type === 'snooze') (state.alerts[command.id] ??= {}).snoozeUntil = now + 30 * 60000;
-      if (['settings', 'toggleAlertSetting', 'snooze'].includes(command.type)) publish();
+      if (['settings', 'deviceSettings', 'toggleAlertSetting', 'snooze'].includes(command.type)) publish();
       if (options.portable && command.type === 'preview') {
         const url = new URL(location.href);
         url.search = new URLSearchParams({ surface: 'toast', kind: command.severity, device: command.id || 'dual' });
@@ -114,7 +170,14 @@ function installMock(options = {}) {
       return { ok: true };
     },
   };
-  if (options.portable) setTimeout(() => window.studioReview.ready(), 1000);
+  if (options.portable) {
+    if (scenario === 'cold' && !toastQuery.has('detail')) {
+      setTimeout(() => window.studioReview.detect('xbox'), 1050);
+      setTimeout(() => window.studioReview.revealAll(), 2050);
+    } else if (scenario === 'warm') {
+      setTimeout(() => window.studioReview.revealAll(), 1150);
+    } else setTimeout(() => window.studioReview.ready(), 1000);
+  }
 }
 
 module.exports = { installMock };

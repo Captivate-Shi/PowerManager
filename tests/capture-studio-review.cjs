@@ -1,4 +1,6 @@
-// Built renderer proof with a deterministic mock at its real preload API boundary.
+// V2 visual baseline, with a deterministic mock at its real preload API boundary.
+// This script assumes the old known-device silhouette at startup. For current
+// renderer builds, use capture-studio-walkthrough.cjs (cold/cached startup).
 // Build first. Optional CHROMIUM_PATH, STUDIO_REVIEW_OUT, STUDIO_REVIEW_DIST,
 // STUDIO_REVIEW_BASELINE_HTML and FFMPEG_PATH.
 const { chromium, expect } = require('@playwright/test');

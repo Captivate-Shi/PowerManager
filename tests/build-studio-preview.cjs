@@ -60,10 +60,11 @@ async function main() {
   const css = products.filter(result => result.fileName.endsWith('.css')).map(result => result.source).join('\n');
   const js = products.filter(result => result.type === 'chunk').map(result => result.code).join('\n');
   if (!css || !js) throw Error('Renderer build emitted no CSS or JavaScript');
+  const walkthrough = process.env.STUDIO_REVIEW_WALKTHROUGH === '1';
   const boot = `(() => {
     const assets = ${JSON.stringify(assets)};
     globalThis.__offlineStudioAsset = path => assets[path] || 'data:,';
-    (${installMock.toString()})({ portable: true });
+    (${installMock.toString()})({ portable: true, walkthrough: ${walkthrough} });
     if (new URLSearchParams(location.search).get('surface') === 'toast') {
       document.body.classList.add('offline-toast');
     }

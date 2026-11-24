@@ -3,11 +3,13 @@ import * as Menu from '@radix-ui/react-dropdown-menu';
 import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { canProbeBluetooth, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type Snapshot } from './model';
+import { canProbeBluetooth, inventoryState, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
+import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
+import { DeviceThreshold } from './device-threshold';
 import { ZoomControl } from './zoom';
 import preferences from './preferences.module.css';
 import { previewDevice as makePreviewDevice } from './demo';
@@ -56,6 +58,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
   const [finding, setFinding] = useState(false);
   const [feedback, setFeedback] = useState<{ text: string; error?: boolean }>();
   const starting = state.collector === 'starting';
+  const inventory = inventoryState(state);
   const low = needCharge(state);
   useEffect(() => api.onNavigate(id => {
     if (id) {
@@ -165,8 +168,13 @@ export function Dashboard({ state }: { state: Snapshot }) {
 
   function open(id: string) { search(''); setFilter('all'); select(id); setPage('devices'); setDetailId(undefined); }
   function showDevices(next: Filter) { search(''); select(undefined); setFilter(next); setPage('devices'); setDetailId(undefined); }
+  const waiting = state.devices.filter(device => device.status === 'stale').length;
+  const connected = state.devices.filter(isConnected).length;
   const descriptions: Record<Page, [string, string]> = {
-    overview: ['我的桌面', starting ? '正在同步设备状态' : state.devices.filter(isConnected).length + ' 台在线 · ' + state.devices.filter(device => !isConnected(device)).length + ' 台未连接'],
+    overview: ['我的桌面', inventory === 'cold' ? '首次扫描，正在识别设备' :
+      inventory === 'cached' ? '显示上次设备与读数 · 当前状态待确认' :
+      inventory === 'unavailable' ? '暂无法确认设备状态' :
+      connected + ' 台在线 · ' + (state.devices.length - connected - waiting) + ' 台未连接' + (waiting ? ' · ' + waiting + ' 台待确认' : '')],
     devices: ['我的设备', '查看设备连接与电量'],
     alerts: ['提醒', '待充电设备和通知偏好'],
     history: ['电量记录', '过去 24 小时的设备读数'],
@@ -177,9 +185,9 @@ export function Dashboard({ state }: { state: Snapshot }) {
     <a className={s.skipLink} href="#main-content">跳到主要内容</a>
     <header className={s.topbar + ' ' + look.topbar}>
       <Brand />
-      <nav aria-label="主导航">{pages.map(([id, label]) => <button key={id} className={s.navItem + ' ' + look.navItem}
+      <JellyNav current={page}>{pages.map(([id, label]) => <button key={id} className={s.navItem + ' ' + look.navItem}
         aria-label={label} aria-current={page === id ? 'page' : undefined} onClick={() => { cancelTransition(); setDetailId(undefined); if (page !== id) search(""); setPage(id); window.scrollTo(0, 0); }}><span>{label}</span>
-        {id === 'alerts' && low.length > 0 && <i aria-hidden="true" />}</button>)}</nav>
+        {id === 'alerts' && low.length > 0 && <i aria-hidden="true" />}</button>)}</JellyNav>
     </header>
     <main className={s.content + ' ' + look.content} id="main-content" tabIndex={-1} ref={main}>
       <div hidden={!!detailed}>
@@ -195,14 +203,15 @@ export function Dashboard({ state }: { state: Snapshot }) {
         </div>}
       </header>
       {(state.collector !== 'ready' && !(page === 'overview' && starting)) && <div className={s.notice} role="status"><Activity size={19} /><span>{
-        { starting: '正在读取设备和电量…', occupied: '旧版 PowerManager 正在监测。请从旧版托盘退出，新版会自动接管。',
+        { starting: inventory === 'cached' ? '显示上次记录，正在确认连接和电量。' : '正在读取设备和电量…', occupied: '旧版 PowerManager 正在监测。请从旧版托盘退出，新版会自动接管。',
           retrying: '采集暂时中断，正在尝试重新连接。' }[state.collector]}</span></div>}
       {state.error && <div className={s.notice} role="alert"><TriangleAlert size={19} />{state.error}</div>}
       {page === 'overview' && <Overview state={state} openDetail={openDetail} showDevices={showDevices} find={() => setFinding(true)} />}
-      {page === 'devices' && (starting ? <DeviceSkeleton /> :
+      {page === 'devices' && (inventory === 'cold' ? <DeviceSkeleton /> :
+        inventory === 'unavailable' ? <Empty>暂无法读取设备，等待采集恢复</Empty> :
         <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
       {page === 'alerts' && <Alerts state={state} run={run} open={open} />}
-      {page === 'history' && <History state={state} starting={starting} />}
+      {page === 'history' && <History state={state} starting={inventory === 'cold'} />}
       {page === 'settings' && <Settings state={state} run={run} palette={palette} choosePalette={choosePalette} />}
       </div>
       {detailed && <div>
@@ -266,8 +275,9 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   });
   const featured = (chosen ? deviceById.get(chosen) : undefined) ?? ordered[0];
   const index = ordered.findIndex(device => device.id === featured?.id);
-  const initial = state.collector === 'starting';
-  const phase = initial ? 'initial' : state.refreshing ? 'refreshing' : 'ready';
+  const inventory = inventoryState(state);
+  const initial = inventory === 'cold';
+  const phase = initial ? 'initial' : inventory === 'ready' && state.refreshing ? 'refreshing' : 'ready';
   useEffect(() => {
     const ranked = overviewOrder(state);
     const available = new Set(ranked);
@@ -308,17 +318,17 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     setTravel(0);
     if (commit && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.1) step(dx < 0 ? 1 : -1);
   }
-  return <div className={look.desk} data-load-state={phase} data-mode={mode}>
+  return <div className={look.desk} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode}>
     {(featured || initial) && mode === 'stage' && <section ref={hero} className={look.hero} aria-label="主设备">
       <div className={look.heroData} aria-live="polite">
-        <h2 title={featured?.name}>{featured?.name ?? '主设备'}</h2>
+        <h2 title={featured?.name}>{featured?.name ?? '正在识别设备'}</h2>
         <SceneBattery device={featured} state={state} phase={phase} />
         <div className={look.heroState} data-tone={featured && !initial ? tone(featured, state) : 'normal'}>
-          {initial ? <span role="status">正在读取设备…</span> : state.refreshing ? <span role="status">正在更新 · 保留上次读数</span> : featured && <><i aria-hidden="true" />{batteryState(featured, state)}{featured.status !== 'current' && featured.reading && <small>上次电量 · {dateLabel(featured.lastRead)}</small>}</>}
+          {initial ? <span role="status">正在读取设备…</span> : phase === 'refreshing' && featured?.status === 'current' ? <span role="status">正在更新 · 保留上次读数</span> : featured && <><i aria-hidden="true" />{batteryState(featured, state)}{featured.status !== 'current' && featured.reading && <small>上次电量 · {dateLabel(featured.lastRead)}</small>}</>}
         </div>
-        <button className={look.ghost} disabled={initial || !featured} onClick={() => featured && openDetail(featured.id, hero.current ?? undefined)}>
+        {featured && <button className={look.ghost} onClick={() => openDetail(featured.id, hero.current ?? undefined)}>
           查看详情 <ChevronRight size={14} aria-hidden="true" />
-        </button>
+        </button>}
       </div>
       <div className={look.carousel} data-direction={direction} data-dragging={travel !== 0}
         role="group" aria-label="主设备视觉展示" tabIndex={initial || ordered.length <= 1 ? -1 : 0}
@@ -345,12 +355,13 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
           onClick={() => activate(device)} />)}</div>}
       </div>
     </section>}
-    {!featured && !initial && mode === 'stage' && <Empty button={find}>尚未监测到外设</Empty>}
+    {!featured && !initial && mode === 'stage' && (inventory === 'unavailable'
+      ? <Empty>暂无法读取设备，等待采集恢复</Empty> : <Empty button={find}>尚未监测到外设</Empty>)}
     <section className={look.rail} aria-label="切换设备">
       <header className={look.railHeader}>
         <div className={look.modeControl} role="group" aria-label="总览显示方式">
-          <button aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => setMode('stage')}><LayoutGrid size={15} /></button>
-          <button aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => setMode('list')}><List size={17} /></button>
+          <button disabled={initial} aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => setMode('stage')}><LayoutGrid size={15} /></button>
+          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => setMode('list')}><List size={17} /></button>
         </div>
         <button className={look.ghost} onClick={() => showDevices('all')}>全部设备 <ChevronRight size={14} aria-hidden="true" /></button>
       </header>
@@ -359,17 +370,18 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
           aria-pressed={mode === 'stage' ? device.id === featured?.id : undefined} disabled={initial}
           title={device.name} onClick={event => mode === 'list' ? openDetail(device.id, event.currentTarget) : activate(device)}
           onDoubleClick={event => { if (mode === 'stage') openDetail(device.id, event.currentTarget); }}>
-          <Art device={device} variant="card" loading={initial} />
+          <Art device={device} variant="card" />
           <div className={look.railInfo}>
             <div className={look.railName}><b>{device.name}</b>
-              {!initial && <span className={look.railMeta}><Connection device={device} />
-                {!isConnected(device) && <span> · 未连接</span>}</span>}</div>
-            {initial ? <i aria-hidden="true" className={look.rowPlaceholder} /> : <strong className={look.railValue} data-tone={tone(device, state)}>{readingLabel(device.reading)}</strong>}
+              <span className={look.railMeta}>{device.status === 'stale' ? '等待新读数' : <><Connection device={device} />
+                {!isConnected(device) && <span> · 未连接</span>}</>}</span></div>
+            <strong className={look.railValue} data-tone={tone(device, state)}>{device.status !== 'current' && device.reading &&
+              <small className={look.lastReading}>上次电量 </small>}{readingLabel(device.reading)}</strong>
           </div>
           <ChevronRight size={15} className={look.railArrow} aria-hidden="true" />
         </button>)}
-        {!ordered.length && initial && [0, 1, 2].map(index => <div className={look.railRow} key={index} aria-hidden="true"><i className={look.rowPlaceholder} /><i className={look.rowPlaceholder} /><i className={look.rowPlaceholder} /></div>)}
-        {!ordered.length && !initial && <p className={s.smallEmpty}>暂无受监测设备</p>}
+        {initial && <div className={look.inventoryPlaceholder} aria-hidden="true"><i /><i /><i /></div>}
+        {!ordered.length && !initial && <p className={s.smallEmpty}>{inventory === 'unavailable' ? '设备状态暂不可用' : '暂无受监测设备'}</p>}
       </div>
     </section>
   </div>;
@@ -382,7 +394,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, openDetail, 
   const { devices, alerts } = state;
   const online = devices.filter(isConnected);
   const low = needCharge(state);
-  const offline = devices.filter(device => !isConnected(device));
+  const offline = devices.filter(device => device.status !== 'stale' && !isConnected(device));
   const recent = devices.filter(device => (alerts[device.id]?.lastNoticeAt ?? 0) >= Date.now() - 86400000);
   const groups = { all: devices, online, low, offline, recent };
   const menus: [Filter, string][] = [['all', '全部设备'], ['online', '已连接'],
@@ -413,7 +425,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, openDetail, 
               onClick={event => { if (event.detail === 0) openDetail(device.id, event.currentTarget); }}>
               <Art device={device} /><b>{device.name}</b>
             </button></td>
-            <td><Connection device={device} /></td>
+            <td>{device.status === 'stale' ? '待确认' : <Connection device={device} />}</td>
             <td className={s.rowReading} data-tone={tone(device, state)}><strong>{readingLabel(device.reading)}</strong>
               {device.status !== 'current' && device.reading && <small title={dateLabel(device.lastRead)}>上次 · {dateLabel(device.lastRead)}</small>}</td>
             <td><StatusTag device={device} state={state} /></td>
@@ -435,24 +447,14 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
   const [probing, setProbing] = useState(false);
   const rules = state.deviceSettings[device.id];
   const savedLimit = rules?.low ?? state.settings.low;
-  const [limit, setLimit] = useState(String(savedLimit));
-  const [savingLimit, setSavingLimit] = useState(false);
   useEffect(() => { if (!full) prepareHero(device); }, [device.art, full]);
-  useEffect(() => { setLimit(String(savedLimit)); }, [savedLimit, rules?.low]);
-  async function saveLimit(value: number | undefined) {
-    setSavingLimit(true);
-    try {
-      const result = await run({ type: 'deviceSettings', id: device.id, patch: { low: value } });
-      if (result.ok) setLimit(String(value ?? state.settings.low));
-    } finally { setSavingLimit(false); }
-  }
   const low = level(device, state);
   const send = (command: Command) => { void run(command); };
   return <section ref={detailRef} className={s.details + ' ' + (full ? look.fullDetail : look.devicePreview)} data-full={!!full} aria-label={full ? "设备详情" : "设备预览"}>
     {!full && <h2 className={s.previewTitle}>设备预览</h2>}
     <div className={s.detailTop + (full ? ' ' + look.detailTop : '')}>
       <div className={s.detailsHeader + (full ? ' ' + look.detailsHeader : '')}><div className={s.detailName}>{full ? <h1>{device.name}</h1> : <h3>{device.name}</h3>}
-          <div><StatusTag device={device} state={state} /><Connection device={device} /></div></div>
+          <div><StatusTag device={device} state={state} />{device.status !== 'stale' && <Connection device={device} />}</div></div>
         <SceneStage device={device} shared={full} detail />
         <button className={s.iconButton} aria-label="编辑设备名称" onClick={() => { setAlias(device.name); edit(true); }}><Pencil size={17} /></button></div>
       <div className={s.detailReadout + (full ? ' ' + look.detailReadout : '')}><div className={s.batteryPanel} data-tone={tone(device, state)}>
@@ -461,7 +463,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <dl className={s.detailsFacts}>
           <div><ShieldCheck size={21} /><div><dt>读取状态</dt><dd>{device.reason}</dd></div></div>
           <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? device.reading.source === 'hid' ? '设备 HID' : 'Windows 电量属性' : '—'}</dd></div></div>
-          <div><Zap size={21} /><div><dt>充电状态</dt><dd>{device.reading ? powerLabels[device.reading.power] : '—'}</dd></div></div>
+          <div><Zap size={21} /><div><dt>{device.status === 'current' ? '充电状态' : '上次充电状态'}</dt><dd>{device.reading ? powerLabels[device.reading.power] : '—'}</dd></div></div>
           <div><Clock size={21} /><div><dt>上次读数</dt><dd>{dateLabel(device.lastRead)}</dd></div></div>
         </dl>
 
@@ -470,23 +472,8 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
             <Collapsible.Trigger className={s.primary}>调整提醒 <ChevronDown size={15} aria-hidden="true" /></Collapsible.Trigger>
           </div> : <h3 className={s.detailSection}>提醒设置</h3>}
           <Collapsible.Content className={s.reminderContent}>
-          <SettingRow title="设备低电量阈值" copy={rules?.low === undefined
-            ? '跟随全局 ' + state.settings.low + '% · 紧急线 ' + state.settings.critical + '%'
-            : rules.low <= state.settings.critical
-              ? '自定义 ' + rules.low + '% · 达到 ' + state.settings.critical + '% 时直接进入紧急提醒'
-              : '自定义 ' + rules.low + '% · 紧急线 ' + state.settings.critical + '%'}>
-            <form className={s.thresholdForm} onSubmit={event => {
-              event.preventDefault();
-              void saveLimit(Number(limit));
-            }}>
-              <input className={s.number} type="number" autoComplete="off" name="device-threshold"
-                aria-label="设备低电量阈值" value={limit} min={1} max={95} step={1} required
-                onChange={event => setLimit(event.target.value)} />
-              <button className={s.button} type="submit" disabled={savingLimit || (rules?.low !== undefined && Number(limit) === savedLimit)}>应用</button>
-              {rules?.low !== undefined && <button className={s.textButton} type="button" disabled={savingLimit}
-                onClick={() => { void saveLimit(undefined); }}>恢复全局阈值</button>}
-            </form>
-          </SettingRow>
+          <DeviceThreshold deviceId={device.id} saved={rules?.low} global={state.settings.low} critical={state.settings.critical}
+            save={value => run({ type: 'deviceSettings', id: device.id, patch: { low: value } })} />
           <SettingRow title="静音提醒" copy="暂停此设备的提醒"><SwitchControl label="静音此设备" checked={!!rules?.muted}
             onChange={value => send({ type: 'deviceSettings', id: device.id, patch: { muted: value } })} /></SettingRow>
           </Collapsible.Content>

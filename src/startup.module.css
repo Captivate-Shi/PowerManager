@@ -1,0 +1,40 @@
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: radial-gradient(ellipse at 50% 57%, #242a36, #171b22 62%, #15181e);
+}
+.brand {
+  min-height: max(52px, env(titlebar-area-height, 48px));
+  display: flex;
+  align-items: center;
+  padding-inline: clamp(12px, 2.7vw, 44px);
+  border-bottom: 1px solid var(--line);
+  app-region: drag;
+}
+.waiting {
+  display: grid;
+  align-self: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+}
+.waiting i {
+  width: 64px;
+  height: 2px;
+  border-radius: 5px;
+  background: #8699b82a;
+  overflow: hidden;
+}
+.waiting i::before {
+  content: "";
+  display: block;
+  width: 36%;
+  height: 100%;
+  background: #bccae0aa;
+  animation: waiting 1.35s ease-in-out infinite;
+}
+@keyframes waiting { from { transform: translateX(-100%); } to { transform: translateX(280%); } }
+@media (prefers-reduced-motion: reduce) { .waiting i::before { animation: none; } }

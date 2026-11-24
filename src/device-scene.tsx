@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Art, readingLabel, studioPath, tone } from './ui';
-import { midpoint, type Device, type Snapshot } from './model';
+import { type Device, type Snapshot } from './model';
 import view from './scene.module.css';
 
 type Phase = 'initial' | 'refreshing' | 'ready';
@@ -24,14 +24,14 @@ export function SceneBattery({ device, state, phase }: { device?: Device; state:
   return <div className={view.meter} data-phase={phase} data-tone={color}>
     {!initial && <strong>{readingLabel(reading ?? null)}</strong>}
     {initial ? <div role="progressbar" className={view.progress} aria-label="正在读取电量"><i aria-hidden="true" /></div> :
-      <div role={reading ? "meter" : undefined} className={view.track} aria-hidden={!reading || undefined} aria-label={reading ? "电量" : undefined}
+      <div role={reading ? "meter" : undefined} className={view.track} data-scale={hasRange ? 'interval' : 'exact'} aria-hidden={!reading || undefined} aria-label={reading ? device?.status === 'current' ? "电量" : "上次电量" : undefined}
         aria-valuemin={reading ? 0 : undefined} aria-valuemax={reading ? 100 : undefined}
-        aria-valuenow={reading ? midpoint(reading) : undefined} aria-valuetext={reading ? readingLabel(reading) : undefined}>
-        {reading && (hasRange ? <>
-          <i className={view.interval} style={{ left: reading.low + '%', width: (reading.high - reading.low) + '%' }} />
-          <i className={view.bound} style={{ left: reading.low + '%' }} />
-          <i className={view.bound} style={{ left: reading.high + '%' }} />
-        </> : <i className={view.exact} style={{ width: reading.low + '%' }} />)}
+        aria-valuenow={reading?.low}
+        aria-description={hasRange ? '设备上报电量区间，数值下界是确认的最低电量。' : undefined} aria-valuetext={reading ? readingLabel(reading) : undefined}>
+        {reading && (hasRange ? <span className={view.rangedFill} aria-hidden="true">
+          <i className={view.confirmed} style={{ width: reading.low + '%' }} />
+          <i className={view.interval} data-battery-band="" style={{ left: reading.low + '%', width: (reading.high - reading.low) + '%' }} />
+        </span> : <i className={view.exact} aria-hidden="true" style={{ width: reading.low + '%' }} />)}
       </div>}
   </div>;
 }

@@ -236,7 +236,7 @@ function closeToast() {
 function showPreview(severity: Severity, device = snapshot.devices.find(item => item.art === 'dualsense') ?? snapshot.devices[0]) {
   return showToast({ severity, device: previewDevice(severity, device), preview: true, detailId: device?.id });
 }
-async function showToast(value: Toast, point?: { x: number; y: number } | null): Promise<boolean> {
+async function showToast(value: Toast, point?: { x: number; y: number } | null, canShow?: () => boolean): Promise<boolean> {
   if (windows.toast) closeToast();
   toast = value;
   const origin = BrowserWindow.getFocusedWindow() ?? windows.main;
@@ -258,6 +258,7 @@ async function showToast(value: Toast, point?: { x: number; y: number } | null):
     });
     window.once('ready-to-show', () => {
       clearTimeout(deadline);
+      if (canShow && !canShow()) { window.destroy(); resolve(false); return; }
       placeToast();
       window.setAlwaysOnTop(true, 'pop-up-menu');
       window.showInactive();
@@ -324,25 +325,32 @@ async function drainAlerts() {
   try {
     offered.sort((a, b) => Number(b.level === 'critical') - Number(a.level === 'critical'));
     const item = offered.shift()!;
+    const owner = monitor;
+    const revision = owner.thresholdAlertRevision(item.id);
     const currentDevice = () => snapshot.devices.find(row => row.id === item.id);
-    if (!currentDevice() || item.until < Date.now()) return;
-    const scene = await monitor.scene();
+    const valid = () => {
+      const current = currentDevice();
+      return monitor === owner && snapshot.collector === 'ready' && !locked && !suspended && !stopped && item.until >= Date.now() &&
+        owner.thresholdAlertRevision(item.id) === revision && !!current && owner.eligible(current) === item.level;
+    };
+    if (!valid()) return;
+    const scene = await owner.scene();
     const device = currentDevice();
-    if (locked || suspended || stopped || !device || monitor.eligible(device) !== item.level || scene.mode === 'quiet') return;
+    if (!device || !valid() || scene.mode === 'quiet') return;
     if (item.level === 'low' && offered.some(entry => entry.level === 'critical' && entry.until > Date.now())) {
       if (!offered.some(entry => entry.id === item.id)) offered.push(item);
       return;
     }
     let delivered = false;
     if (scene.mode === 'fullscreen') {
-      if (snapshot.settings.fullscreenSound && scene.allowed !== false) delivered = await monitor.tone();
+      if (snapshot.settings.fullscreenSound && scene.allowed !== false) delivered = await owner.tone();
     } else if (snapshot.settings.soundOnly && scene.allowed !== false) {
-      delivered = await monitor.tone();
+      delivered = await owner.tone();
     } else if (snapshot.settings.desktopToasts && (scene.allowed === true || (scene.allowed === null && scene.shellAccepts))) {
       if (windows.toast) return;
-      delivered = await showToast({ device, severity: item.level, preview: false, detailId: device.id }, scene.point);
+      delivered = await showToast({ device, severity: item.level, preview: false, detailId: device.id }, scene.point, valid);
     }
-    if (!delivered && scene.mode === 'desktop' && !snapshot.settings.soundOnly && scene.allowed !== false) {
+    if (!delivered && valid() && scene.mode === 'desktop' && !snapshot.settings.soundOnly && scene.allowed !== false) {
       balloonDeviceId = device.id;
       tray.displayBalloon({
         title: item.level === 'critical' ? '外设电量告急' : '外设电量较低',
@@ -356,8 +364,8 @@ async function drainAlerts() {
       const time = Date.now();
       snapshot.alerts[item.id] = { ...state, lowAt: time, lastNoticeAt: time,
         criticalAt: item.level === 'critical' ? time : state.criticalAt };
-      monitor.log(device.name + ' ' + item.level + ' 提醒已提交');
-      monitor.persist();
+      owner.log(device.name + ' ' + item.level + ' 提醒已提交');
+      owner.persist();
       broadcast();
     }
   } catch (error) {
@@ -441,7 +449,7 @@ function saveDeviceSettings(id: string, patch: unknown) {
         break;
       case 'low':
         if (value === null || value === undefined) { delete next.low; break; }
-        if (!ranged(value, 1, 95)) throw new Error('设备阈值需在 1%–95% 之间');
+        if (!ranged(value, 1, 50)) throw new Error('设备阈值需在 1%–50% 之间');
         next.low = value;
         break;
       case 'muted':
@@ -451,10 +459,11 @@ function saveDeviceSettings(id: string, patch: unknown) {
       default: throw new Error('未知设备设置');
     }
   }
-  snapshot.deviceSettings[id] = next;
+  if (monitor && !monitor.saveDeviceSettings(id, next)) throw new Error('无法保存设备设置，请重试');
   if (next.muted && toast?.device.id === id && !toast.preview) closeToast();
-  if (monitor) { monitor.persist(); monitor.publish(); }
+  if (monitor) monitor.publish();
   else {
+    snapshot.deviceSettings[id] = next;
     const device = snapshot.devices.find(item => item.id === id)!;
     device.name = next.alias || demoSnapshot().devices.find(item => item.id === id)?.name || device.name;
     broadcast();

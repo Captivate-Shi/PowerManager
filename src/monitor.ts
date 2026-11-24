@@ -9,6 +9,24 @@ import { canProbeBluetooth, classify, defaults, isMuteDuration, type AlertState,
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 
 const executeFile = promisify(execFile);
+const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
+
+// A local reading is only a last-known value. Never restore a live status from disk.
+function cachedDevice(value: unknown): Device | null {
+  if (!value || typeof value !== 'object') return null;
+  const { id, name, connection, art, watched, reading, lastRead } = value as Partial<Device>;
+  if (typeof id !== 'string' || !id || typeof name !== 'string' || !name.trim() ||
+      typeof connection !== 'string' || typeof watched !== 'boolean') return null;
+  const safeArt = art && ['mouse', 'keyboard', 'dualsense', 'xbox', 'controller', 'headset', 'earbuds', 'stylus', 'unknown'].includes(art)
+    ? art : classify(name);
+  const hasReading = reading && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0 &&
+    Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
+    reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
+    ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
+    ['hid', 'windows'].includes(reading.source);
+  return { id, name, connection, art: safeArt, watched, status: 'stale', reason: '等待新读数',
+    reading: hasReading ? reading : null, lastRead: hasReading ? lastRead : null };
+}
 
 type StateFile = {
   version: 1; settings: Settings; deviceSettings: Record<string, DeviceSettings>; alerts: Record<string, AlertState>;
@@ -32,6 +50,9 @@ export class Monitor {
   private timer?: NodeJS.Timeout;
   private polling?: Promise<void>;
   private forceNext = false;
+  private pollSequence = 0;
+  private thresholdEdits = new Map<string, number>();
+  private thresholdAlertRevisions = new Map<string, number>();
   private closed = false;
   private suspended = false;
   private readyOnce = false;
@@ -52,8 +73,12 @@ export class Monitor {
         initial = saved;
       } catch {
         const backup = join(directory, 'monitor-corrupt-' + Date.now() + '.json');
-        renameSync(this.file, backup);
-        loadError = '本地存档无法读取，已备份并恢复默认设置。';
+        try {
+          renameSync(this.file, backup);
+          loadError = '本地存档无法读取，已备份并恢复默认设置。';
+        } catch {
+          loadError = '本地存档无法读取或备份，暂用默认设置。';
+        }
       }
     }
     // Retain the supported settings and drop fields from older versions.
@@ -66,8 +91,9 @@ export class Monitor {
     initial.alerts = Object.assign(Object.create(null), initial.alerts);
     initial.history = Object.assign(Object.create(null), initial.history);
     this.data = initial;
-    for (const device of initial.devices) {
-      this.rows.set(device.id, { device: { ...device, status: 'stale', reason: '等待新读数' }, due: 0, failures: 0 });
+    for (const cached of initial.devices) {
+      const device = cachedDevice(cached);
+      if (device) this.rows.set(device.id, { device, due: 0, failures: 0 });
     }
     this.state = { devices: [], settings: initial.settings, deviceSettings: initial.deviceSettings, collector: 'starting',
       refreshing: false, mutedUntil: 0, alerts: initial.alerts, demo: false, error: loadError };
@@ -76,7 +102,7 @@ export class Monitor {
       if (this.closed) return;
       this.totals.childExits++;
       this.state.collector = occupied ? 'occupied' : 'retrying';
-      this.state.error = error ? '采集程序启动失败，详情见诊断日志。' : undefined;
+      this.state.error = error ? collectorStartupError : this.state.error === collectorStartupError ? undefined : this.state.error;
       if (error) this.log(error);
       if (this.readyOnce) this.markStale();
       this.publish();
@@ -268,6 +294,7 @@ export class Monitor {
     this.timer = setTimeout(() => { void this.poll(full); }, delay);
   }
   private async collect(force: boolean) {
+    const sequence = ++this.pollSequence;
     const now = Date.now();
     const due = Object.fromEntries([...this.rows].map(([id, row]) => [id, now >= row.due]));
     try {
@@ -278,6 +305,7 @@ export class Monitor {
       const becameReady = this.state.collector !== 'ready';
       this.readyOnce = true;
       this.state.collector = 'ready';
+      if (this.state.error === collectorStartupError) this.state.error = undefined;
       let changed = becameReady;
       const sampledAt = Date.now();
       const seen = new Set<string>();
@@ -285,7 +313,7 @@ export class Monitor {
       for (const observation of results) {
         if (!observation.automatic && observation.art === 'unknown' && !watched.has(observation.id)) continue;
         seen.add(observation.id);
-        changed = this.accept(observation, sampledAt, watched.has(observation.id)) || changed;
+        changed = this.accept(observation, sampledAt, watched.has(observation.id), !force ? sequence : undefined) || changed;
       }
       for (const [id, row] of this.rows) {
         if (!seen.has(id) && row.device.status !== 'offline') {
@@ -307,7 +335,7 @@ export class Monitor {
     }
   }
 
-  private accept(observation: Observation, now: number, watched: boolean) {
+  private accept(observation: Observation, now: number, watched: boolean, regularPoll?: number) {
     const { id, name, connection, art, sample, voltage } = observation;
     let changed = false;
     for (const alias of new Set(observation.aliases)) changed = this.merge(alias, id) || changed;
@@ -324,6 +352,9 @@ export class Monitor {
     }
     if (sample && (sample.status !== 'offline' || row.device.status !== 'offline' || row.device.connection !== connection)) {
       row.device.connection = connection;
+      const editedAt = this.thresholdEdits.get(id);
+      if (editedAt !== undefined && regularPoll !== undefined && regularPoll > editedAt &&
+          sample.status === 'current' && sample.reading) this.thresholdEdits.delete(id);
       this.setSample(row, sample, now);
       changed = true;
     }
@@ -339,6 +370,13 @@ export class Monitor {
     const old = this.rows.get(from);
     if (old && !this.rows.has(to)) this.rows.set(to, { ...old, device: { ...old.device, id: to } });
     this.rows.delete(from);
+    const thresholdEdit = this.thresholdEdits.get(from);
+    if (thresholdEdit !== undefined) {
+      this.thresholdEdits.set(to, Math.max(thresholdEdit, this.thresholdEdits.get(to) ?? -1));
+      this.thresholdEdits.delete(from);
+      this.thresholdAlertRevisions.set(to, this.thresholdAlertRevision(to) + 1);
+    }
+    this.thresholdAlertRevisions.delete(from);
     if (this.data.history[from]) {
       const points = [...(this.data.history[to] ?? []), ...this.data.history[from]];
       this.data.history[to] = [...new Map(points.map(point => [point.time, point])).values()].sort((a, b) => a.time - b.time);
@@ -363,6 +401,9 @@ export class Monitor {
     return true;
   }
   private setSample(row: Row, sample: Sample, time: number) {
+    if (sample.status === 'current' && !sample.reading) {
+      sample = { status: 'unavailable', reason: '未取得有效电量读数', reading: null };
+    }
     this.dirty = true;
     const device = row.device;
     row.failures = sample.reading || sample.status === 'basic_bluetooth' ? 0 : row.failures + 1;
@@ -379,6 +420,7 @@ export class Monitor {
     row.due = time + delayFor(device, this.state.settings, rules, row.failures);
     this.data.history[device.id] = recordHistory(this.data.history[device.id] ?? [],
       { time, reading: sample.status === 'current' ? sample.reading : null });
+    if (this.thresholdEdits.has(device.id)) return;
     const old = this.state.alerts[device.id] ?? {};
     const next = observeRecovery(device, this.state.settings, rules, old);
     if ((old.lowAt || old.criticalAt || old.ignored || old.snoozeUntil) && next.recovery === 2) {
@@ -394,7 +436,27 @@ export class Monitor {
       }
     }
   }
+  saveDeviceSettings(id: string, next: DeviceSettings): boolean {
+    const previous = this.state.deviceSettings[id];
+    const previousAlert = this.state.alerts[id];
+    const thresholdChanged = previous?.low !== next.low;
+    this.state.deviceSettings[id] = next;
+    if (thresholdChanged && previousAlert?.recovery) this.state.alerts[id] = { ...previousAlert, recovery: 0 };
+    if (!this.persist()) {
+      if (previous) this.state.deviceSettings[id] = previous;
+      else delete this.state.deviceSettings[id];
+      if (previousAlert) this.state.alerts[id] = previousAlert;
+      return false;
+    }
+    if (thresholdChanged) {
+      this.thresholdEdits.set(id, this.pollSequence);
+      this.thresholdAlertRevisions.set(id, this.thresholdAlertRevision(id) + 1);
+    }
+    return true;
+  }
+  thresholdAlertRevision(id: string) { return this.thresholdAlertRevisions.get(id) ?? 0; }
   eligible(device: Device): Severity | undefined {
+    if (this.thresholdEdits.has(device.id)) return;
     return eligible(device, this.state.settings, this.state.deviceSettings[device.id],
       this.state.alerts[device.id] ?? {}, this.state.mutedUntil, Date.now());
   }
