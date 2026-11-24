@@ -205,7 +205,7 @@
 }
 
 /* A-list single line at desk widths; metadata doesn't participate in row layout. */
-@media (min-width: 1120px) {
+@media (min-width: 1210px) {
   .modeDesk[data-mode] .sharedInfo > div:first-child b { font-size: 14px; font-weight: 550; }
   .modeDesk[data-mode] .sharedInfo > strong { font-weight: 560; }
   .modeDesk[data-mode="list"]:not([data-overview-rail-motion]) .sharedInfo > div:first-child {
@@ -224,7 +224,7 @@
   .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra > span { gap: 6px; }
   .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra svg { width: 13px; height: 13px; }
 }
-@media (min-width: 1120px) and (max-width: 1320px) {
+@media (min-width: 1210px) and (max-width: 1320px) {
   .modeDesk[data-mode="list"]:not([data-overview-rail-motion]) .sharedInfo > div:first-child {
     max-width: min(172px, max(60px, calc(100% - 288px)));
   }
