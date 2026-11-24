@@ -32,7 +32,10 @@ const { installMock } = require('./studio-review-mock.cjs');
     await page.mouse.up();
     await expect.poll(commands).toEqual([{ type: 'deviceSettings', id: 'dual', patch: { low: choice } }]);
     await expect(editor.getByText('已保存 · 下次巡检生效')).toBeVisible();
-    await page.mouse.move(box.x + box.width * .25, box.y + box.height / 2);
+    // Saving switches from the global-provenance line to device-specific state and can move the input.
+    await slider.scrollIntoViewIfNeeded();
+    const savedBox = await slider.boundingBox();
+    await page.mouse.move(savedBox.x + savedBox.width * .25, savedBox.y + savedBox.height / 2);
     await page.mouse.down();
     await expect(editor.getByText('松开后保存')).toBeVisible();
     await slider.dispatchEvent('pointercancel', { pointerId: 1 });

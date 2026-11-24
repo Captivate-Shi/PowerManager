@@ -142,7 +142,7 @@ async function main() {
 
     await expect(phase('initial')).toBeVisible();
     await expect(phase('initial').getByRole('heading',{name:'正在识别设备'})).toBeVisible();
-    await expect(phase('initial').getByRole('status')).toHaveText('正在读取设备…');
+    await expect(phase('initial').getByRole('status')).toHaveText('正在识别设备');
     await expect(rail).toHaveCount(0);
     await expect(meter).toHaveCount(0);
     await expect(rail.getByRole('button',{name:'DualSense',exact:true})).toHaveCount(0);
@@ -292,7 +292,7 @@ async function main() {
       await expect(chart.locator('path[data-trace=range]:not([d=""])')).toHaveCount(1);
       await delay(page,1200);
       const picker = page.getByRole('group',{name:'选择对比设备'});
-      await button(picker,'设备').click();
+      await button(picker,'对比设备').click();
       await page.getByRole('menuitemcheckbox',{name:'机械键盘',exact:true}).click();
       await expect(chart.locator('path[data-trace=exact]:not([d=""])')).toHaveCount(2);
       await delay(page,930);

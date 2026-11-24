@@ -13,6 +13,8 @@
 AppId={#ProductId}
 AppName={#Product}
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}
+VersionInfoProductTextVersion={#AppVersion}
 AppPublisher=Captivate-Shi
 DefaultDirName={localappdata}\Programs\PowerManager
 DisableDirPage=auto
@@ -95,13 +97,24 @@ begin
   Result := (Code = 0) or (Code = 10) or (Code = 11);
 end;
 
+function IsVersionReset(OldVersion, NewVersion: Int64): Boolean;
+var
+  LegacyVersion, ResetVersion: Int64;
+begin
+  Result := StrToVersion('1.6.1', LegacyVersion) and StrToVersion('0.0.1', ResetVersion) and
+    (ComparePackedVersion(OldVersion, LegacyVersion) = 0) and
+    (ComparePackedVersion(NewVersion, ResetVersion) = 0);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  InstalledPath, InstalledExe: String;
+  InstalledPath, InstalledExe, RegisteredVersion: String;
   OldVersion, NewVersion: Int64;
+  RegisteredInstall: Boolean;
 begin
   Result := '';
-  if RegQueryStringValue(HKCU, UninstallKey, 'InstallLocation', InstalledPath) and
+  RegisteredInstall := RegQueryStringValue(HKCU, UninstallKey, 'InstallLocation', InstalledPath);
+  if RegisteredInstall and
     (CompareText(RemoveBackslashUnlessRoot(InstalledPath), RemoveBackslashUnlessRoot(ExpandConstant('{app}'))) <> 0) then
   begin
     Result := 'Install the update in the existing PowerManager directory: ' + InstalledPath;
@@ -112,8 +125,26 @@ begin
   if GetPackedVersion(InstalledExe, OldVersion) and StrToVersion('{#AppVersion}', NewVersion) and
     (ComparePackedVersion(OldVersion, NewVersion) > 0) then
   begin
-    Result := 'A newer PowerManager version is already installed.';
-    Exit;
+    if (not RegisteredInstall) or (not IsVersionReset(OldVersion, NewVersion)) or
+      (not RegQueryStringValue(HKCU, UninstallKey, 'DisplayVersion', RegisteredVersion)) or
+      (CompareText(Trim(RegisteredVersion), '1.6.1') <> 0) then
+    begin
+      Result := 'A newer PowerManager version is already installed.';
+      Exit;
+    end;
+    if WizardSilent then
+    begin
+      Result := 'Switching from PowerManager 1.6.1 to the 0.0.1 internal test build requires confirmation. Run Setup interactively.';
+      Exit;
+    end;
+    if SuppressibleMsgBox(
+      'Replace PowerManager 1.6.1 with the 0.0.1 internal test build in the same folder? Your settings, battery history and diagnostic logs will be kept.',
+      mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) <> IDYES then
+    begin
+      Result := 'The installed copy of PowerManager was not changed.';
+      Exit;
+    end;
+    Log('Confirmed PowerManager version reset: 1.6.1 to 0.0.1.');
   end;
   if not ExistingInstall then
     Exit;

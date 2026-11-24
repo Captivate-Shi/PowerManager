@@ -378,7 +378,7 @@ async function walkthrough(page,mark) {
   await expect(graph.locator('path[data-trace=exact]:not([d=""])')).toHaveCount(1);
   const picker=history.getByRole('group',{name:'选择对比设备'});
   await wait(page,700);
-  await btn(picker,'设备').click();
+  await btn(picker,'对比设备').click();
   await page.getByRole('menuitemcheckbox',{name:'机械键盘',exact:true}).click();
   await expect(graph.locator('path[data-trace=exact]:not([d=""])')).toHaveCount(2);
   await wait(page,950);
@@ -415,7 +415,7 @@ async function verifyStartup(browser) {
   const initial=cold.locator('[data-load-state=initial]');
   await expect(initial).toBeAttached();
   await expect(initial.getByRole('status')).toBeVisible();
-  await expect(initial.getByRole('status')).toHaveText('正在读取设备…');
+  await expect(initial.getByRole('status')).toHaveText('正在识别设备');
   await expect(rail(cold)).toHaveCount(0);
   await expect(hero(cold)).toHaveCount(0);
   await expect(artwork(cold)).toHaveCount(0);

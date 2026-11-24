@@ -68,7 +68,7 @@ const { performance } = require('node:perf_hooks');
       await page.goto((options.baseline || url) + (options.tray ? '?surface=tray' : ''));
       if (options.motion) {
         const initial = page.locator('[data-load-state="initial"]');
-        await expect(initial.getByRole('status')).toHaveText('正在读取设备…');
+        await expect(initial.getByRole('status')).toHaveText('正在识别设备');
         for (const name of ['切换设备', '主设备']) await expect(initial.getByRole('region', {name})).toHaveCount(0);
         await expect(initial.getByRole('progressbar')).toHaveCount(0);
         if (proof) await page.screenshot({ path: proof + '/01-static.png' });
@@ -100,7 +100,8 @@ const { performance } = require('node:perf_hooks');
         await expect(stage.getByRole('status')).toBeVisible();
         await page.evaluate(() => window.publish());
       } else if (mode === 'warm') {
-        await expect(page.getByText(options.tray ? '显示上次记录' : '工作鼠标', {exact: true}).first()).toBeVisible();
+        if (options.tray) await expect(page.getByRole('status')).toContainText('显示上次记录');
+        else await expect(page.getByText('工作鼠标', { exact: true }).first()).toBeVisible();
         await page.waitForTimeout(350);
         if (!options.tray) await page.evaluate(() => window.publish());
       }

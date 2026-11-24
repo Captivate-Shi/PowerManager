@@ -81,7 +81,7 @@ async function run() {
     });
     await page.addInitScript(mock);
     await page.goto(pathToFileURL(join(__dirname, '../dist/ui/index.html')).href);
-    await expect(page.getByText('正在读取设备…')).toBeVisible();
+    await expect(page.getByText('正在识别设备')).toBeVisible();
     const assets = await page.locator('[data-device-art]').evaluateAll(async nodes => {
       await Promise.all(nodes.map(node => node.decode().catch(() => {})));
       return nodes.every(node => node.complete && node.naturalWidth > 0);
@@ -123,7 +123,7 @@ async function run() {
     await screenshot(page, '08-记录-充电悬停');
     await page.waitForTimeout(600);
     const picker = page.getByRole('group', { name: '选择对比设备' });
-    await picker.getByRole('button', { name: '设备', exact: true }).click();
+    await picker.getByRole('button', { name: '对比设备', exact: true }).click();
     await screenshot(page, '09-记录-设备菜单');
     await page.getByRole('menuitemcheckbox', { name: '机械键盘', exact: true }).click();
     await expect(graph.locator('[data-series="2"]')).toHaveCount(1);

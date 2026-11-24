@@ -55,7 +55,7 @@ async function main() {
     const resolve = (id, success = true, data, index) => page.evaluate(
       ({ id, success, data, index }) => window.testHistory.resolve(id, success, data, index), { id, success, data, index });
     const picker = page.getByRole('group', { name: '选择对比设备' });
-    const openPicker = () => picker.getByRole('button', { name: '设备', exact: true }).click();
+    const openPicker = () => picker.getByRole('button', { name: '对比设备', exact: true }).click();
     const option = name => page.getByRole('menuitemcheckbox', { name, exact: true });
     const add = async name => { await openPicker(); await option(name).click(); };
     await page.goto(pathToFileURL(join(__dirname, '../dist/ui/index.html')).href);
@@ -81,7 +81,7 @@ async function main() {
     await graph.focus();
     await graph.press('End');
     await expect(graph.getByText('53–61%', { exact: true })).toBeVisible();
-    await picker.getByRole('button', { name: '设备', exact: true }).focus();
+    await picker.getByRole('button', { name: '对比设备', exact: true }).focus();
     await expect(graph.getByText('53–61%', { exact: true })).toHaveCount(0);
     await add('Beta');
     await expect(graph).toBeVisible();

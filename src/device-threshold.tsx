@@ -1,3 +1,4 @@
+import { HelpTip } from './help-tip';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CommandResult } from './model';
 import styles from './device-threshold.module.css';
@@ -100,12 +101,14 @@ export function DeviceThreshold({ deviceId, saved, global, critical, save }: {
   }, [deviceId]);
 
   return <section className={styles.editor} aria-labelledby={id} data-device-threshold>
-    <header><h4 id={id}>设备低电量阈值</h4><output>{actual}%</output></header>
-    <p id={id + '-hint'}>{isCustom ? '设备自定义' : '跟随全局'} · 紧急线 {critical}% 优先
-      {actual > 50 && ' · 旧值或全局值超出滑块范围，调整后使用 1%–50%'}</p>
+    <header><div className={styles.title}><h4 id={id}>设备低电量阈值</h4>
+      <HelpTip label="设备低电量阈值" text={'紧急阈值 ' + critical + '% 优先。调整后自动保存，不立即发送提醒。' +
+        (actual > 50 ? ' 当前值超出滑块范围；调节后取 1%–50%。' : '')} />
+    </div><output>{actual}%</output></header>
+    {!isCustom && <p id={id + '-hint'}>跟随全局</p>}
     <DetentSlider min={1} max={50} value={sliderValue} detents={presets}
       detentLabel="快速选择低电量阈值" selectedDetent={isCustom ? actual : undefined}
-      name="device-threshold" aria-label="设备低电量阈值" aria-describedby={id + '-hint'}
+      name="device-threshold" aria-label="设备低电量阈值" aria-describedby={!isCustom ? id + '-hint' : undefined}
       onPointerDown={event => { if (event.button === 0) { pointer.current = event.pointerId; window.clearTimeout(timer.current); } }}
       onValue={value => {
         if (pointer.current === null) update(value, false);
@@ -113,7 +116,7 @@ export function DeviceThreshold({ deviceId, saved, global, critical, save }: {
       }}
       onDetent={value => update(value, true)}
       onBlur={() => { if (pointer.current === null) flush(); }} />
-    <footer><span role={error ? 'alert' : 'status'}>{dragValue !== undefined ? '松开后保存' : status || '调整后自动保存，不立即发送提醒'}</span>
+    <footer><span role={error ? 'alert' : 'status'}>{dragValue !== undefined ? '松开后保存' : status}</span>
       {error && draft && <button type="button" onClick={() => update(draft.value, true)}>重试</button>}
       {(isCustom || saved !== undefined) && <button type="button" onClick={() => update(undefined, true)}>恢复全局阈值</button>}
     </footer>

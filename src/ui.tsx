@@ -3,6 +3,7 @@ import * as Select from '@radix-ui/react-select';
 import * as Switch from '@radix-ui/react-switch';
 import { Battery, BatteryCharging, BatteryLow, Bluetooth, Cable, Check, ChevronDown, ChevronUp, CircleHelp, Wifi, X } from 'lucide-react';
 import { lazy, Suspense, useRef, type ComponentProps, type ReactNode } from 'react';
+import { HelpTip } from './help-tip';
 import { ChartLoadingFrame } from './chart-loading';
 import { isConnected, midpoint, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
 import s from './panel.module.css';
@@ -109,8 +110,8 @@ export function SelectControl({ label, value, choices, onChange }: {
     </Select.Content></Select.Portal>
   </Select.Root>;
 }
-export function Modal({ title, description, onClose, children }: {
-  title: string; description: string; onClose: () => void; children: ReactNode;
+export function Modal({ title, description, hint, onClose, children }: {
+  title: string; description?: string; hint?: string; onClose: () => void; children: ReactNode;
 }) {
   const opener = useRef(document.activeElement);
   return <Dialog.Root open onOpenChange={value => { if (!value) onClose(); }}><Dialog.Portal>
@@ -121,20 +122,31 @@ export function Modal({ title, description, onClose, children }: {
         onClose();
       }
     }} />
-    <Dialog.Content className={s.modal} onCloseAutoFocus={event => {
+    <Dialog.Content className={s.modal} {...(!description ? { 'aria-describedby': undefined } : {})}
+      onOpenAutoFocus={event => {
+        if (!hint) return;
+        const content = event.currentTarget;
+        if (!(content instanceof HTMLElement)) return;
+        const focus = content.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled]):not([data-copy-tip]):not(.' + s.modalClose + ')') ??
+          content.querySelector<HTMLElement>('.' + s.modalClose);
+        if (focus) { event.preventDefault(); focus.focus(); }
+      }}
+      onCloseAutoFocus={event => {
       if (opener.current instanceof HTMLElement && opener.current.isConnected) {
         event.preventDefault();
         opener.current.focus({ preventScroll: true });
       }
     }}>
-      <Dialog.Title>{title}</Dialog.Title><Dialog.Description>{description}</Dialog.Description>
+      <div className={s.modalHeading}><Dialog.Title>{title}</Dialog.Title>{hint && <HelpTip label={title} text={hint} />}</div>
+      {description && <Dialog.Description>{description}</Dialog.Description>}
       <Dialog.Close asChild><button className={s.iconButton + ' ' + s.modalClose} aria-label="关闭对话框"><X size={20} /></button></Dialog.Close>
       {children}
     </Dialog.Content>
   </Dialog.Portal></Dialog.Root>;
 }
-export function SettingRow({ title, copy, children }: { title: string; copy?: string; children: ReactNode }) {
-  return <div className={s.settingRow}><div><b>{title}</b>{copy && <small>{copy}</small>}</div><div>{children}</div></div>;
+export function SettingRow({ title, hint, status, children }: { title: string; hint?: string; status?: string; children: ReactNode }) {
+  return <div className={s.settingRow}><div><div className={s.settingLabel}><b>{title}</b>
+    {hint && <HelpTip label={title} text={hint} />}</div>{status && <small>{status}</small>}</div><div>{children}</div></div>;
 }
 export const dateLabel = (value: number | null) => value ? new Intl.DateTimeFormat('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,

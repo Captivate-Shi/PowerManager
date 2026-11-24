@@ -231,7 +231,7 @@ async function compare(page,capture) {
   for(const [i,p] of sampled.entries())stable(initial,p,'render frame '+i);
   if(capture){await shot(page,'08-对比-数据显示完成'); await page.waitForTimeout(1750);}
   else {
-    await button(picker,'设备').click();
+    await button(picker,'对比设备').click();
     await page.getByRole('menuitemcheckbox',{name:'机械键盘',exact:true}).click();
     await pending('keyboard');
     await expect(updating).toBeVisible();

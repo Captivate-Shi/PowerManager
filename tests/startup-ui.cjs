@@ -38,7 +38,7 @@ async function main() {
     await page.evaluate(() => window.publish('none', 'starting'));
     await expect(phase('initial')).toBeVisible();
     await expect(phase('initial').getByRole('heading', { name: '正在识别设备' })).toBeVisible();
-    await expect(phase('initial').getByRole('status')).toHaveText('正在读取设备…');
+    await expect(phase('initial').getByRole('status')).toHaveText('正在识别设备');
     await expect(phase('initial').getByRole('progressbar')).toHaveCount(0);
     await expect(page.getByRole('region', { name: '切换设备' })).toHaveCount(0);
     await expect(page.getByRole('region', { name: '主设备' })).toHaveCount(0);
@@ -85,7 +85,7 @@ async function main() {
     await expect(page.getByRole('status')).toContainText('正在连接应用主进程');
     await page.evaluate(() => window.publish('cache', 'starting'));
     await expect(page.getByRole('status').filter({ hasText: '显示上次记录' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /工作鼠标.*上次电量 9%/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /工作鼠标.*上次电量\s*9%/ })).toBeVisible();
     await expect(page.getByText(/0 台在线/)).toHaveCount(0);
     await page.evaluate(() => window.publish('live', 'ready'));
     await expect(page.getByText(/1 台在线/)).toBeVisible();

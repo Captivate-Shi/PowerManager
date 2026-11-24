@@ -6,3 +6,5 @@
 .editor footer [role="alert"] { color: var(--red); }
 .editor footer button { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-height: 29px; padding: 3px 4px; color: var(--muted); font-size: 12px; }
 .editor footer button { padding-inline: 8px; }
+
+.title { display: inline-flex; align-items: center; gap: 4px; }

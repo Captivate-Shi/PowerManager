@@ -74,7 +74,7 @@ async function run() {
 
         await page.evaluate(() => window.scrollTo(0, 0));
         const before = await rects();
-        await controller.getByRole('button', { name: '设备', exact: true }).click();
+        await controller.getByRole('button', { name: '对比设备', exact: true }).click();
         await page.getByRole('menuitemcheckbox', { name: '机械键盘', exact: true }).click();
         await waiting('keyboard');
         await expect(section.getByText('正在更新，暂显示已有记录')).toBeVisible();

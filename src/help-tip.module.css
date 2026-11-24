@@ -1,0 +1,17 @@
+.wrap { display: inline-flex; vertical-align: middle; flex: 0 0 auto; line-height: 1; }
+.button {
+  display: inline-grid; place-items: center; width: 24px; height: 24px;
+  padding: 0; border: 0; border-radius: 5px;
+  background: transparent; color: var(--muted, #a8b1c1);
+}
+.button:hover, .button:focus-visible { color: var(--ink, #edf1f7); }
+.button:focus-visible { outline: 2px solid var(--blue, #a9c9ee); outline-offset: 1px; }
+.tip {
+  position: fixed; inset: auto; z-index: 1000; margin: 0;
+  width: max-content; max-width: min(260px, calc(100vw - 16px));
+  padding: 7px 10px; border: 1px solid #576277; border-radius: 7px;
+  color: #edf1f7; background: #272c38; box-shadow: 0 4px 14px #0005;
+  font: 12px/1.5 "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  white-space: normal;
+}
+.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

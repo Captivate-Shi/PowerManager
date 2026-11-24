@@ -1,7 +1,7 @@
 {
   "name": "powermanager-h5",
   "productName": "PowerManager H5",
-  "version": "1.6.1",
+  "version": "0.0.1",
   "private": true,
   "main": "dist/main.cjs",
   "engines": {

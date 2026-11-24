@@ -152,7 +152,7 @@ async function main() {
     const fullScreenshot = (name) => screenshot(page, name, true);
 
     await expect(loadState('initial')).toBeVisible();
-    await expect(loadState('initial').getByRole('status')).toHaveText('正在读取设备…');
+    await expect(loadState('initial').getByRole('status')).toHaveText('正在识别设备');
     await expect(hero).toHaveCount(0);
     await expect(rail).toHaveCount(0);
     await expect(stage).toHaveCount(0);

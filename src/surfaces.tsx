@@ -117,7 +117,7 @@ export function QuickPanel({ state }: { state: Snapshot }) {
       </>}
     </div>
     <footer className={tray.footer}>
-      <span><i aria-hidden="true" />{inventory === 'ready' ? (state.demo ? '示例数据' : '后台监测中') : '等待新读数'}</span>
+      <span>{inventory === 'ready' && <><i aria-hidden="true" />{state.demo ? '示例数据' : '后台监测中'}</>}</span>
       <button type="button" className={tray.primary} onClick={() => { void api.command({ type: 'open' }); }}>
         打开余电 <ExternalLink size={14} aria-hidden="true" />
       </button>
@@ -142,7 +142,7 @@ export function ToastPanel({ toast }: { toast: Toast }) {
       <span className={s.toastCopy}>
         <strong className={s.toastName} ref={name} onPointerEnter={revealName} onPointerLeave={() => setShowName(false)}>{device.name}</strong>
         <span className={preferences.toastReading}>{readingLabel(device.reading)}</span>
-        <small className={s.toastHint}>{severity === 'critical' ? '电量告急' : '低电量'} · 请及时充电{preview && ' · 测试提醒'}</small>
+        <small className={s.toastHint}>{severity === 'critical' ? '电量告急' : '低电量'}{preview && ' · 测试提醒'}</small>
       </span>
     </button>
     {detailId && <button className={s.toastDetail} onClick={() => { void api.command({ type: 'open', id: detailId }); }}>
