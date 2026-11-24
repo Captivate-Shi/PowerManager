@@ -1,7 +1,10 @@
-import { useEffect, useId, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { CommandResult } from './model';
 import s from './panel.module.css';
+import { DetentSlider } from './detent-slider';
+
+const zoomDetents = [{ value: 75 }, { value: 100, major: true }, { value: 125 }, { value: 150 }];
 
 export function ZoomControl({ name, value, apply }: {
   name: string; value: number; apply: (value: number) => Promise<CommandResult>;
@@ -31,10 +34,11 @@ export function ZoomControl({ name, value, apply }: {
   }}>
     <label htmlFor={id}>{name}</label><small>75%–150%</small>
     <div className={s.zoomControls}>
-      <input type="range" name="zoom-slider" aria-label={name + '缩放滑块'} min={75} max={150}
-        style={{ '--range-fill': ((sliderValue - 75) / 75) * 100 + '%' } as CSSProperties}
-        value={sliderValue} onChange={event => { setError(''); setDraft(event.target.value); }} />
-      <div className={s.zoomNumber}>
+      <DetentSlider inline name="zoom-slider" aria-label={name + '缩放滑块'} min={75} max={150} value={sliderValue}
+        detents={zoomDetents} detentLabel={name + '快捷缩放'} selectedDetent={sliderValue}
+        onValue={value => { setError(''); setDraft(String(value)); }}
+        onDetent={value => { setError(''); setDraft(String(value)); }} />
+      <div className={s.zoomNumber} data-zoom-number>
         <input id={id} name="zoom-percent" type="number" autoComplete="off" min={75} max={150}
           value={draft} aria-label={name + '缩放百分比'} aria-invalid={!!error} aria-describedby={error ? id + '-error' : undefined}
           onChange={event => { setError(''); setDraft(event.target.value); }} required /><span aria-hidden="true">%</span>

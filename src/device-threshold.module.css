@@ -4,10 +4,5 @@
 .editor output { color: var(--ink); font-size: 21px; font-weight: 550; line-height: 1; }
 .editor p, .editor footer { color: var(--muted); font-size: 12px; }
 .editor footer [role="alert"] { color: var(--red); }
-.editor input { appearance: none; width: 100%; margin: 5px 0; height: 20px; background: transparent; cursor: pointer; }
-.editor input::-webkit-slider-runnable-track { height: 5px; border-radius: 10px; background: linear-gradient(to right, var(--blue) var(--threshold-fill), var(--line) var(--threshold-fill)); }
-.editor input::-webkit-slider-thumb { appearance: none; width: 17px; height: 17px; border-radius: 50%; background: var(--ink); margin-top: -6px; box-shadow: 0 0 0 3px var(--panel); }
-.presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(39px, 1fr)); gap: 4px; }
-.presets button, .editor footer button { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-height: 29px; padding: 3px 4px; color: var(--muted); font-size: 12px; }
-.presets button[aria-pressed="true"] { color: var(--ink); border-color: var(--blue); background: var(--raised); }
+.editor footer button { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-height: 29px; padding: 3px 4px; color: var(--muted); font-size: 12px; }
 .editor footer button { padding-inline: 8px; }

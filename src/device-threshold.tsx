@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CommandResult } from './model';
 import styles from './device-threshold.module.css';
+import { DetentSlider } from './detent-slider';
 
-const presets = Array.from({ length: 10 }, (_, index) => (index + 1) * 5);
+const presets = Array.from({ length: 10 }, (_, index) => ({ value: (index + 1) * 5, major: index % 2 === 1 }));
 const inRange = (value: number) => Math.min(50, Math.max(1, value));
 type Threshold = number | undefined;
 type Save = (value: Threshold) => Promise<CommandResult>;
@@ -102,21 +103,16 @@ export function DeviceThreshold({ deviceId, saved, global, critical, save }: {
     <header><h4 id={id}>设备低电量阈值</h4><output>{actual}%</output></header>
     <p id={id + '-hint'}>{isCustom ? '设备自定义' : '跟随全局'} · 紧急线 {critical}% 优先
       {actual > 50 && ' · 旧值或全局值超出滑块范围，调整后使用 1%–50%'}</p>
-    <input type="range" min={1} max={50} step={1} value={sliderValue}
-      name="device-threshold" aria-label="设备低电量阈值" aria-valuetext={sliderValue + '%'}
-      aria-describedby={id + '-hint'}
-      style={{ '--threshold-fill': (sliderValue - 1) / 49 * 100 + '%' } as CSSProperties}
+    <DetentSlider min={1} max={50} value={sliderValue} detents={presets}
+      detentLabel="快速选择低电量阈值" selectedDetent={isCustom ? actual : undefined}
+      name="device-threshold" aria-label="设备低电量阈值" aria-describedby={id + '-hint'}
       onPointerDown={event => { if (event.button === 0) { pointer.current = event.pointerId; window.clearTimeout(timer.current); } }}
-      onChange={event => {
-        const value = Number(event.currentTarget.value);
+      onValue={value => {
         if (pointer.current === null) update(value, false);
         else { dragPending.current = value; setDragValue(value); }
       }}
+      onDetent={value => update(value, true)}
       onBlur={() => { if (pointer.current === null) flush(); }} />
-    <div className={styles.presets} role="group" aria-label="快速选择低电量阈值">
-      {presets.map(value => <button key={value} type="button" aria-pressed={actual === value && isCustom}
-        onClick={() => update(value, true)}>{value}%</button>)}
-    </div>
     <footer><span role={error ? 'alert' : 'status'}>{dragValue !== undefined ? '松开后保存' : status || '调整后自动保存，不立即发送提醒'}</span>
       {error && draft && <button type="button" onClick={() => update(draft.value, true)}>重试</button>}
       {(isCustom || saved !== undefined) && <button type="button" onClick={() => update(undefined, true)}>恢复全局阈值</button>}

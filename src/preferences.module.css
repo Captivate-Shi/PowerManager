@@ -66,8 +66,7 @@
 .appearance form > label { font-size: 18px; font-weight: 450; }
 .appearance form > small { display: none; }
 .appearance form > div { grid-column: 2; grid-row: 1; gap: 12px; }
-.appearance form > div > div { order: -1; border: 0; background: none; padding: 0; }
-.appearance form input[type="range"] { accent-color: #e8e5de; }
+.appearance form > div > [data-zoom-number] { order: -1; border: 0; background: none; padding: 0; }
 .appearance form > div > button[type="submit"] { padding: 4px 9px; font-size: 12px; }
 .settingsSection > div { min-height: 85px; border: 0; }
 .settingsSection b { font-size: clamp(17px, 1.5vw, 22px); font-weight: 450; }
