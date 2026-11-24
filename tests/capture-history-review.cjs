@@ -57,7 +57,7 @@ function mock() {
         state.refreshing = true; publish();
         await delay(2100);
         state.refreshing = false;
-        state.devices[1].reading = value(18);
+        state.devices[1].reading = value(20, 30);
         state.devices[1].lastRead = Date.now();
         publish();
       }
@@ -98,7 +98,7 @@ async function run() {
     await expect(hero.getByText('正在更新 · 保留上次读数')).toBeVisible();
     await expect(hero.getByText('10–20%')).toBeVisible();
     await screenshot(page, '02-总览-刷新保留读数');
-    await expect(hero.getByText('18%', { exact: true })).toBeVisible();
+    await expect(hero.getByText('20–30%', { exact: true })).toBeVisible();
     await screenshot(page, '03-总览-刷新完成');
     await page.waitForTimeout(450);
     await hero.getByRole('button', { name: '查看详情' }).click();
