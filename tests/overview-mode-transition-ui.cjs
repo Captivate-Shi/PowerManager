@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { installMock } = require('./studio-review-mock.cjs');
-const out = resolve(process.env.STUDIO_REVIEW_OUT || 'studio-stage-horizontal-review');
+const out = resolve(process.env.STUDIO_REVIEW_OUT || 'studio-wide-list-production-review');
 const url = pathToFileURL(resolve(process.env.STUDIO_REVIEW_DIST || join(__dirname,'../dist/ui/index.html'))).href;
 const desktop={width:1586,height:992}, medium={width:1100,height:800}, narrow={width:520,height:720};
 const btn=(s,n)=>s.getByRole('button',{name:n,exact:true});
@@ -26,7 +26,7 @@ async function annotatePointer(page) {
   });
 }
 async function record(page,task) {
-  const tmp=mkdtempSync(join(tmpdir(),'yudian-stage-horizontal-'));
+  const tmp=mkdtempSync(join(tmpdir(),'yudian-wide-list-production-'));
   const c=await page.context().newCDPSession(page);
   const series=[], chapters=[];
   c.on('Page.screencastFrame',({data,metadata,sessionId})=>{
@@ -45,7 +45,7 @@ async function record(page,task) {
     writeFileSync(join(tmp,'inputs.txt'),files);
     const meta=';FFMETADATA1\n'+chapters.map((x,i)=>`[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round(x.seconds*1000)}\nEND=${Math.round(1000*(chapters[i+1]?.seconds??end))}\ntitle=${x.name}`).join('\n')+'\n';
     writeFileSync(join(tmp,'chapters.txt'),meta);
-    const media='余电-展台与清单-行高固定实录.mp4';
+    const media='余电-加宽清单与Q弹转场-正式Mock实录.mp4';
     const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i',join(tmp,'inputs.txt'),
       '-f','ffmetadata','-i',join(tmp,'chapters.txt'),'-map','0:v:0','-map_metadata','1','-map_chapters','1',
       '-vf','fps=30','-c:v','libx264','-threads','2','-pix_fmt','yuv420p','-movflags','+faststart',join(out,media)],{encoding:'utf8'});
@@ -146,14 +146,16 @@ async function startTrace(page) {
       const range=document.createRange();
       const walker=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);
       const rects=[];
+      let width=0;
       while(walker.nextNode()){
         const item=walker.currentNode;
         if(!item.textContent.trim() || item.parentNode!==e)continue;
         range.selectNodeContents(item);
         rects.push(...range.getClientRects());
+        width+=range.getBoundingClientRect().width;
       }
       const positions=rects.map(r=>r.bottom);
-      return positions.length?{bottom:positions[0],lineCount:new Set(positions.map(x=>Math.round(x*16))).size}:null;
+      return positions.length?{bottom:positions[0],width,lineCount:new Set(positions.map(x=>Math.round(x*16))).size}:null;
     }
     function textOpacity(e) {
       if(!e)return null;
@@ -189,10 +191,20 @@ async function startTrace(page) {
           nameWrap:name?getComputedStyle(name).whiteSpace:null,pctWrap:pct?getComputedStyle(pct).whiteSpace:null};
       });
       const listStatus=elem('[aria-label="所选设备状态"]');
+      const veil=elem('[data-mode-bottom-veil]');
+      const veilCSS=veil?getComputedStyle(veil):null;
+      const rim=elem('[data-list-selected]');
+      const rimBase=rim?getComputedStyle(rim,'::after'):null;
+      const rimCSS=rimBase&&rimBase.content!=='none'?rimBase:null;
+      const rimMatrix=rimCSS?.transform&&rimCSS.transform!=='none'?new DOMMatrixReadOnly(rimCSS.transform):null;
+      const artLayer=elem('[data-list-art-layer]:not([data-exiting])');
       const extras=[...document.querySelectorAll('[data-mode-supplement], [data-mode-extra], [data-list-supplement]')];
       frames.push({t:time,kind:m?.dataset.mode,chosen:selected?.ariaLabel,rail:rect(motionRail),
         stage:descriptor(stage),list:descriptor(list),shared:descriptor(motionArt),running:!!running,
         layers:document.querySelectorAll('[data-mode-hero]').length,clip:rect(elem('[data-list-artwork]')),
+        veil:veilCSS?{alpha:textOpacity(veil),gradient:veilCSS.backgroundImage,pointer:veilCSS.pointerEvents}:null,
+        rim:rimCSS?{alpha:Number(rimCSS.opacity),x:rimMatrix?.m41??0,sx:rimMatrix?.a??1}:null,
+        railMotion:m?.dataset.overviewRailMotion,artFilter:artLayer?getComputedStyle(artLayer).filter:null,
         vertical:{header:vertical(header),modes:vertical(modes),headerBaseline:textLine(allButton),
           scroll:vertical(scroll),scrollTop:scroll?.scrollTop,windowScroll:scrollY,rows},
         supplemental:{status:textOpacity(listStatus),extra:extras.map(el=>({text:el.textContent,alpha:textOpacity(el)}))}});
@@ -298,13 +310,17 @@ function summarizeMotion(trace,subject,kind){
   const significant=overshoot.map(v=>v>1.5);
   const lobes=significant.filter((v,i)=>v&&!significant[i-1]).length;
   if(kind==='list'){
-    expect(Math.max(...overshoot),'one small width overshoot past settled list width').toBeGreaterThan(3);
-    expect(Math.max(...overshoot),'restrained elastic widening').toBeLessThan(40);
+    // A deliberate +27 desktop target; tight viewports scale the peak to
+    // available width. rAF sampling need not hit the exact keyframe.
+    expect(Math.max(...overshoot),'Q rebound stronger on the approved wide layout')
+      .toBeGreaterThan(end.rail.w>=700 ? 24 : 15);
+    expect(Math.max(...overshoot),'restrained elastic widening').toBeLessThan(70);
     expect(lobes,'one bounce; not an oscillation').toBe(1);
   }
   const vertical=summarizeVertical(trace);
   const supplemental=summarizeSupplemental(trace,kind);
-  return {subject:subject.name,destination:kind,sampledFrames:trace.length,movingFrames:moving.length,vertical,supplemental,
+  const emphasis=kind==='list'?summarizeVeil(trace):null;
+  return {subject:subject.name,destination:kind,sampledFrames:trace.length,movingFrames:moving.length,vertical,supplemental,emphasis,
     rail:{start:start.rail,end:end.rail,xDelta:railLeft,widthDelta:railWidth,widthOvershootPx:Math.max(...overshoot),overshootLobes:lobes},
     hero:{renderedCenterXDelta:heroDelta,sharedPathPx:diff,start:centerX(firstPhoto),end:centerX(lastPhoto),minPostHandoffOpacity:postHandoffMin}};
 }
@@ -313,7 +329,7 @@ function summarizeMotion(trace,subject,kind){
 function summarizeVertical(trace,{responsive=false}={}) {
   const src=trace[0];
   const firstById=new Map(src.vertical.rows.map(row=>[row.id,row]));
-  const drift={railTop:0,headerTop:0,headerHeight:0,headerBaseline:0,modesTop:0,viewportTop:0,viewportHeight:0,rows:0,rowHeights:0,thumbnail:0,name:0,percent:0,scrollTop:0,windowScroll:0};
+  const drift={railTop:0,headerTop:0,headerHeight:0,headerBaseline:0,modesTop:0,viewportTop:0,viewportHeight:0,rows:0,rowHeights:0,thumbnail:0,name:0,percent:0,nameGlyphWidth:0,percentGlyphWidth:0,scrollTop:0,windowScroll:0};
   const delta=(key,a,b)=>{
     expect(Number.isFinite(a)&&Number.isFinite(b),key+' measurable').toBe(true);
     drift[key]=Math.max(drift[key],Math.abs(a-b));
@@ -343,6 +359,8 @@ function summarizeVertical(trace,{responsive=false}={}) {
       delta('thumbnail',before.thumb?.y-origin,row.thumb?.y-now);
       delta('name',before.name?.bottom-origin,row.name?.bottom-now);
       delta('percent',before.pct?.bottom-origin,row.pct?.bottom-now);
+      delta('nameGlyphWidth',before.name?.width,row.name?.width);
+      delta('percentGlyphWidth',before.pct?.width,row.pct?.width);
       expect(row.nameWrap,'name has nowrap policy across widths').toBe('nowrap');
       expect(row.pctWrap,'percent has nowrap policy across widths').toBe('nowrap');
       expect(row.name?.lineCount,'name remains single line').toBe(1);
@@ -354,6 +372,36 @@ function summarizeVertical(trace,{responsive=false}={}) {
     if(!exceptions.has(key))expect(value,'maximum vertical drift: '+key).toBeLessThanOrEqual(.75);
   }
   return {rows:firstById.size,scrollOffset:src.vertical.scrollTop,maxDriftPx:drift,frames:trace.length};
+}
+
+
+function summarizeVeil(trace){
+  const entering=trace.filter(f=>f.kind==='list'&&f.veil);
+  const first=entering[0],settled=last(entering);
+  expect(entering.length).toBeGreaterThan(15);
+  expect(settled.veil.gradient).toMatch(/gradient/);
+  expect(settled.veil.pointer).toBe('none');
+  expect(settled.veil.alpha,'veil remains present at settled list').toBeGreaterThan(.2);
+  const target=settled.veil.alpha;
+  const veilStarts=entering.find(f=>f.veil.alpha>target*.03);
+  const veilHalf=entering.find(f=>f.veil.alpha>target*.45);
+  const infoStarts=entering.find(f=>f.supplemental.status>.08);
+  expect(veilStarts.t-first.t,'veil emerges near beginning of horizontal motion').toBeLessThan(114);
+  expect(veilHalf.t-first.t,'veil is apparent well before rail settles').toBeLessThan(270);
+  expect(infoStarts.t-veilStarts.t,'floor veil animation is not the later status fade').toBeGreaterThan(230);
+  const progress=entering.filter(f=>f.veil.alpha>target*.03&&f.veil.alpha<target*.97);
+  expect(progress.length,'at least five rendered intermediate fade states').toBeGreaterThanOrEqual(5);
+  const jump=Math.max(...entering.slice(1).map((f,i)=>Math.abs(f.veil.alpha-entering[i].veil.alpha)))/target;
+  expect(jump,'no late opacity pop').toBeLessThan(.46);
+  const rim=entering.filter(f=>f.rim?.alpha>.08);
+  expect(rim.length,'subtle selected-edge response has multiple actual render steps').toBeGreaterThan(3);
+  expect(Math.min(...rim.map(f=>f.rim.x)),'selected edge flings sideways').toBeLessThan(-8);
+  const dim=Number(settled.artFilter?.match(/brightness\(([\d.]+)\)/)?.[1]);
+  expect(dim,'left photo stays deliberately darker than previous .78 brightness').toBeLessThan(.72);
+  if(settled.rail.w>=690)expect(settled.rail.x-settled.clip.x-settled.clip.w,'desktop art leaves gap to clear text').toBeGreaterThan(15);
+  return {firstVisibleMs:veilStarts.t-first.t,halfMs:veilHalf.t-first.t,infoStartsMs:infoStarts.t-first.t,
+    opacitySteps:progress.length,largestStep:jump,rimFrames:rim.length,edgeLeftPx:Math.min(...rim.map(f=>f.rim.x)),
+    dimBrightness:dim,steadyVeilOpacity:target};
 }
 
 function summarizeSupplemental(trace,kind){
@@ -377,12 +425,12 @@ function summarizeSupplemental(trace,kind){
   expect(premature,'keep list-only copy quiet until horizontal arrival').toBeLessThanOrEqual(.35);
   const extraLast=last(input).supplemental.extra;
   const extraEarlyMax=Math.max(...lastMoving.flatMap(f=>f.supplemental.extra.map(e=>e.alpha)));
-  expect(extraLast.some(x=>/蓝牙/.test(x.text)&&x.alpha>.97),'collector-backed extra connection metadata appears').toBe(true);
+  expect(extraLast.some(x=>/20%/.test(x.text)&&x.alpha>.97),'collector-backed setting and read/power metadata appears').toBe(true);
   expect(extraEarlyMax,'connection metadata waits until the width arrives').toBeLessThanOrEqual(.35);
   const gradual=input.some(f=>f.supplemental.status>.08&&f.supplemental.status<.93);
   const gradualExtra=input.some(f=>f.supplemental.extra.some(e=>e.alpha>.08&&e.alpha<.93));
   expect(gradual&&gradualExtra,'show actual opacity interpolation in status and metadata').toBe(true);
-  return {initial,peak,maxOpacityBeforeRailSettles:premature,earlyConnectionMax:extraEarlyMax,connections:extraLast.length};
+  return {initial,peak,maxOpacityBeforeRailSettles:premature,earlyConnectionMax:extraEarlyMax,rowsWithMetadata:extraLast.length};
 }
 
 async function interruptible(page,subject) {
@@ -477,7 +525,7 @@ async function verifyReduced(browser){
     await expect(stageButton(page)).toBeFocused();
     await wait(page,70);
     samples=await stopTrace(page);
-    expect(samples.every(x=>!x.running&&!x.layers)).toBe(true);
+    expect(samples.every(x=>!x.running&&!x.layers&&!x.railMotion&&!x.rim)).toBe(true);
     expect(samples.some(x=>x.kind==='list')).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(narrow.width+1);
   } finally { await page.close(); }

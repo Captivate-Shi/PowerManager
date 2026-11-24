@@ -8,7 +8,7 @@ const { pathToFileURL } = require('node:url');
 const { installMock } = require('./studio-review-mock.cjs');
 const out = resolve(process.env.STUDIO_REVIEW_OUT || 'studio-list-density-review');
 const url = pathToFileURL(resolve(process.env.STUDIO_REVIEW_DIST || join(__dirname,'../dist/ui/index.html'))).href;
-const desktop={width:1586,height:992}, medium={width:1100,height:800}, narrow={width:520,height:720};
+const desktop={width:1586,height:992}, smallDesktop={width:1280,height:850}, medium={width:1100,height:800}, narrow={width:520,height:720};
 const btn=(s,n)=>s.getByRole('button',{name:n,exact:true});
 const wait=(p,ms)=>p.waitForTimeout(ms);
 
@@ -208,24 +208,37 @@ async function geometry(page,viewport) {
     // report two glyph boxes even while occupying exactly one CSS line.
     expect(row.batteryLine).toBeLessThanOrEqual(2);
     expect(row.battery.l,'name + number do not overlap').toBeGreaterThanOrEqual(row.nameBounds.r-1);
-    expect(row.metadata.y,'metadata stays below battery/name line').toBeGreaterThanOrEqual(row.nameBounds.y+row.nameBounds.h);
     const fields=row.fields.filter(f=>f.visible);
+    const verticalMiddle=box=>box.y+box.h/2;
+    if(viewport.width>=1120){
+      expect(Math.abs(verticalMiddle(row.metadata)-verticalMiddle(row.nameBounds)),
+        'name and supplementary metadata stay on one desktop line').toBeLessThanOrEqual(4);
+      expect(row.nameBounds.r,'name and supplemental fields do not overlap').toBeLessThanOrEqual(row.metadata.l+.75);
+      expect(row.metadata.r,'supplemental fields and primary battery do not overlap').toBeLessThanOrEqual(row.battery.l+.75);
+    } else {
+      expect(row.metadata.y,'compact fallback metadata does not overlap main line').toBeGreaterThanOrEqual(row.nameBounds.y+row.nameBounds.h);
+    }
+    expect(fields.some(field=>field.type==='threshold'),'threshold remains visually present').toBe(true);
+    expect(fields.some(field=>field.type==='power'),'power state remains visually present').toBe(true);
+    expect(fields.some(field=>field.type==='last-read'),'recorded time remains visually present').toBe(true);
     let cursor=row.metadata.l;
     for(const field of fields){
       expect(field.box.l).toBeGreaterThanOrEqual(cursor-.75);
       expect(field.box.r).toBeLessThanOrEqual(row.metadata.r+.75);
       expect(field.lines,field.type+' remains one-line').toBe(1);
+      if(viewport.width>=1120)expect(Math.abs(verticalMiddle(field.box)-verticalMiddle(row.nameBounds)),
+        field.type+' field stays vertically aligned').toBeLessThanOrEqual(5);
       if(field.type!=='connection')expect(field.clipped,field.type+' is not truncated at '+viewport.width).toBe(false);
       cursor=field.box.r;
     }
-    if(viewport.width<770)expect(fields.find(f=>f.type==='connection')).toBeUndefined();
+    expect(fields.find(f=>f.type==='connection'),'transport kept in details/a11y, not a competing column').toBeUndefined();
   }
   const long=data.rows.find(r=>r.nameText===LONG);
   // Narrower rendering must be allowed to ellipsize while row accessibility
   // (asserted above) continues to expose the actual name and values.
   expect(long.nameClipped).toBe(true);
   return {width:viewport.width,visibleFields:data.rows[0].fields.filter(f=>f.visible).map(f=>f.type),longNameEllipsized:long.nameClipped,
-    rows:data.rows.length,rowHeight:data.rows[0].box.h};
+    rowCount:data.rows.length,rowHeight:data.rows[0].box.h};
 }
 
 async function runViewport(browser,viewport,{reduced=false}={}) {
@@ -297,6 +310,7 @@ async function clip(browser) {
   try {
     const report={renderer:url,scope:'Chromium compiled mock renderer only. No original hardware/Windows/native Electron.'};
     report.desktop=await runViewport(browser,desktop);
+    report.smallDesktop=await runViewport(browser,smallDesktop);
     report.medium=await runViewport(browser,medium);
     report.narrow=await runViewport(browser,narrow,{reduced:true});
     if(process.env.STUDIO_REVIEW_SKIP_MEDIA!=='1')report.video=await clip(browser);

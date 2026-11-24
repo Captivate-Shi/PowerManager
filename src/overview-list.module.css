@@ -1,7 +1,9 @@
 /* List mode only. The model is decorative, clipped by the left edge, and never moves the rail. */
 .listDesk[data-mode="list"] {
   isolation: isolate;
-  grid-template-columns: minmax(0, 510px);
+  /* Size around BOTH signs of the side gutter so centered copy never touches the prop. */
+  --prop-width: min(22.7vw, 386px);
+  grid-template-columns: minmax(0, min(732px, calc(100vw - 2 * (var(--prop-width) + 24px))));
   min-height: clamp(510px, 72vh, 760px);
   padding-block: clamp(24px, 7vh, 76px) 55px;
 }
@@ -9,7 +11,7 @@
 .artFrame {
   position: absolute;
   inset: 0 auto 0 calc(50% - 50vw);
-  width: min(29vw, 465px);
+  width: var(--prop-width);
   overflow: hidden;
   pointer-events: none;
   z-index: -1;
@@ -22,7 +24,7 @@
   display: grid;
   align-items: center;
   opacity: .95;
-  filter: brightness(.78) saturate(.66) contrast(1.12);
+  filter: brightness(.61) saturate(.65) contrast(1.12);
 }
 .artLayer > div { width: 100%; height: 100%; min-height: 0; grid-template: minmax(0,1fr) / minmax(0,1fr); }
 .artLayer img { height: 100%; width: 100%; object-fit: contain; }
@@ -175,7 +177,7 @@
 .modeDesk[data-mode="list"] .modeExtra { opacity: 1; }
 .modeDesk[data-mode="stage"] .status { opacity: 0; pointer-events: none; }
 .modeDesk[data-mode="list"][data-mode-info-entry] :is(.modeExtra, .status) {
-  animation: mode-extra-in 150ms ease-out 420ms both;
+  animation: mode-extra-in 150ms ease-out 440ms both;
 }
 .modeDesk[data-mode="stage"][data-mode-info-exit] :is(.modeExtra, .status) {
   animation: mode-extra-out 110ms ease-out both;
@@ -200,4 +202,78 @@
 @media (prefers-reduced-motion: reduce) {
   .modeDesk[data-mode][data-mode-info-entry] :is(.modeExtra, .status),
   .modeDesk[data-mode][data-mode-info-exit] :is(.modeExtra, .status) { animation: none; }
+}
+
+/* A-list single line at desk widths; metadata doesn't participate in row layout. */
+@media (min-width: 1120px) {
+  .modeDesk[data-mode] .sharedInfo > div:first-child b { font-size: 14px; font-weight: 550; }
+  .modeDesk[data-mode] .sharedInfo > strong { font-weight: 560; }
+  .modeDesk[data-mode="list"] .sharedInfo > div:first-child {
+    max-width: min(196px, max(72px, calc(100% - 324px)));
+  }
+  .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra {
+    inset: 50% 88px auto auto;
+    transform: translateY(-50%);
+    width: 252px;
+    display: grid;
+    grid-template-columns: 62px minmax(0, 111px) 73px;
+    gap: 3px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra > span { gap: 6px; }
+  .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra svg { width: 13px; height: 13px; }
+}
+@media (min-width: 1120px) and (max-width: 1320px) {
+  .modeDesk[data-mode="list"] .sharedInfo > div:first-child {
+    max-width: min(172px, max(60px, calc(100% - 288px)));
+  }
+  .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra {
+    width: 214px;
+    inset-inline-end: 72px;
+    grid-template-columns: 48px minmax(0, 94px) 66px;
+    font-size: 11px;
+  }
+}
+/* Transport isn't a fourth list column: details and the full assistive description still expose it. */
+.modeDesk .modeExtra > [data-list-field="connection"] { display: none; }
+
+.bottomVeil {
+  position: absolute;
+  inset: auto auto 0 calc(50% - 50vw);
+  width: 100vw;
+  height: 25%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  background: linear-gradient(180deg, transparent 0%,
+    color-mix(in srgb, var(--window) 15%, transparent) 40%,
+    color-mix(in srgb, var(--window) 46%, transparent));
+  transition: opacity 240ms ease-out;
+}
+.modeDesk[data-mode="list"][data-mode-featured] > .bottomVeil {
+  opacity: 1;
+  transition: opacity 265ms ease-out;
+}
+
+.entry[data-list-selected] { position: relative; }
+.modeDesk[data-overview-rail-motion="list"] .entry[data-list-selected]::after {
+  content: "";
+  position: absolute;
+  inset: -1px auto -1px 0;
+  width: 16px;
+  pointer-events: none;
+  border-inline-start: 1px solid #b2cbef69;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(90deg,#97aaca29,transparent);
+  animation: overview-edge-response 440ms ease both;
+}
+@keyframes overview-edge-response {
+  0%, 58% { opacity: 0; transform: translateX(0); }
+  81% { opacity: .74; transform: translateX(-9px); }
+  100% { opacity: 0; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modeDesk > .bottomVeil, .modeDesk[data-mode="list"][data-mode-featured] > .bottomVeil { transition: none; }
+  .modeDesk[data-overview-rail-motion] .entry[data-list-selected]::after { animation: none; opacity: 0; }
 }

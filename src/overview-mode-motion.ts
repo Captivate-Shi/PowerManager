@@ -50,7 +50,7 @@ export class OverviewModeMotion {
     const layer = target.closest('[data-list-art-layer]');
     return { rail, photo: { src: target.currentSrc || target.src, deviceId, rect: fitted,
       filter: getComputedStyle(layer ?? target).filter,
-      opacity: layer ? Number(getComputedStyle(layer).opacity) : 1,
+      opacity: (layer ? Number(getComputedStyle(layer).opacity) : 1) * (frame ? Number(getComputedStyle(frame).opacity) : 1),
       clipRight: frame?.getBoundingClientRect().right ?? innerWidth } };
   }
 
@@ -65,6 +65,7 @@ export class OverviewModeMotion {
     old?.animations.forEach(animation => animation.cancel());
     old?.node?.remove();
     delete this.desk.dataset.overviewMorph;
+    delete this.desk.dataset.overviewRailMotion;
   }
 
   play(from: Frame, to: Frame, mode: Mode) {
@@ -99,15 +100,19 @@ export class OverviewModeMotion {
     if (rail && from.rail && to.rail && from.rail.width > 0 && to.rail.width > 0) {
       const before = from.rail, after = to.rail;
       const dx = before.x - after.x;
+      const spring = mode === 'list' ? Math.min(27, Math.round(after.width * .037),
+        Math.max(0, innerWidth - after.x - after.width - 12)) : -6;
+      const leading = mode === 'list' ? -Math.min(9, Math.round(spring * .35), Math.max(0, after.x - 12)) : 3;
+      this.desk.dataset.overviewRailMotion = mode;
       const transform = getComputedStyle(rail).transform;
       const base = transform === 'none' ? '' : ' ' + transform;
       const pose = (x: number) => `translate3d(${x}px,0,0)` + base;
       animations.push(rail.animate([
         { transform: pose(dx), width: before.width + 'px' },
         { offset: .58, transform: pose(dx * .19), width: (before.width + (after.width - before.width) * .82) + 'px', easing: 'cubic-bezier(.25,.55,.38,1)' },
-        { offset: .83, transform: pose(mode === 'list' ? -4 : 3), width: (after.width + (mode === 'list' ? 13 : -6)) + 'px', easing: 'cubic-bezier(.38,0,.32,1)' },
+        { offset: .81, transform: pose(leading), width: (after.width + spring) + 'px', easing: 'cubic-bezier(.32,0,.43,1)' },
         { transform: pose(0), width: after.width + 'px' },
-      ], { duration: 420, fill: 'both', easing: 'linear' }));
+      ], { duration: 440, fill: 'both', easing: 'linear' }));
     }
     if (!animations.length) return;
     const running = { animations, node };

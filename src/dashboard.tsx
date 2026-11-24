@@ -433,6 +433,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   return <div ref={overviewDesk} className={look.desk + ' ' + listLook.modeDesk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined} data-mode-featured={!!featured && !initial || undefined}
     data-mode-info-entry={modeInfo === 'entry' || undefined} data-mode-info-exit={modeInfo === 'exit' || undefined}>
     <div className={listLook.modeOverlay} ref={overviewPlane} aria-hidden="true" />
+    <div className={listLook.bottomVeil} data-mode-bottom-veil="" aria-hidden="true" />
     {(initial || reveal) && <div className={look.coldCopy} data-cold-copy="" data-exiting={!initial || undefined} aria-hidden={!initial || undefined}>
       <h2>正在识别设备</h2>
       <p role={initial ? 'status' : undefined}>正在读取设备…</p>
@@ -515,7 +516,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
             <div className={look.railInfo + ' ' + listLook.sharedInfo}>
               <div className={look.railName}><b>{device.name}</b></div>
               <strong className={look.railValue} data-tone={tone(device, state)}>{device.status !== 'current' && device.reading &&
-                <small className={look.lastReading}>上次电量 </small>}{readingLabel(device.reading)}</strong>
+                <small className={look.lastReading}>上次 </small>}{readingLabel(device.reading)}</strong>
               <span className={listLook.modeExtra} data-mode-extra="" aria-hidden={mode !== 'list' || undefined}>
                 <span data-list-field="threshold" title={facts.limit}><Bell aria-hidden="true" /><span>{facts.threshold}%</span></span>
                 <span data-list-field="last-read" title={facts.time}><Clock aria-hidden="true" /><span>{facts.readTime ?? '—'}</span></span>
