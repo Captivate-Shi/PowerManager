@@ -110,3 +110,72 @@
 /* Let the returning art clear the metadata lane before text fades in. */
 .modeDesk[data-overview-morph="stage"] .modeStageCopy { animation: mode-copy-return 450ms linear both; }
 @keyframes mode-copy-return { 0%, 68% { opacity: 0; } 100% { opacity: 1; } }
+
+/* Both presentations share the rail's vertical track, rows and scroll box. */
+.modeDesk[data-mode][data-mode-featured] {
+  min-height: clamp(500px, 73vh, 860px);
+  padding-block: 0;
+}
+.modeDesk[data-mode-featured] > .modeRail {
+  align-self: start;
+  margin-top: clamp(26px, 7vh, 74px);
+  transform: none;
+}
+.modeDesk[data-mode] {
+  --mode-row-height: clamp(64px, 8.2vh, 91px);
+}
+.sharedRows { overflow-anchor: none; scrollbar-gutter: stable; }
+.entry { height: var(--mode-row-height); }
+.modeDesk[data-mode] .entry > .selectRow {
+  align-self: stretch;
+  min-height: 0;
+  grid-template-columns: clamp(50px, 6.3vw, 92px) minmax(0,1fr);
+}
+.modeDesk .entry > .selectRow > div:first-child { min-height: 0; height: clamp(45px, 6.6vh, 67px); }
+.modeDesk[data-mode] .sharedInfo {
+  position: relative;
+  width: 100%;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.2;
+}
+.modeDesk[data-mode] .sharedInfo > strong { justify-self: end; }
+.stageArrow { width: 32px; height: 34px; display: grid; place-items: center; color: #a0adc0; }
+.modeExtra {
+  position: absolute;
+  inset: calc(50% + 12px) auto auto 0;
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+.modeExtra svg { width: 11px; height: 11px; }
+.modeDesk[data-mode="list"] .modeExtra { opacity: 1; }
+.modeDesk[data-mode="stage"] .status { opacity: 0; pointer-events: none; }
+.modeDesk[data-mode="list"][data-mode-info-entry] :is(.modeExtra, .status) {
+  animation: mode-extra-in 150ms ease-out 420ms both;
+}
+.modeDesk[data-mode="stage"][data-mode-info-exit] :is(.modeExtra, .status) {
+  animation: mode-extra-out 110ms ease-out both;
+}
+@keyframes mode-extra-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mode-extra-out { from { opacity: 1; } to { opacity: 0; } }
+
+@media (max-width: 770px) {
+  .modeDesk[data-mode][data-mode-featured] {
+    --overview-stage-slot: calc(clamp(230px,47vw,385px) + 8px);
+    grid-template-rows: var(--overview-stage-slot) auto 38px;
+    align-content: start;
+    min-height: 0;
+  }
+  .modeDesk[data-mode-featured] > .modeRail { grid-row: 2; margin-top: 0; }
+  .modeDesk[data-mode-featured] > .status { grid-row: 3; }
+  .listDesk[data-mode="list"][data-mode-featured] .artFrame { bottom: auto; height: var(--overview-stage-slot); opacity: .58; }
+  .sharedRows { scrollbar-gutter: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modeDesk[data-mode][data-mode-info-entry] :is(.modeExtra, .status),
+  .modeDesk[data-mode][data-mode-info-exit] :is(.modeExtra, .status) { animation: none; }
+}

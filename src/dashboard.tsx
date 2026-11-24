@@ -268,6 +268,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   const [chosen, choose] = useState<string>();
   const [mode, setMode] = useState<'stage' | 'list'>('stage');
   const [stageResumed, setStageResumed] = useState(false);
+  const [modeInfo, setModeInfo] = useState<'entry' | 'exit'>();
   const [direction, setDirection] = useState<'next' | 'previous'>('next');
   const [departing, setDeparting] = useState<Device>();
   const [listOutgoing, setListOutgoing] = useState<{ device: Device; opacity: number; y: number }>();
@@ -357,6 +358,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
       setDeparting(undefined);
       setRevealId(undefined);
       setStageResumed(next === 'stage' && !before?.photo);
+      setModeInfo(before?.rail ? next === 'list' ? 'entry' : 'exit' : undefined);
       setMode(next);
     };
     if (!before || !motion || !featured) { commit(); return; }
@@ -408,7 +410,8 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     setTravel(0);
     if (commit && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.1) step(dx < 0 ? 1 : -1);
   }
-  return <div ref={overviewDesk} className={look.desk + ' ' + listLook.modeDesk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined}>
+  return <div ref={overviewDesk} className={look.desk + ' ' + listLook.modeDesk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined} data-mode-featured={!!featured && !initial || undefined}
+    data-mode-info-entry={modeInfo === 'entry' || undefined} data-mode-info-exit={modeInfo === 'exit' || undefined}>
     <div className={listLook.modeOverlay} ref={overviewPlane} aria-hidden="true" />
     {(initial || reveal) && <div className={look.coldCopy} data-cold-copy="" data-exiting={!initial || undefined} aria-hidden={!initial || undefined}>
       <h2>正在识别设备</h2>
@@ -461,13 +464,15 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
         <div className={listLook.artLayer} data-list-art-layer="" data-device-id={featured.id}
           data-animated={!!listOutgoing || undefined} key={featured.id}><Art device={featured} variant="stage" /></div>
       </div>
-      <div className={listLook.status} role="status" aria-label="所选设备状态" data-connection-state={connectionStatus}>
+    </>}
+    {!initial && featured && (mode === 'list' || modeInfo === 'exit') &&
+      <div className={listLook.status} role={mode === 'list' ? 'status' : undefined} aria-hidden={mode !== 'list' || undefined}
+        aria-label="所选设备状态" data-connection-state={connectionStatus}>
         <span className={listLook.connection}><i aria-hidden="true" />{{
           pending: '连接待确认', offline: '未连接', connected: '已连接',
         }[connectionStatus]}</span>
         {critical && <span className={listLook.critical} data-list-critical=""><CircleAlert size={15} aria-hidden="true" />电量告急</span>}
-      </div>
-    </>}
+      </div>}
     {!initial && <section className={look.rail + ' ' + listLook.modeRail + (mode === 'list' ? ' ' + listLook.rail : '')} data-mode-rail="" aria-label="切换设备">
       <header className={look.railHeader}>
         <div className={look.modeControl} role="group" aria-label="总览显示方式">
@@ -476,24 +481,24 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
         </div>
         <button className={look.ghost} onClick={() => showDevices('all')}>全部设备 <ChevronRight size={14} aria-hidden="true" /></button>
       </header>
-      <div className={look.railRows} aria-busy={initial || undefined}>
-        {ordered.map(device => <div key={device.id} className={mode === 'list' ? listLook.entry : listLook.stageEntry}
+      <div className={look.railRows + ' ' + listLook.sharedRows} data-mode-rail-scroll="" aria-busy={initial || undefined}>
+        {ordered.map(device => <div key={device.id} className={listLook.entry} data-mode-row=""
           data-list-selected={mode === 'list' && device.id === featured?.id ? '' : undefined}>
-          <button className={look.railRow + (mode === 'list' ? ' ' + listLook.selectRow : '')} aria-label={device.name}
+          <button className={look.railRow + ' ' + listLook.selectRow} aria-label={device.name}
             aria-pressed={device.id === featured?.id} disabled={initial}
             title={device.name} onClick={() => mode === 'stage' ? activate(device) : previewInList(device)}
             onDoubleClick={event => { if (mode === 'stage') { modeMotion.current?.cancel(); openDetail(device.id, event.currentTarget); } }}>
             <Art device={device} variant="card" />
-            <div className={look.railInfo}>
-              <div className={look.railName}><b>{device.name}</b>
-                {mode === 'stage' && <span className={look.railMeta}>{device.status === 'stale' ? '等待新读数' : <><Connection device={device} />
-                  {!isConnected(device) && <span> · 未连接</span>}</>}</span>}</div>
+            <div className={look.railInfo + ' ' + listLook.sharedInfo}>
+              <div className={look.railName}><b>{device.name}</b></div>
               <strong className={look.railValue} data-tone={tone(device, state)}>{device.status !== 'current' && device.reading &&
                 <small className={look.lastReading}>上次电量 </small>}{readingLabel(device.reading)}</strong>
+              {device.connection && isConnected(device) && <span className={listLook.modeExtra} data-mode-extra=""
+                aria-hidden={mode !== 'list' || undefined}><Connection device={device} /></span>}
             </div>
-            {mode === 'stage' && <ChevronRight size={15} className={look.railArrow} aria-hidden="true" />}
           </button>
-          {mode === 'list' && <button className={listLook.details} aria-label={'查看详情 · ' + device.name} title="查看详情"
+          {mode === 'stage' ? <span className={listLook.stageArrow} aria-hidden="true"><ChevronRight size={15} /></span> :
+            <button className={listLook.details} aria-label={'查看详情 · ' + device.name} title="查看详情"
             onClick={event => { previewInList(device); openDetail(device.id, event.currentTarget.parentElement ?? undefined); }}>
             <ChevronRight size={16} aria-hidden="true" />
           </button>}

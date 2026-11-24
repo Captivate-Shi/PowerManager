@@ -98,15 +98,15 @@ export class OverviewModeMotion {
     }
     if (rail && from.rail && to.rail && from.rail.width > 0 && to.rail.width > 0) {
       const before = from.rail, after = to.rail;
-      const dx = before.x - after.x, dy = before.y - after.y;
+      const dx = before.x - after.x;
       const transform = getComputedStyle(rail).transform;
       const base = transform === 'none' ? '' : ' ' + transform;
-      const pose = (x: number, y: number) => `translate3d(${x}px,${y}px,0)` + base;
+      const pose = (x: number) => `translate3d(${x}px,0,0)` + base;
       animations.push(rail.animate([
-        { transform: pose(dx, dy), width: before.width + 'px' },
-        { offset: .58, transform: pose(dx * .19, dy * .13), width: (before.width + (after.width - before.width) * .82) + 'px', easing: 'cubic-bezier(.25,.55,.38,1)' },
-        { offset: .83, transform: pose(mode === 'list' ? -4 : 3, 0), width: (after.width + (mode === 'list' ? 13 : -6)) + 'px', easing: 'cubic-bezier(.38,0,.32,1)' },
-        { transform: pose(0, 0), width: after.width + 'px' },
+        { transform: pose(dx), width: before.width + 'px' },
+        { offset: .58, transform: pose(dx * .19), width: (before.width + (after.width - before.width) * .82) + 'px', easing: 'cubic-bezier(.25,.55,.38,1)' },
+        { offset: .83, transform: pose(mode === 'list' ? -4 : 3), width: (after.width + (mode === 'list' ? 13 : -6)) + 'px', easing: 'cubic-bezier(.38,0,.32,1)' },
+        { transform: pose(0), width: after.width + 'px' },
       ], { duration: 420, fill: 'both', easing: 'linear' }));
     }
     if (!animations.length) return;

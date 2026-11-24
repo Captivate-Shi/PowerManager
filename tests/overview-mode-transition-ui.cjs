@@ -6,13 +6,11 @@ const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { installMock } = require('./studio-review-mock.cjs');
-const out = resolve(process.env.STUDIO_REVIEW_OUT || 'studio-stage-flip-review');
+const out = resolve(process.env.STUDIO_REVIEW_OUT || 'studio-stage-horizontal-review');
 const url = pathToFileURL(resolve(process.env.STUDIO_REVIEW_DIST || join(__dirname,'../dist/ui/index.html'))).href;
-const desktop={width:1586,height:992}, narrow={width:520,height:720};
-const shots=[];
+const desktop={width:1586,height:992}, medium={width:1100,height:800}, narrow={width:520,height:720};
 const btn=(s,n)=>s.getByRole('button',{name:n,exact:true});
 const wait=(p,ms)=>p.waitForTimeout(ms);
-const shot=async(p,n)=>{await p.screenshot({path:join(out,n+'.png'),caret:'hide'});shots.push(n+'.png');};
 
 async function annotatePointer(page) {
   await page.evaluate(()=>{
@@ -28,7 +26,7 @@ async function annotatePointer(page) {
   });
 }
 async function record(page,task) {
-  const tmp=mkdtempSync(join(tmpdir(),'yudian-stage-flip-'));
+  const tmp=mkdtempSync(join(tmpdir(),'yudian-stage-horizontal-'));
   const c=await page.context().newCDPSession(page);
   const series=[], chapters=[];
   c.on('Page.screencastFrame',({data,metadata,sessionId})=>{
@@ -47,7 +45,7 @@ async function record(page,task) {
     writeFileSync(join(tmp,'inputs.txt'),files);
     const meta=';FFMETADATA1\n'+chapters.map((x,i)=>`[CHAPTER]\nTIMEBASE=1/1000\nSTART=${Math.round(x.seconds*1000)}\nEND=${Math.round(1000*(chapters[i+1]?.seconds??end))}\ntitle=${x.name}`).join('\n')+'\n';
     writeFileSync(join(tmp,'chapters.txt'),meta);
-    const media='余电-展台与清单-同设备连续转场.mp4';
+    const media='余电-展台与清单-行高固定实录.mp4';
     const result=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-f','concat','-safe','0','-i',join(tmp,'inputs.txt'),
       '-f','ffmetadata','-i',join(tmp,'chapters.txt'),'-map','0:v:0','-map_metadata','1','-map_chapters','1',
       '-vf','fps=30','-c:v','libx264','-threads','2','-pix_fmt','yuv420p','-movflags','+faststart',join(out,media)],{encoding:'utf8'});
@@ -73,11 +71,27 @@ const xbox={id:'xbox',name:'Xbox 无线手柄',art:'xbox',meter:'46%'};
 const nav=page=>page.getByRole('navigation',{name:'主导航'});
 const urlAsset=(subject)=>RegExp('/'+subject.art+'-hero\\.webp$');
 const pageErrors=[];
-async function open(browser,reduced=false) {
-  const page=await browser.newPage({viewport:reduced?narrow:desktop,locale:'zh-CN',
-    reducedMotion: reduced?'reduce':'no-preference'});
+function extendLongDeviceList(extra) {
+  const api=window.powerManager;
+  const originalSnapshot=api.snapshot.bind(api);
+  const originalSubscribe=api.onSnapshot.bind(api);
+  function transform(snapshot) {
+    const rows=Array.from({length:extra},(_,i)=>({
+      ...snapshot.devices[i%snapshot.devices.length], id:'qa-extra-'+i,
+      name:'额外设备 '+String(i+1).padStart(2,'0')+' 超长名称用于验证切换时名称及电量不会换行',
+      connection:'USB 延长接收器，带较长的连接说明',
+      status:'current', reason:'设备读数正常',
+      reading:{low:34+i%55,high:36+i%55,raw:34+i%55,power:'discharging',source:'hid'},
+    }));
+    return {...snapshot,devices:[...snapshot.devices,...rows]};
+  }
+  api.snapshot=async()=>transform(await originalSnapshot());
+  api.onSnapshot=handler=>originalSubscribe(state=>handler(transform(state)));
+}
+async function open(browser,{reduced=false,viewport=desktop,extra=0}={}) {
+  const page=await browser.newPage({viewport,locale:'zh-CN',reducedMotion: reduced?'reduce':'no-preference'});
   page.on('pageerror',error=>pageErrors.push(error.message));
-  await page.addInitScript({content:'('+installMock.toString()+')({});'});
+  await page.addInitScript({content:'('+installMock.toString()+')({});'+(extra?'('+extendLongDeviceList.toString()+')('+extra+');':'')});
   await page.goto(url);
   await page.evaluate(()=>window.studioReview.ready());
   await expect(stageArt(page)).toHaveAttribute('src',urlAsset(dual));
@@ -122,6 +136,35 @@ async function startTrace(page) {
       return {asset:photo.currentSrc||photo.src,id:e.dataset.deviceId,box:rect(e),photo:rect(photo),
         alpha,visible:visual&&alpha>.025,loaded:photo.complete&&photo.naturalWidth>0};
     };
+    const vertical=e=>{
+      if(!e)return null;
+      const r=e.getBoundingClientRect();
+      return {y:r.y,h:r.height};
+    };
+    function textLine(e){
+      if(!e)return null;
+      const range=document.createRange();
+      const walker=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);
+      const rects=[];
+      while(walker.nextNode()){
+        const item=walker.currentNode;
+        if(!item.textContent.trim() || item.parentNode!==e)continue;
+        range.selectNodeContents(item);
+        rects.push(...range.getClientRects());
+      }
+      const positions=rects.map(r=>r.bottom);
+      return positions.length?{bottom:positions[0],lineCount:new Set(positions.map(x=>Math.round(x*16))).size}:null;
+    }
+    function textOpacity(e) {
+      if(!e)return null;
+      let alpha=1;
+      for(let item=e;item;item=item.parentElement){
+        const style=getComputedStyle(item);
+        if(style.display==='none'||style.visibility==='hidden')return 0;
+        alpha*=Number(style.opacity);
+      }
+      return alpha;
+    }
     const frames=window.__modeFrames=[];
     const image='img[data-device-art]';
     let raf=0;
@@ -134,9 +177,25 @@ async function startTrace(page) {
       const running=elem('[data-overview-morph]');
       const motionArt=elem('[data-mode-hero]');
       const motionRail=elem('[data-mode-rail]')||rail;
+      const modes=rail?.querySelector('[aria-label="总览显示方式"]');
+      const header=rail?.querySelector('header');
+      const allButton=[...header?.querySelectorAll('button')??[]].find(button=>button.textContent.includes('全部设备'));
+      const scroll=rail?.querySelector('[data-mode-rail-scroll], [data-mode-scroll], [aria-busy]');
+      const buttons=[...rail?.querySelectorAll('button[aria-pressed]:not([aria-label$="模式"])')??[]];
+      const rows=buttons.map(b=>{
+        const name=b.querySelector('b');
+        const pct=b.querySelector('strong');
+        return {id:b.ariaLabel,row:vertical(b.closest('[data-mode-row]')||b),thumb:vertical(b.querySelector('[data-art]')),name:textLine(name),pct:textLine(pct),
+          nameWrap:name?getComputedStyle(name).whiteSpace:null,pctWrap:pct?getComputedStyle(pct).whiteSpace:null};
+      });
+      const listStatus=elem('[aria-label="所选设备状态"]');
+      const extras=[...document.querySelectorAll('[data-mode-supplement], [data-mode-extra], [data-list-supplement]')];
       frames.push({t:time,kind:m?.dataset.mode,chosen:selected?.ariaLabel,rail:rect(motionRail),
         stage:descriptor(stage),list:descriptor(list),shared:descriptor(motionArt),running:!!running,
-        layers:document.querySelectorAll('[data-mode-hero]').length,clip:rect(elem('[data-list-artwork]'))});
+        layers:document.querySelectorAll('[data-mode-hero]').length,clip:rect(elem('[data-list-artwork]')),
+        vertical:{header:vertical(header),modes:vertical(modes),headerBaseline:textLine(allButton),
+          scroll:vertical(scroll),scrollTop:scroll?.scrollTop,windowScroll:scrollY,rows},
+        supplemental:{status:textOpacity(listStatus),extra:extras.map(el=>({text:el.textContent,alpha:textOpacity(el)}))}});
       raf=requestAnimationFrame(sample);
     };
     raf=requestAnimationFrame(sample);
@@ -170,6 +229,7 @@ async function main() {
   try {
     const page=await open(browser);
     const report=await verifyDesktop(page);
+    report.long=await verifyLong(browser);
     if(process.env.STUDIO_REVIEW_SKIP_MEDIA!=='1'){
       await annotatePointer(page);
       report.video=await captureClip(page);
@@ -242,9 +302,87 @@ function summarizeMotion(trace,subject,kind){
     expect(Math.max(...overshoot),'restrained elastic widening').toBeLessThan(40);
     expect(lobes,'one bounce; not an oscillation').toBe(1);
   }
-  return {subject:subject.name,destination:kind,sampledFrames:trace.length,movingFrames:moving.length,
+  const vertical=summarizeVertical(trace);
+  const supplemental=summarizeSupplemental(trace,kind);
+  return {subject:subject.name,destination:kind,sampledFrames:trace.length,movingFrames:moving.length,vertical,supplemental,
     rail:{start:start.rail,end:end.rail,xDelta:railLeft,widthDelta:railWidth,widthOvershootPx:Math.max(...overshoot),overshootLobes:lobes},
     hero:{renderedCenterXDelta:heroDelta,sharedPathPx:diff,start:centerX(firstPhoto),end:centerX(lastPhoto),minPostHandoffOpacity:postHandoffMin}};
+}
+
+
+function summarizeVertical(trace,{responsive=false}={}) {
+  const src=trace[0];
+  const firstById=new Map(src.vertical.rows.map(row=>[row.id,row]));
+  const drift={railTop:0,headerTop:0,headerHeight:0,headerBaseline:0,modesTop:0,viewportTop:0,viewportHeight:0,rows:0,rowHeights:0,thumbnail:0,name:0,percent:0,scrollTop:0,windowScroll:0};
+  const delta=(key,a,b)=>{
+    expect(Number.isFinite(a)&&Number.isFinite(b),key+' measurable').toBe(true);
+    drift[key]=Math.max(drift[key],Math.abs(a-b));
+  };
+  expect(firstById.size).toBeGreaterThan(3);
+  for(const frame of trace) {
+    const a=src.vertical,b=frame.vertical;
+    delta('railTop',src.rail.y,frame.rail.y);
+    delta('headerTop',a.header.y,b.header.y);
+    delta('headerHeight',a.header.h,b.header.h);
+    delta('headerBaseline',a.headerBaseline?.bottom,b.headerBaseline?.bottom);
+    delta('modesTop',a.modes.y,b.modes.y);
+    delta('viewportTop',a.scroll?.y,b.scroll?.y);
+    delta('viewportHeight',a.scroll?.h,b.scroll?.h);
+    delta('scrollTop',a.scrollTop,b.scrollTop);
+    delta('windowScroll',a.windowScroll,b.windowScroll);
+    expect(b.rows.length).toBe(firstById.size);
+    for(const row of b.rows){
+      const before=firstById.get(row.id);
+      expect(before,'stable row identity '+row.id).toBeTruthy();
+      // Normalise relative to the rail only when narrow layout deliberately stacks the
+      // entire rail below the stage (there is no animated intermediate state).
+      const origin=responsive?src.rail.y:0;
+      const now=responsive?frame.rail.y:0;
+      delta('rows',before.row.y-origin,row.row.y-now);
+      delta('rowHeights',before.row.h,row.row.h);
+      delta('thumbnail',before.thumb?.y-origin,row.thumb?.y-now);
+      delta('name',before.name?.bottom-origin,row.name?.bottom-now);
+      delta('percent',before.pct?.bottom-origin,row.pct?.bottom-now);
+      expect(row.nameWrap,'name has nowrap policy across widths').toBe('nowrap');
+      expect(row.pctWrap,'percent has nowrap policy across widths').toBe('nowrap');
+      expect(row.name?.lineCount,'name remains single line').toBe(1);
+      expect(row.pct?.lineCount,'percentage remains single line').toBe(1);
+    }
+  }
+  const exceptions=responsive?new Set(['railTop','headerTop','headerBaseline','modesTop','viewportTop','windowScroll']):new Set();
+  for(const [key,value] of Object.entries(drift)) {
+    if(!exceptions.has(key))expect(value,'maximum vertical drift: '+key).toBeLessThanOrEqual(.75);
+  }
+  return {rows:firstById.size,scrollOffset:src.vertical.scrollTop,maxDriftPx:drift,frames:trace.length};
+}
+
+function summarizeSupplemental(trace,kind){
+  if(kind==='stage'){
+    const reverse=trace.filter(f=>f.kind==='stage');
+    expect(reverse.some(f=>f.supplemental.status>.05&&f.supplemental.status<.97),'brief fades away on reverse').toBe(true);
+    expect(last(reverse).supplemental.status ?? 0).toBeLessThan(.01);
+    expect(Math.max(...last(reverse).supplemental.extra.map(e=>e.alpha))).toBeLessThan(.01);
+    return {statusHidden:true,allSupplementalHidden:true};
+  }
+  const bounds=last(trace).rail;
+  const input=trace.filter(f=>f.kind==='list'&&f.supplemental.status!==null);
+  expect(input.length).toBeGreaterThan(10);
+  const peak=last(input).supplemental.status;
+  expect(peak).toBeGreaterThan(.97);
+  const initial=input[0].supplemental.status;
+  expect(initial,'list-only copy must not snap in while horizontal motion starts').toBeLessThan(.15);
+  const lastMoving=input.filter(f=>Math.abs(f.rail.x-bounds.x) + Math.abs(f.rail.w-bounds.w)>2.5);
+  expect(lastMoving.length).toBeGreaterThan(8);
+  const premature=Math.max(...lastMoving.map(f=>f.supplemental.status));
+  expect(premature,'keep list-only copy quiet until horizontal arrival').toBeLessThanOrEqual(.35);
+  const extraLast=last(input).supplemental.extra;
+  const extraEarlyMax=Math.max(...lastMoving.flatMap(f=>f.supplemental.extra.map(e=>e.alpha)));
+  expect(extraLast.some(x=>/蓝牙/.test(x.text)&&x.alpha>.97),'collector-backed extra connection metadata appears').toBe(true);
+  expect(extraEarlyMax,'connection metadata waits until the width arrives').toBeLessThanOrEqual(.35);
+  const gradual=input.some(f=>f.supplemental.status>.08&&f.supplemental.status<.93);
+  const gradualExtra=input.some(f=>f.supplemental.extra.some(e=>e.alpha>.08&&e.alpha<.93));
+  expect(gradual&&gradualExtra,'show actual opacity interpolation in status and metadata').toBe(true);
+  return {initial,peak,maxOpacityBeforeRailSettles:premature,earlyConnectionMax:extraEarlyMax,connections:extraLast.length};
 }
 
 async function interruptible(page,subject) {
@@ -303,8 +441,27 @@ async function verifyDesktop(page){
   return {transitions,interruptions};
 }
 
+async function verifyLong(browser){
+  const page=await open(browser,{viewport:medium,extra:13});
+  try{
+    const scroller=rail(page).locator('[data-mode-rail-scroll], [data-mode-scroll], [aria-busy]');
+    const offset=await scroller.evaluate(el=>{
+      const max=el.scrollHeight-el.clientHeight;
+      el.scrollTop=Math.round(max*.59);
+      return {actual:el.scrollTop,max};
+    });
+    expect(offset.actual).toBeGreaterThan(100);
+    await wait(page,70);
+    const forward=summarizeMotion(await sampleSwitch(page,'list',dual),dual,'list');
+    const reverse=summarizeMotion(await sampleSwitch(page,'stage',dual),dual,'stage');
+    expect(forward.vertical.scrollOffset).toBe(offset.actual);
+    expect(reverse.vertical.scrollOffset).toBe(offset.actual);
+    return {viewport:medium,offset,forward,reverse};
+  }finally{await page.close();}
+}
+
 async function verifyReduced(browser){
-  const page=await open(browser,true);
+  const page=await open(browser,{reduced:true,viewport:narrow});
   let samples;
   try {
     await isSettled(page,'stage',dual);
@@ -324,7 +481,7 @@ async function verifyReduced(browser){
     expect(samples.some(x=>x.kind==='list')).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(narrow.width+1);
   } finally { await page.close(); }
-  return {viewport:narrow.width,reducedMotion:true,keyboard:['Enter','Space'],frames:samples.length,morphFrames:0};
+  return {viewport:narrow.width,reducedMotion:true,keyboard:['Enter','Space'],frames:samples.length,morphFrames:0,vertical:summarizeVertical(samples,{responsive:true})};
 }
 
 async function captureClip(page){
