@@ -71,7 +71,7 @@ async function verifyDemo() {
     main.on('pageerror', error => failures.push(String(error)));
     await till(main, '我的桌面');
     await resize(app, 1600, 1000);
-    await expect(main.getByText('5 台在线 · 2 台未连接')).toBeVisible();
+    await expect(main.getByRole('region', { name: '切换设备' }).locator('button[aria-pressed]')).toHaveCount(7);
     await main.getByRole('button', { name: /^无线鼠标/ }).hover();
     await screenshot(main, '01-overview-1600');
     await main.getByRole('button', { name: '设备', exact: true }).click();
@@ -650,9 +650,12 @@ async function verifyDeviceCountsAndMute() {
     assert.ok(healthy);
     await resize(app, 1240, 820);
     await publish([healthy], 'starting');
-    await expect(main.getByRole('status')).toContainText('正在读取设备和电量');
+    const deskHero = main.getByRole('region', { name: '主设备' });
+    const deskRail = main.getByRole('region', { name: '切换设备' });
+    await expect(deskHero.getByRole('status')).toContainText('正在读取设备');
     await expect(button('立即刷新')).toBeDisabled();
-    await expect(main.getByRole('region', { name: '主设备' })).toHaveCount(0);
+    await expect(deskHero.getByRole('progressbar', { name: '正在读取电量' })).not.toHaveAttribute('aria-valuenow');
+    await expect(deskHero.getByRole('meter')).toHaveCount(0);
     await screenshot(main, '19-startup-skeleton');
     await button('设备').click();
     await expect(main.getByRole('searchbox')).toHaveCount(0);
@@ -663,10 +666,10 @@ async function verifyDeviceCountsAndMute() {
     await expect(main.getByText('尚未监测到外设', { exact: true })).toBeVisible();
     await noHorizontalOverflow();
     await publish([{ ...healthy, status: 'no_radio_reply' }]);
-    await expect(main.getByText('上次电量', { exact: true })).toBeVisible();
+    await expect(deskHero.getByText(/上次电量/)).toBeVisible();
     await publish([healthy]);
     await expect(main.getByRole('region', { name: '主设备' }).getByText(healthy.name)).toBeVisible();
-    await expect(main.getByText('暂无其他设备')).toBeVisible();
+    await expect(deskRail.locator('button[aria-pressed]')).toHaveCount(1);
     await screenshot(main, '20-one-device');
 
     const many = Array.from({ length: 48 }, (_, index) => {
@@ -675,7 +678,7 @@ async function verifyDeviceCountsAndMute() {
         name: '测试外设 ' + String(index + 1).padStart(2, '0') + (index === 47 ? ' ' + '长名称'.repeat(20) : '') };
     });
     await publish(many);
-    await expect(main.getByText('40 台在线 · 8 台未连接')).toBeVisible();
+    await expect(deskRail.locator('button[aria-pressed]')).toHaveCount(48);
     await expect(main.getByRole('region', { name: '主设备' }).getByText('建议充电')).toBeVisible();
     await screenshot(main, '21-many-devices');
     await main.getByRole('button', { name: '管理提醒' }).click();

@@ -1,3 +1,4 @@
+import { exactCurve, reduceCurve } from './history-curve';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { RefreshCw, Zap } from 'lucide-react';
 import type { Device, HistoryPoint } from './model';
@@ -160,11 +161,17 @@ function Graph({ series, start, end, threshold }: { series: Series[]; start: num
     const brackets: string[] = [];
     const xy = (t: number, v: number) => x(t).toFixed(1) + ',' + y(v).toFixed(1);
     const step = (from: number, to: number, value: number) => 'H' + x(from).toFixed(1) + 'V' + y(value).toFixed(1) + 'H' + x(to).toFixed(1);
+    const chargingAnchors = new Set(plot.charging.map(({ time }) => x(time)));
     for (const run of plot.runs) {
       if (run.kind === 'exact') {
-        const segments = run.points.map(point => xy(point.time, point.reading.low));
-        if (segments.length > 1) line.push('M' + segments.join('L'));
-        else dots.push(segments[0]);
+        if (run.points.length > 1) {
+          const samples = run.points.map(({ time, reading }) => [x(time), y(reading.low)] as const);
+          const projected = reduceCurve(samples, Math.abs(y(0) - y(1)) * 1.05, chargingAnchors);
+          line.push(exactCurve(projected));
+        } else {
+          const [{ time, reading }] = run.points;
+          dots.push(xy(time, reading.low));
+        }
         continue;
       }
       const first = run.points[0];
@@ -243,9 +250,9 @@ function Graph({ series, start, end, threshold }: { series: Series[]; start: num
       {threshold !== undefined && series.length === 1 && <line x1={left} x2={right} y1={y(threshold)} y2={y(threshold)}
         className={s.graphThreshold} strokeDasharray="4 5"><title>提醒阈值 {threshold}%</title></line>}
       {paths.map(item => <g key={item.index} stroke={item.color} fill={item.color} data-series={item.index}>
-        <path d={item.bands} fillOpacity=".19" strokeOpacity=".78" strokeWidth="1.4" />
+        <path data-trace="range" d={item.bands} fillOpacity=".19" strokeOpacity=".78" strokeWidth="1.4" />
         <path d={item.brackets} fill="none" strokeWidth="2.6" strokeOpacity=".75" />
-        <path d={item.line} fill="none" strokeWidth="2.2" strokeDasharray={dash[item.index]} strokeLinejoin="round" strokeLinecap="round" />
+        <path data-trace="exact" d={item.line} fill="none" strokeWidth="2.45" strokeDasharray={dash[item.index]} strokeLinejoin="round" strokeLinecap="round" />
         {item.dots.map((value, index) => { const [cx, cy] = value.split(','); return <circle key={index} cx={cx} cy={cy} r="2" />; })}
       </g>)}
       {eventPositions.map(({ device, color, index, gaps, valid, plot }) => <g key={device.id} data-event-series={index}>

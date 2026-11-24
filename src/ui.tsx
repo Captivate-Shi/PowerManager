@@ -6,6 +6,7 @@ import { lazy, Suspense, useRef, type ComponentProps, type ReactNode } from 'rea
 import { ChartSkeleton } from './chart-loading';
 import { isConnected, midpoint, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
 import s from './panel.module.css';
+import scene from './scene.module.css';
 
 declare global { interface Window { powerManager: DesktopApi } }
 export const api = window.powerManager;
@@ -14,22 +15,41 @@ export function Brand() {
   return <div className={s.brand}><img src={artUrl("yudian-mark")} width="28" height="28" alt="" /><b>余电</b></div>;
 }
 const renderedArt = new Set<Device['art']>(['dualsense', 'mouse', 'keyboard']);
-type ArtVariant = 'thumb' | 'card' | 'hero';
-const deviceArtUrl = (device: Device, variant: ArtVariant) => renderedArt.has(device.art)
-  ? './assets/' + device.art + '-' + variant + '.webp' : artUrl(device.art);
+type ArtVariant = 'thumb' | 'card' | 'hero' | 'stage' | 'detail';
+export const studioPath = (name: string) => new URL('./assets/studio-v2/' + name, document.baseURI).href;
+const studioAsset = (art: Device['art'], variant: string) => studioPath(art + '-' + variant + '.webp');
+const deviceArtUrl = (device: Device, variant: ArtVariant, loading: boolean) => studioAsset(device.art,
+  loading ? 'loading' : variant === 'thumb' || variant === 'card' ? 'thumb' : 'hero');
+const fallbackArtUrl = (device: Device, variant: ArtVariant) => renderedArt.has(device.art)
+  ? './assets/' + device.art + '-' + (variant === 'stage' ? 'card' : variant === 'detail' ? 'hero' : variant) + '.webp' : artUrl(device.art);
+const warmedArtwork = new Set<string>();
 
 export function prepareHero(device: Device) {
-  if (!renderedArt.has(device.art)) return;
+  if (device.art === 'unknown') return;
+  const url = deviceArtUrl(device, 'hero', false);
+  if (warmedArtwork.has(url)) return;
+  warmedArtwork.add(url);
   const image = new Image();
-  image.src = deviceArtUrl(device, 'hero');
-  void image.decode().catch(() => {});
+  image.src = url;
+  void image.decode().catch(() => { warmedArtwork.delete(url); });
 }
 
-export function Art({ device, variant = 'thumb', shared = false }: { device: Device; variant?: ArtVariant; shared?: boolean }) {
+export function Art({ device, variant = 'thumb', shared = false, loading = false }: {
+  device: Device; variant?: ArtVariant; shared?: boolean; loading?: boolean;
+}) {
   const className = shared ? s.transitionArt : undefined;
-  return <div className={s.art} data-art={device.art}>
+  const url = deviceArtUrl(device, variant, loading);
+  return <div className={s.art + (loading ? ' ' + scene.loadingArt : '')} data-art={device.art}
+    style={loading && device.art !== 'unknown' ? { '--device-mask': `url("${url}")` } as React.CSSProperties : undefined}>
     {device.art === 'unknown' ? <CircleHelp data-device-art='' className={className} aria-hidden='true' /> :
-      <img data-device-art='' className={className} src={deviceArtUrl(device, variant)} width='120' height='90' alt='' draggable={false} />}
+      <img key={url} data-device-art='' className={className} src={url} width='120' height='90' alt='' draggable={false}
+        onError={event => {
+          const image = event.currentTarget;
+          if (image.dataset.fallback) return;
+          image.dataset.fallback = 'true';
+          if (loading) image.parentElement?.style.setProperty('--device-mask', `url("${new URL(fallbackArtUrl(device, variant), document.baseURI).href}")`);
+          image.src = fallbackArtUrl(device, variant);
+        }} />}
   </div>;
 }
 export function Connection({ device }: { device: Device }) {

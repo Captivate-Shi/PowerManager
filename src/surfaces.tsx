@@ -1,8 +1,9 @@
-import { BatteryLow, Bell, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, X, Zap } from 'lucide-react';
+import { Bell, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { isConnected, muteDurationLabel, severity, type Snapshot, type Toast } from './model';
 import { api, Art, BatteryMeter, Brand, Connection, dateLabel, readingLabel, SelectControl, StatusTag } from './ui';
 import s from './panel.module.css';
+import preferences from './preferences.module.css';
 
 export function QuickPanel({ state }: { state: Snapshot }) {
   const [pinned, setPinned] = useState(false);
@@ -52,7 +53,6 @@ export function QuickPanel({ state }: { state: Snapshot }) {
 
 export function ToastPanel({ toast }: { toast: Toast }) {
   const { device, severity, preview, detailId } = toast;
-  const Icon = severity === 'critical' ? Zap : BatteryLow;
   const [showName, setShowName] = useState(false);
   const name = useRef<HTMLElement>(null);
   const revealName = () => {
@@ -60,15 +60,15 @@ export function ToastPanel({ toast }: { toast: Toast }) {
     setShowName(!!element && element.scrollWidth > element.clientWidth);
   };
   const dismiss = () => { void api.command({ type: 'closeSurface' }); };
-  return <main className={s.toast} aria-live="polite" data-critical={severity === 'critical'} data-has-detail={!!detailId} aria-label="桌面电量提醒">
+  return <main className={s.toast + ' ' + preferences.toastSurface} aria-live="polite" data-critical={severity === 'critical'} data-has-detail={!!detailId} aria-label="桌面电量提醒">
     <button className={s.toastBody} onClick={dismiss}
       onFocus={event => { if (event.currentTarget.matches(':focus-visible')) revealName(); }}
       onBlur={() => setShowName(false)} onKeyDown={event => { if (event.key === 'Escape') setShowName(false); }}>
-      <span className={s.toastIcon} aria-hidden="true"><Icon size={23} /></span>
+      <span className={preferences.toastArt} aria-hidden="true"><Art device={device} /></span>
       <span className={s.toastCopy}>
         <strong className={s.toastName} ref={name} onPointerEnter={revealName} onPointerLeave={() => setShowName(false)}>{device.name}</strong>
-        <span className={s.toastStatus}><b>{severity === 'critical' ? '电量告急' : '电量较低'}</b> · 剩余 <b>{readingLabel(device.reading)}</b></span>
-        <small className={s.toastHint}>请及时充电{preview && ' · 测试提醒'}</small>
+        <span className={preferences.toastReading}>{readingLabel(device.reading)}</span>
+        <small className={s.toastHint}>{severity === 'critical' ? '电量告急' : '低电量'} · 请及时充电{preview && ' · 测试提醒'}</small>
       </span>
     </button>
     {detailId && <button className={s.toastDetail} onClick={() => { void api.command({ type: 'open', id: detailId }); }}>
