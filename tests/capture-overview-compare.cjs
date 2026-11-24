@@ -149,6 +149,10 @@ async function clickModes(page,capture) {
   await expect(rail.getByRole('button',{name:'DualSense',exact:true})).toHaveAttribute('aria-pressed','true');
   if(capture){ await shot(page,'02-首页-紧凑列表'); await page.waitForTimeout(1000); }
   await xbox.click();
+  await expect(xbox).toHaveAttribute('aria-pressed','true');
+  await expect(detail).toHaveCount(0);
+  const xboxDetails=button(rail,'查看详情 · Xbox 无线手柄');
+  await xboxDetails.click();
   await expect(detail.getByRole('heading',{name:'Xbox 无线手柄',exact:true})).toBeVisible();
   await expect(show(page,'html[data-detail-direction]')).toHaveCount(0);
   if(capture){ await shot(page,'03-列表打开Xbox详情'); await page.waitForTimeout(700); }
@@ -156,7 +160,7 @@ async function clickModes(page,capture) {
   await expect(overview).toBeVisible();
   await expect(mode('list')).toBeVisible();
   await expect(xbox).toHaveAttribute('aria-pressed','true');
-  await expect(xbox).toBeFocused();
+  await expect(xboxDetails).toBeFocused();
   if(capture){await shot(page,'04-返回列表保留Xbox'); await page.waitForTimeout(800);}
   await stage.click();
   await expect(mode('stage')).toBeVisible();

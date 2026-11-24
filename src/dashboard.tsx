@@ -1,6 +1,6 @@
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
@@ -8,6 +8,7 @@ import { canProbeBluetooth, inventoryState, isConnected, isMuteDuration, muteDur
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
+import listLook from './overview-list.module.css';
 import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
 import { DeviceThreshold } from './device-threshold';
@@ -265,8 +266,11 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   const [order, setOrder] = useState(() => overviewOrder(state));
   const [chosen, choose] = useState<string>();
   const [mode, setMode] = useState<'stage' | 'list'>('stage');
+  const [stageResumed, setStageResumed] = useState(false);
   const [direction, setDirection] = useState<'next' | 'previous'>('next');
   const [departing, setDeparting] = useState<Device>();
+  const [listOutgoing, setListOutgoing] = useState<{ device: Device; opacity: number; y: number }>();
+  const listArtwork = useRef<HTMLDivElement>(null);
   const [travel, setTravel] = useState(0);
   const drag = useRef<{ pointer: number; at: number; y: number } | null>(null);
   const hero = useRef<HTMLElement>(null);
@@ -315,6 +319,34 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     return () => clearTimeout(timer);
   }, [departing]);
 
+  useEffect(() => {
+    if (!listOutgoing) return;
+    const timer = window.setTimeout(() => setListOutgoing(undefined), 250);
+    return () => clearTimeout(timer);
+  }, [listOutgoing]);
+
+  function previewInList(device: Device) {
+    if (device.id === featured?.id) return;
+    let outgoing: typeof listOutgoing;
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && featured && listArtwork.current) {
+      // Retarget from the brightest visible layer, not from a mostly transparent new device.
+      const live = [...listArtwork.current.querySelectorAll<HTMLElement>('[data-list-art-layer]')].map(node => {
+        const style = getComputedStyle(node);
+        return { id: node.dataset.deviceId, opacity: Number(style.opacity),
+          y: style.transform === 'none' ? 0 : new DOMMatrixReadOnly(style.transform).m42 };
+      }).sort((a, b) => b.opacity - a.opacity)[0];
+      const visible = live?.id === featured.id ? featured : listOutgoing?.device.id === live?.id ? listOutgoing?.device : undefined;
+      if (visible && visible.id !== device.id && live)
+        outgoing = { device: visible, opacity: live.opacity, y: live.y };
+    }
+    setListOutgoing(outgoing);
+    setDeparting(undefined);
+    choose(device.id);
+  }
+  const connectionStatus = !featured || featured.status === 'stale' || inventory !== 'ready'
+    ? 'pending' : featured.status === 'offline' ? 'offline' : isConnected(featured) ? 'connected' : 'pending';
+  const critical = !!featured && inventory === 'ready' && level(featured, state) === 'critical';
+
   function activate(device: Device, way?: 'next' | 'previous') {
     if (initial || device.id === featured?.id) return;
     const destination = ordered.findIndex(item => item.id === device.id);
@@ -335,12 +367,12 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     setTravel(0);
     if (commit && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.1) step(dx < 0 ? 1 : -1);
   }
-  return <div className={look.desk} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined}>
+  return <div className={look.desk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined}>
     {(initial || reveal) && <div className={look.coldCopy} data-cold-copy="" data-exiting={!initial || undefined} aria-hidden={!initial || undefined}>
       <h2>正在识别设备</h2>
       <p role={initial ? 'status' : undefined}>正在读取设备…</p>
     </div>}
-    {featured && !initial && mode === 'stage' && <section ref={hero} className={look.hero} aria-label="主设备">
+    {featured && !initial && mode === 'stage' && <section ref={hero} className={look.hero + (stageResumed ? ' ' + listLook.stageResume : '')} aria-label="主设备">
       <div className={look.heroData} aria-live="polite">
         <h2 title={featured?.name}>{featured.name}</h2>
         <SceneBattery device={featured} state={state} phase={phase} />
@@ -378,35 +410,51 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     </section>}
     {!featured && !initial && mode === 'stage' && (inventory === 'unavailable'
       ? <Empty>暂无法读取设备，等待采集恢复</Empty> : <Empty button={find}>尚未监测到外设</Empty>)}
-    {!initial && <section className={look.rail} aria-label="切换设备">
+    {!initial && mode === 'list' && featured && <>
+      <div className={listLook.artFrame} ref={listArtwork} data-list-artwork="" aria-hidden="true">
+        {listOutgoing && <div className={listLook.artLayer} data-list-art-layer="" data-device-id={listOutgoing.device.id}
+          data-exiting="" key={listOutgoing.device.id}
+          style={{ '--list-art-opacity': listOutgoing.opacity, '--list-art-y': listOutgoing.y + 'px' } as CSSProperties}><Art device={listOutgoing.device} variant="stage" /></div>}
+        <div className={listLook.artLayer} data-list-art-layer="" data-device-id={featured.id}
+          data-animated={!!listOutgoing || undefined} key={featured.id}><Art device={featured} variant="stage" /></div>
+      </div>
+      <div className={listLook.status} role="status" aria-label="所选设备状态" data-connection-state={connectionStatus}>
+        <span className={listLook.connection}><i aria-hidden="true" />{{
+          pending: '连接待确认', offline: '未连接', connected: '已连接',
+        }[connectionStatus]}</span>
+        {critical && <span className={listLook.critical} data-list-critical=""><CircleAlert size={15} aria-hidden="true" />电量告急</span>}
+      </div>
+    </>}
+    {!initial && <section className={look.rail + (mode === 'list' ? ' ' + listLook.rail : '')} aria-label="切换设备">
       <header className={look.railHeader}>
         <div className={look.modeControl} role="group" aria-label="总览显示方式">
-          <button disabled={initial} aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => setMode('stage')}><LayoutGrid size={15} /></button>
-          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => { setRevealId(undefined); setMode('list'); }}><List size={17} /></button>
+          <button disabled={initial} aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => { if (mode === 'list') { setListOutgoing(undefined); setStageResumed(true); setMode('stage'); } }}><LayoutGrid size={15} /></button>
+          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => { if (mode === 'stage') { setRevealId(undefined); setStageResumed(false); setMode('list'); } }}><List size={17} /></button>
         </div>
         <button className={look.ghost} onClick={() => showDevices('all')}>全部设备 <ChevronRight size={14} aria-hidden="true" /></button>
       </header>
       <div className={look.railRows} aria-busy={initial || undefined}>
-        {ordered.map(device => <button key={device.id} className={look.railRow} aria-label={device.name}
-          aria-pressed={device.id === featured?.id} disabled={initial}
-          title={device.name} onClick={event => {
-            if (mode === 'stage') { activate(device); return; }
-            // The list opens details directly, but still selects the same device for the stage.
-            setDeparting(undefined);
-            choose(device.id);
-            openDetail(device.id, event.currentTarget);
-          }}
-          onDoubleClick={event => { if (mode === 'stage') openDetail(device.id, event.currentTarget); }}>
-          <Art device={device} variant="card" />
-          <div className={look.railInfo}>
-            <div className={look.railName}><b>{device.name}</b>
-              <span className={look.railMeta}>{device.status === 'stale' ? '等待新读数' : <><Connection device={device} />
-                {!isConnected(device) && <span> · 未连接</span>}</>}</span></div>
-            <strong className={look.railValue} data-tone={tone(device, state)}>{device.status !== 'current' && device.reading &&
-              <small className={look.lastReading}>上次电量 </small>}{readingLabel(device.reading)}</strong>
-          </div>
-          <ChevronRight size={15} className={look.railArrow} aria-hidden="true" />
-        </button>)}
+        {ordered.map(device => <div key={device.id} className={mode === 'list' ? listLook.entry : listLook.stageEntry}
+          data-list-selected={mode === 'list' && device.id === featured?.id ? '' : undefined}>
+          <button className={look.railRow + (mode === 'list' ? ' ' + listLook.selectRow : '')} aria-label={device.name}
+            aria-pressed={device.id === featured?.id} disabled={initial}
+            title={device.name} onClick={() => mode === 'stage' ? activate(device) : previewInList(device)}
+            onDoubleClick={event => { if (mode === 'stage') openDetail(device.id, event.currentTarget); }}>
+            <Art device={device} variant="card" />
+            <div className={look.railInfo}>
+              <div className={look.railName}><b>{device.name}</b>
+                {mode === 'stage' && <span className={look.railMeta}>{device.status === 'stale' ? '等待新读数' : <><Connection device={device} />
+                  {!isConnected(device) && <span> · 未连接</span>}</>}</span>}</div>
+              <strong className={look.railValue} data-tone={tone(device, state)}>{device.status !== 'current' && device.reading &&
+                <small className={look.lastReading}>上次电量 </small>}{readingLabel(device.reading)}</strong>
+            </div>
+            {mode === 'stage' && <ChevronRight size={15} className={look.railArrow} aria-hidden="true" />}
+          </button>
+          {mode === 'list' && <button className={listLook.details} aria-label={'查看详情 · ' + device.name} title="查看详情"
+            onClick={event => { previewInList(device); openDetail(device.id, event.currentTarget.parentElement ?? undefined); }}>
+            <ChevronRight size={16} aria-hidden="true" />
+          </button>}
+        </div>)}
         {!ordered.length && !initial && <p className={s.smallEmpty}>{inventory === 'unavailable' ? '设备状态暂不可用' : '暂无受监测设备'}</p>}
       </div>
     </section>}

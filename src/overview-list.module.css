@@ -1,0 +1,95 @@
+/* List mode only. The model is decorative, clipped by the left edge, and never moves the rail. */
+.listDesk[data-mode="list"] {
+  isolation: isolate;
+  grid-template-columns: minmax(0, 510px);
+  min-height: clamp(510px, 72vh, 760px);
+  padding-block: clamp(24px, 7vh, 76px) 55px;
+}
+.rail { z-index: 2; }
+.artFrame {
+  position: absolute;
+  inset: 0 auto 0 calc(50% - 50vw);
+  width: min(29vw, 465px);
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  mask-image: linear-gradient(90deg, #000 0% 78%, transparent);
+  animation: list-mode-arrive 220ms ease-out both;
+}
+.artLayer {
+  position: absolute;
+  inset: 7% auto 5% -104%;
+  width: 209%;
+  display: grid;
+  align-items: center;
+  opacity: .95;
+  filter: brightness(.78) saturate(.66) contrast(1.12);
+}
+.artLayer > div { width: 100%; height: 100%; min-height: 0; grid-template: minmax(0,1fr) / minmax(0,1fr); }
+.artLayer img { height: 100%; width: 100%; object-fit: contain; }
+.artLayer[data-animated] { animation: list-art-in 240ms ease-out both; }
+.artLayer[data-exiting] { animation: list-art-out 230ms ease-out both; }
+@keyframes list-art-in { from { opacity: 0; transform: translateY(8px); } to { opacity: .95; transform: none; } }
+@keyframes list-art-out { from { opacity: var(--list-art-opacity,.95); transform: translateY(var(--list-art-y,0)); } to { opacity: 0; transform: translateY(8px); } }
+@keyframes list-mode-arrive { from { opacity: .12; } }
+.stageResume { animation: list-stage-resume 220ms ease-out both; }
+@keyframes list-stage-resume { from { opacity: .72; } }
+.stageEntry { display: contents; }
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 35px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.entry[data-list-selected] {
+  background: linear-gradient(108deg,#a4b7d12b,#98a7bf0d 80%),#1d23317a;
+  border-color: #bcc9df30;
+}
+.entry .selectRow, .entry .selectRow[aria-pressed="true"] {
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+  grid-template-columns: clamp(50px, 6.3vw, 92px) minmax(0,1fr);
+  min-height: clamp(60px, 7.2vh, 80px);
+}
+.entry .selectRow:hover, .entry .details:hover { background: #a8bbd915; }
+.details {
+  width: 32px;
+  height: 34px;
+  justify-self: start;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  color: #a9b6cb;
+}
+.status {
+  position: absolute;
+  inset: auto 3% 14px auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 15px;
+  padding-top: 8px;
+  border-top: 1px solid #9baaC52b;
+  color: var(--muted);
+  z-index: 2;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.connection, .critical { display: inline-flex; align-items: center; gap: 6px; }
+.connection i { width: 5px; height: 5px; border-radius: 50%; background: #8793a6; }
+.status[data-connection-state="connected"] .connection i { background: #a0c4b7; }
+.critical { color: var(--red); }
+@media (max-width: 1050px) { .artFrame { opacity: .68; } }
+@media (max-width: 770px) {
+  .listDesk[data-mode="list"] { grid-template-columns: minmax(0, min(100%,510px)); padding-block: 12px 48px; min-height: 0; }
+  .artFrame { width: 23vw; opacity: .29; }
+  .status { position: static; grid-row: 2; justify-self: end; padding-inline: 4px; margin-top: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artFrame, .stageResume, .artLayer[data-animated] { animation: none; }
+  .artLayer[data-exiting] { display: none; }
+}
