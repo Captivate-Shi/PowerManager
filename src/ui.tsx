@@ -3,7 +3,7 @@ import * as Select from '@radix-ui/react-select';
 import * as Switch from '@radix-ui/react-switch';
 import { Battery, BatteryCharging, BatteryLow, Bluetooth, Cable, Check, ChevronDown, ChevronUp, CircleHelp, Wifi, X } from 'lucide-react';
 import { lazy, Suspense, useRef, type ComponentProps, type ReactNode } from 'react';
-import { ChartSkeleton } from './chart-loading';
+import { ChartLoadingFrame } from './chart-loading';
 import { isConnected, midpoint, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
 import s from './panel.module.css';
 import scene from './scene.module.css';
@@ -143,10 +143,14 @@ const loadCharts = () => import('./charts');
 const HistoryView = lazy(() => loadCharts().then(charts => ({ default: charts.Chart })));
 const ComparisonView = lazy(() => loadCharts().then(charts => ({ default: charts.HistoryComparison })));
 
+const chartArt = (device: Device) => <Art device={device} />;
 export function Chart(props: ComponentProps<typeof HistoryView>) {
-  return <Suspense fallback={<ChartSkeleton large={props.large} />}><HistoryView {...props} /></Suspense>;
+  return <Suspense fallback={<ChartLoadingFrame devices={[props.device]} large={props.large ?? false}
+    threshold={props.threshold} reserveRows={1} renderArt={chartArt} />}><HistoryView {...props} /></Suspense>;
 }
 export function CompareChart({ starting, ...props }: ComponentProps<typeof ComparisonView> & { starting: boolean }) {
-  if (starting && !props.devices.length) return <ChartSkeleton />;
-  return <Suspense fallback={<ChartSkeleton large={props.large} />}><ComparisonView {...props} /></Suspense>;
+  const fallback = <ChartLoadingFrame devices={props.devices} large={props.large} threshold={props.threshold}
+    reserveRows={3} renderArt={chartArt} />;
+  if (starting && !props.devices.length) return fallback;
+  return <Suspense fallback={fallback}><ComparisonView {...props} /></Suspense>;
 }

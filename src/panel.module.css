@@ -442,12 +442,18 @@
 .detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(208px, 31vh, 320px); }
 .chartPlot > .chartSkeleton[data-large], .chartPlot .chartEmpty { height: 100%; }
 .chartSkeleton { position: relative; display: grid; overflow: hidden; place-items: center; color: var(--muted); font-size: 12px; background: transparent; }
-.chartSkeleton svg { position: absolute; inset: 24px 24px 49px 65px; width: calc(100% - 89px); height: calc(100% - 73px); fill: none; stroke: #b3c2e32b; stroke-width: 1; }
-.chartSkeleton span { z-index: 1; padding: 3px 0; }
+.chartSkeletonGrid { position: absolute; inset: 24px 24px 49px 65px; width: calc(100% - 89px); height: calc(100% - 73px); fill: none; stroke: #b3c2e32b; stroke-width: 1; }
+.chartProgress { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; color: #c5ddf5; font-weight: 560; }
+.chartSkeleton > .chartProgress { position: relative; z-index: 1; font-size: 13px; }
+.chartProgress > svg { flex: none; color: var(--blue); stroke-width: 2.25; animation: chart-progress-turn 1.6s linear infinite; }
+@keyframes chart-progress-turn { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .chartProgress > svg { animation: none; }
+}
 @keyframes history-shimmer { to { transform: translateX(100%); } }
-.chartMeta, .chartGuide, .chartNotice { display: flex; flex-wrap: wrap; align-items: center; }
-.chartMeta { gap: 4px 16px; padding-top: 8px; min-height: 28px; }
-.chartGuide { color: var(--muted); gap: 5px 14px; font-size: 12px; }
+.chartGuide, .chartNotice { display: flex; align-items: center; }
+
+.chartGuide { flex-wrap: wrap; color: var(--muted); gap: 5px 14px; font-size: 12px; }
 .chartGuide span { display: inline-flex; align-items: center; gap: 5px; }
 .chartGuide i { width: 14px; height: 8px; display: inline-block; }
 .chartGuide .exactKey { height: 2px; background: var(--muted); }
@@ -522,13 +528,25 @@
 .gapLabel { font-size: 13px; font-weight: 520; paint-order: stroke; stroke: var(--window); stroke-width: 5px; }
 .chartEvent { cursor: help; }
 .graphTooltip[data-kind] { display: grid; gap: 4px; }
-.chartMeta { padding: 8px 0 7px; justify-content: space-between; }
+.chartFrame { container-type: inline-size; }
+.chartMeta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 290px); align-items: center; gap: 6px 16px; min-height: 32px; padding: 4px 0; }
+.chartStatusSlot { min-width: 0; height: 24px; display: flex; align-items: center; justify-content: flex-end; }
+.chartStatusSlot .chartNotice { min-width: 0; }
+.chartStatusSlot .chartNotice > span:not(.chartProgress) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chartStatusSlot .chartNotice button { flex: none; white-space: nowrap; }
+@container (max-width: 720px) {
+  .chartMeta { grid-template-columns: minmax(0, 1fr); grid-template-rows: 40px 24px; gap: 0; }
+  .chartStatusSlot { justify-content: flex-start; }
+}
+.chartSummarySlot { --summary-row: 38px; min-block-size: calc(18px + 34px + var(--summary-row)); padding-block-start: 16px; }
+.chartSummarySlot[data-rows="3"] { min-block-size: calc(18px + 34px + 3 * var(--summary-row)); }
 .chartGuide { font-size: 11px; }
-.historySummary { text-align: left; width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #ffffff28; border-radius: 8px; overflow: hidden; margin-top: 16px; table-layout: fixed; }
-.historySummary th, .historySummary td { padding: 8px clamp(5px, 1.5vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.historySummary { text-align: left; width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #ffffff28; border-radius: 8px; overflow: hidden; table-layout: fixed; }
+.historySummary th, .historySummary td { height: var(--summary-row); padding: 6px clamp(5px, 1.5vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .historySummary :is(th, td):not(:first-child) { text-align: center; }
 .historySummary thead { color: var(--muted); font-size: 12px; }
-.historySummary thead th { font-weight: 500; }
+.historySummary thead th { height: 34px; font-weight: 500; }
+.historySummary tr[data-pending="true"] td { color: var(--muted); }
 .historySummary tbody tr:nth-child(odd) { background: #ffffff07; }
 .historySummary tbody :is(th, td) { border-top: 1px solid #ffffff16; }
 .historySummary tbody th { font-weight: 560; }
@@ -552,8 +570,15 @@
 .initialRow > div > .placeholderRule + .placeholderRule { width: 45%; margin-top: 8px; opacity: .65; }
 .overviewTop[data-load-state="refreshing"] .heroReadout .track { overflow: hidden; position: relative; }
 .overviewTop[data-load-state="refreshing"] .heroReadout .track::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(102deg, transparent 0%, #f5c16f95 50%, transparent 100%); transform: translateX(-100%); animation: history-shimmer 1.25s ease-in-out 2; }
+/* Allocate the compact toolbar's second line before any device is added. */
+@media (max-width: 980px) {
+  .historyToolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .historyChoices { justify-content: flex-start; flex-wrap: nowrap; }
+  .historyChoice { flex: 0 1 auto; max-width: 47vw; }
+  .historyAdd { flex: none; }
+}
 @media (max-width: 590px) {
-  .chartSkeleton svg { inset-inline: 39px 10px; width: calc(100% - 49px); }
+  .chartSkeletonGrid { inset-inline: 39px 10px; width: calc(100% - 49px); }
   .historyChoices { justify-content: flex-start; gap: 6px; }
   .historyChoice { max-width: 47vw; }
   .historyChoice .art { width: 26px; min-width: 26px; }

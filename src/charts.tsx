@@ -1,13 +1,12 @@
 import { exactCurve, reduceCurve } from './history-curve';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { RefreshCw, Zap } from 'lucide-react';
 import type { Device, HistoryPoint } from './model';
 import { historyWindow, plotHistory, sampleAt, type PlotSeries } from './history-plot';
 import { api, Art, readingLabel } from './ui';
-import { ChartSkeleton } from './chart-loading';
+import { ChartFrame, ChartProgress, ChartSkeleton, HistorySummary, historyColors } from './chart-loading';
 import s from './panel.module.css';
 
-const colors = ['#c5e4f6', '#cbbbf1', '#a2c9ba'];
 const dash = [undefined, '6 3', '2 3'];
 const dayTick = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' });
 const tick = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -16,10 +15,10 @@ type ReadingResult = { points?: HistoryPoint[]; error?: string; query?: string }
 type Series = { device: Device; plot: PlotSeries; color: string; index: number };
 
 export function Chart({ device, threshold, large = false }: { device: Device; revision: number | null; threshold?: number; large?: boolean }) {
-  return <HistoryComparison devices={[device]} threshold={threshold} large={large} />;
+  return <HistoryComparison devices={[device]} threshold={threshold} large={large} reserveRows={1} />;
 }
 
-export function HistoryComparison({ devices, threshold, anchor, large = true }: { devices: Device[]; threshold?: number; anchor?: number; large?: boolean }) {
+export function HistoryComparison({ devices, threshold, anchor, large = true, reserveRows = 3 }: { devices: Device[]; threshold?: number; anchor?: number; large?: boolean; reserveRows?: 1 | 3 }) {
   const [results, setResults] = useState<Record<string, ReadingResult>>({});
   const [retry, setRetry] = useState(0);
   const [internalEnd, setEnd] = useState(() => Date.now());
@@ -67,55 +66,47 @@ export function HistoryComparison({ devices, threshold, anchor, large = true }: 
     [id, plotHistory(result.points ?? [], start, end)])), [results, start, end]);
   const activeSeries = useMemo(() => devices.flatMap((device, index): Series[] => {
     const plot = plotById.get(device.id);
-    return plot?.points.length ? [{ device, plot, color: colors[index], index }] : [];
+    return plot?.points.length ? [{ device, plot, color: historyColors[index], index }] : [];
   }), [devices, plotById]);
   const pending = devices.some(device => results[device.id]?.query !== signature(device));
   const errors = devices.filter(({ id }) => !!results[id]?.error);
   const settledEmpty = devices.filter(({ id }) => results[id]?.points && !plotById.get(id)?.points.length);
   const onlyGaps = activeSeries.length > 0 && activeSeries.every(series => !series.plot.runs.length);
-  return <div className={s.chartFrame} data-large={large}>
-    <div className={s.chartPlot} data-large={large} aria-busy={pending}>
-      {activeSeries.length ? <Graph series={activeSeries} start={start} end={end} threshold={threshold} /> : pending ?
-        <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large} role="status">
-          {errors.length ? '暂时无法读取电量记录' : '近 24 小时暂无设备读数'}
-        </div>}
-    </div>
-    <div className={s.chartMeta}>
-      <div className={s.chartGuide} aria-label="图例">
-        <span><i className={s.exactKey} />精确读数</span><span><i className={s.rangeKey} />上报区间</span>
-        <span><Zap size={13} />采样显示充电</span><span><i className={s.gapKey} />无有效读数 / 无采样</span>
-        {threshold !== undefined && activeSeries.length === 1 && <span><i className={s.thresholdKey} />提醒阈值 {threshold}%</span>}
-      </div>
-      {activeSeries.length > 0 && <span className={s.chartSrOnly}>{activeSeries.map(({ device, plot }) =>
-        device.name + '：' + plot.charging.length + ' 次采样显示充电，' + plot.gaps.filter(gap => gap.kind === 'invalid').length +
-        ' 段无有效读数，' + plot.gaps.filter(gap => gap.kind === 'unrecorded').length + ' 段未采样').join('；')}</span>}
-      {!!activeSeries.length && pending && <span role="status" className={s.chartNotice}>正在更新，暂显示已有记录</span>}
-      {!!settledEmpty.length && !!activeSeries.length && <span className={s.chartNotice}>{settledEmpty.map(device => device.name).join('、')}暂无记录</span>}
-      {onlyGaps && <span className={s.chartNotice}>该时段仅有无效记录，尚不能绘制电量曲线</span>}
-      {!!errors.length && <div className={s.chartNotice} role="status">
-        {errors.map(device => device.name + (results[device.id]?.points ? '：保留上次记录' : '：读取失败')).join(' · ')}
-        <button className={s.textButton} onClick={() => setRetry(value => value + 1)} disabled={pending}><RefreshCw size={13} />重试</button>
+  const status = errors.length ? {
+    text: errors.map(device => device.name + (results[device.id]?.points ? '：保留上次记录' : '：读取失败')).join(' · '),
+    retry: true,
+  } : pending && activeSeries.length ? {
+    text: '正在更新，暂显示已有记录',
+    progress: true,
+  } : settledEmpty.length && activeSeries.length ? {
+    text: settledEmpty.map(device => device.name).join('、') + '暂无记录',
+  } : onlyGaps ? { text: '该时段仅有无效记录，尚不能绘制电量曲线' } : undefined;
+  const notice = <>
+    {activeSeries.length > 0 && <span className={s.chartSrOnly}>{activeSeries.map(({ device, plot }) =>
+      device.name + '：' + plot.charging.length + ' 次采样显示充电，' + plot.gaps.filter(gap => gap.kind === 'invalid').length +
+      ' 段无有效读数，' + plot.gaps.filter(gap => gap.kind === 'unrecorded').length + ' 段未采样').join('；')}</span>}
+    {status && <div className={s.chartNotice} role="status">
+      {status.progress ? <ChartProgress>{status.text}</ChartProgress> : <span title={status.text}>{status.text}</span>}
+      {status.retry && <button className={s.textButton} onClick={() => setRetry(value => value + 1)} disabled={pending}><RefreshCw size={13} />重试</button>}
+    </div>}
+  </>;
+  const summary = <HistorySummary rows={devices.map(device => {
+    const result = results[device.id];
+    const valid = (plotById.get(device.id)?.points ?? []).filter(point => !!point.reading);
+    const lowest = valid.reduce<HistoryPoint | undefined>((best, point) => !best || point.reading!.low < best.reading!.low ||
+      (point.reading!.low === best.reading!.low && point.reading!.high < best.reading!.high) ? point : best, undefined);
+    const latestCharge = valid.findLast(point => point.reading?.power === 'charging');
+    return { device, name: <Art device={device} />, pending: !result?.points && result?.query !== signature(device),
+      lowest: lowest && <>{readingLabel(lowest.reading)} <small>{tick.format(lowest.time)}</small></>,
+      charge: latestCharge && stamp.format(latestCharge.time),
+      count: result?.points && valid.length.toLocaleString('zh-CN') + ' 次' };
+  })} />;
+  return <ChartFrame large={large} pending={pending} threshold={threshold} notice={notice} summary={summary} reserveRows={reserveRows}>
+    {activeSeries.length ? <Graph series={activeSeries} start={start} end={end} threshold={threshold} /> : pending ?
+      <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large} role="status">
+        {errors.length ? '暂时无法读取电量记录' : '近 24 小时暂无设备读数'}
       </div>}
-    </div>
-    {activeSeries.length > 0 && <HistorySummary series={activeSeries} />}
-  </div>;
-}
-
-function HistorySummary({ series }: { series: Series[] }) {
-  return <table className={s.historySummary} aria-label="近 24 小时记录摘要">
-    <thead><tr><th scope="col">设备</th><th scope="col">最低记录</th><th scope="col">最近充电采样</th><th scope="col">有效采样</th></tr></thead>
-    <tbody>{series.map(({ device, plot, color }) => {
-      const valid = plot.points.filter(point => !!point.reading);
-      const lowest = valid.reduce<HistoryPoint | undefined>((best, point) => !best || point.reading!.low < best.reading!.low ||
-        (point.reading!.low === best.reading!.low && point.reading!.high < best.reading!.high) ? point : best, undefined);
-      const latestCharge = valid.findLast(point => point.reading?.power === 'charging');
-      return <tr key={device.id}>
-        <th scope="row"><div><Art device={device} /><i style={{ background: color }} /><span>{device.name}</span></div></th>
-        <td>{lowest ? <>{readingLabel(lowest.reading)} <small>{tick.format(lowest.time)}</small></> : '—'}</td>
-        <td>{latestCharge ? stamp.format(latestCharge.time) : '—'}</td><td>{valid.length.toLocaleString('zh-CN')} 次</td>
-      </tr>;
-    })}</tbody>
-  </table>;
+  </ChartFrame>;
 }
 
 type HoverEvent = { name: string; kind: 'invalid' | 'unrecorded' | 'charging'; at: number; end?: number; reading?: HistoryPoint['reading'] };
@@ -125,8 +116,10 @@ function Graph({ series, start, end, threshold }: { series: Series[]; start: num
   const [pointer, setPointer] = useState<number | null>(null);
   const [over, setOver] = useState<HoverEvent | null>(null);
   const [keyboard, setKeyboard] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!outer.current) return;
+    const { width, height } = outer.current.getBoundingClientRect();
+    if (width > 0 && height > 0) setSize({ width, height });
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width > 0 && height > 0) setSize({ width, height });

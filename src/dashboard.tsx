@@ -367,8 +367,14 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
       </header>
       <div className={look.railRows} aria-busy={initial || undefined}>
         {ordered.map(device => <button key={device.id} className={look.railRow} aria-label={device.name}
-          aria-pressed={mode === 'stage' ? device.id === featured?.id : undefined} disabled={initial}
-          title={device.name} onClick={event => mode === 'list' ? openDetail(device.id, event.currentTarget) : activate(device)}
+          aria-pressed={device.id === featured?.id} disabled={initial}
+          title={device.name} onClick={event => {
+            if (mode === 'stage') { activate(device); return; }
+            // The list opens details directly, but still selects the same device for the stage.
+            setDeparting(undefined);
+            choose(device.id);
+            openDetail(device.id, event.currentTarget);
+          }}
           onDoubleClick={event => { if (mode === 'stage') openDetail(device.id, event.currentTarget); }}>
           <Art device={device} variant="card" />
           <div className={look.railInfo}>
