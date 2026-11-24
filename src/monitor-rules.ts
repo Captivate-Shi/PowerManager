@@ -1,4 +1,5 @@
-import { severity, threshold, type AlertState, type Device, type DeviceSettings, type HistoryPoint, type Settings, type Severity } from './model';
+import { historyPointEnd, severity, threshold, type AlertState, type Device, type DeviceSettings, type HistoryPoint, type Settings, type Severity } from './model';
+import { unsampledAfter } from './history-plot';
 
 export const day = 24 * 60 * 60 * 1000;
 export const historyLimit = 7200;
@@ -20,7 +21,7 @@ export function eligible(device: Device, settings: Settings, rules: DeviceSettin
 }
 export function recordHistory(points: HistoryPoint[], point: HistoryPoint): HistoryPoint[] {
   const cutoff = point.time - day;
-  const first = points.findIndex(item => item.time >= cutoff);
+  const first = points.findIndex(item => historyPointEnd(item) >= cutoff);
   const retained = first < 0 ? [] : first === 0 ? points : points.slice(first);
   const last = retained.at(-1);
   if (last && point.time < last.time) {
@@ -29,7 +30,9 @@ export function recordHistory(points: HistoryPoint[], point: HistoryPoint): Hist
     ordered.splice(position < 0 ? ordered.length : position, 0, point);
     return ordered.slice(-historyLimit);
   }
-  if (last && !last.reading && !point.reading) return retained;
+  if (last && !last.reading && !point.reading && point.time - historyPointEnd(last) <= unsampledAfter) {
+    return [...retained.slice(0, -1), { ...last, invalidThrough: Math.max(point.time, historyPointEnd(last)) }];
+  }
   const end = retained.length - Number(last?.time === point.time);
   return [...retained.slice(Math.max(0, end - historyLimit + 1), end), point];
 }

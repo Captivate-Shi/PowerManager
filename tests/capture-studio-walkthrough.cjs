@@ -190,7 +190,7 @@ async function main() {
       await button(page.getByRole('table'),'DualSense').dblclick();
       const detail = page.getByRole('region',{name:'设备详情'});
       await expect(detail.getByRole('heading',{name:'DualSense',exact:true})).toBeVisible();
-      await expect(page.locator('html[data-detail-direction]')).toHaveCount(0);
+      await expect(page.locator('[data-detail-photo-flight]')).toHaveCount(0);
       await proveSkeleton(detail);
       await snapshot(page,'08-详情-图表局部加载',true);
       await expect(band(graph(detail),0)).toBeVisible();

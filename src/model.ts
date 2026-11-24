@@ -6,6 +6,8 @@ export type Sample = { status: Status; reason: string; reading: Reading | null }
 export type Art = 'mouse' | 'keyboard' | 'dualsense' | 'xbox' | 'controller' | 'headset' | 'earbuds' | 'stylus' | 'unknown';
 export type Device = {
   id: string; name: string; connection: string; art: Art; status: Status; reason: string;
+  recognizedName?: string;
+  historyUpdatedAt?: number;
   reading: Reading | null; lastRead: number | null; watched: boolean;
 };
 export type Found = {
@@ -16,9 +18,19 @@ export type Settings = {
   low: number; critical: number; repeat: number; snooze: number; fullscreenSound: boolean;
   soundOnly: boolean; voltage: boolean; startup: boolean;
   zoom: number; trayZoom: number; desktopToasts: boolean; muteMinutes: MuteMinutes;
+  historyRange: HistoryRange;
 };
+export const historyRanges = ['day', 'week', 'month', 'year'] as const;
+export type HistoryRange = typeof historyRanges[number];
+export const isHistoryRange = (value: unknown): value is HistoryRange => historyRanges.some(range => range === value);
 export type DeviceSettings = { alias?: string; low?: number; muted?: boolean };
-export type HistoryPoint = { time: number; reading: Reading | null };
+export type HistoryPoint = { time: number; reading: Reading | null; invalidThrough?: number };
+export function historyPointEnd({ reading, time, invalidThrough }: HistoryPoint) {
+  return !reading && invalidThrough !== undefined && Number.isFinite(invalidThrough) ? Math.max(time, invalidThrough) : time;
+}
+export type HistoryDay = {
+  day: number; lowest: { time: number; reading: Reading }; lastCharge?: number; count: number;
+};
 export type Severity = 'low' | 'critical';
 export type AlertState = {
   lowAt?: number; criticalAt?: number; snoozeUntil?: number; ignored?: Severity; recovery?: number; lastNoticeAt?: number;
@@ -47,12 +59,13 @@ export type Command =
   | { type: 'refresh' | 'discover' | 'diagnostics' | 'mute' | 'pin' | 'closeSurface' }
   | { type: 'open'; id?: string }
   | { type: 'compatibility'; context: string }
-  | { type: 'history' | 'add' | 'remove' | 'bluetooth' | 'snooze' | 'ignore'; id: string }
+  | { type: 'history'; id: string; range?: HistoryRange }
+  | { type: 'add' | 'remove' | 'bluetooth' | 'snooze' | 'ignore'; id: string }
   | { type: 'settings'; patch: Partial<Settings> }
   | { type: 'toggleAlertSetting'; key: AlertSwitch }
   | { type: 'deviceSettings'; id: string; patch: DeviceSettings }
   | { type: 'preview'; severity: Severity; id?: string };
-export type CommandResult = { ok: true; history?: HistoryPoint[]; found?: Found[]; message?: string; pinned?: boolean } |
+export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean } |
   { ok: false; error: string };
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;
@@ -72,6 +85,7 @@ export const defaults: Settings = {
   low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true,
   soundOnly: false, voltage: false, startup: false,
   zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60,
+  historyRange: 'day',
 };
 export const midpoint = (reading: Reading) => Math.ceil((reading.low + reading.high) / 2);
 export const percent = (reading: Reading | null) =>

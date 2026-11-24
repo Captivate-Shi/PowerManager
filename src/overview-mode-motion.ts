@@ -1,25 +1,10 @@
+import { containedImage, fadeReflection, stageReflection } from './device-art-motion';
+
 type Box = Pick<DOMRect, 'x' | 'y' | 'width' | 'height'>;
 type Photo = { src: string; deviceId: string; rect: Box; filter: string; opacity: number; matteRight: number };
 type Frame = { photo?: Photo; rail?: Box };
 type Mode = 'stage' | 'list';
-type Running = { animations: Animation[]; node?: HTMLImageElement };
-
-function align(token: string | undefined, spare: number) {
-  if (!token || token === 'center') return spare / 2;
-  if (token.endsWith('%')) return spare * Number.parseFloat(token) / 100;
-  if (token === 'left' || token === 'top') return 0;
-  if (token === 'right' || token === 'bottom') return spare;
-  const pixels = Number.parseFloat(token);
-  return Number.isFinite(pixels) ? pixels : spare / 2;
-}
-
-function contained(image: HTMLImageElement): Box {
-  const r = image.getBoundingClientRect();
-  const ratio = Math.min(r.width / image.naturalWidth, r.height / image.naturalHeight);
-  const w = image.naturalWidth * ratio, h = image.naturalHeight * ratio;
-  const [x, y] = getComputedStyle(image).objectPosition.split(/\s+/);
-  return { x: r.x + align(x, r.width - w), y: r.y + align(y, r.height - h), width: w, height: h };
-}
+type Running = { animations: Animation[]; node?: HTMLImageElement; reflection?: ReturnType<typeof fadeReflection> };
 
 export function allowOverviewMotion() {
   return typeof Element.prototype.animate === 'function' &&
@@ -44,7 +29,7 @@ export class OverviewModeMotion {
         : '[data-list-art-layer]:not([data-exiting]) img[data-device-art]',
     );
     if (!target?.complete || !target.naturalWidth || !target.naturalHeight) return { rail };
-    const fitted = contained(target);
+    const fitted = containedImage(target);
     if (fitted.width < 2 || fitted.height < 2) return { rail };
     const frame = target.closest('[data-list-artwork]');
     const layer = target.closest('[data-list-art-layer]');
@@ -65,11 +50,12 @@ export class OverviewModeMotion {
     this.current = undefined;
     old?.animations.forEach(animation => animation.cancel());
     old?.node?.remove();
+    old?.reflection?.cleanup();
     delete this.desk.dataset.overviewMorph;
     delete this.desk.dataset.overviewRailMotion;
   }
 
-  play(from: Frame, to: Frame, mode: Mode) {
+  play(from: Frame, to: Frame, mode: Mode, savedReflection?: HTMLElement) {
     this.cancel();
     const animations: Animation[] = [];
     const rail = this.desk.querySelector<HTMLElement>('[data-mode-rail]');
@@ -117,10 +103,14 @@ export class OverviewModeMotion {
         { transform: pose(0), width: after.width + 'px' },
       ], { duration: 440, fill: 'both', easing: 'linear' }));
     }
-    if (!animations.length) return;
-    const running = { animations, node };
+    const layer = mode === 'stage' ? stageReflection(this.desk) : savedReflection;
+    const reflection = layer && (mode === 'stage' ? fadeReflection(layer, true, 250, node ? 160 : 0) : fadeReflection(layer, false, 250));
+    if (!animations.length && !reflection) return;
+    const running = { animations, node, reflection };
     this.current = running;
-    void Promise.allSettled(animations.map(animation => animation.finished)).then(() => {
+    const pending = animations.map(animation => animation.finished);
+    if (reflection) pending.push(reflection.finished);
+    void Promise.allSettled(pending).then(() => {
       if (this.current === running) this.cancel();
     });
   }

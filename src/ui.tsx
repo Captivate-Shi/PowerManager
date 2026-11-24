@@ -5,7 +5,7 @@ import { Battery, BatteryCharging, BatteryLow, Bluetooth, Cable, Check, ChevronD
 import { lazy, Suspense, useRef, type ComponentProps, type ReactNode } from 'react';
 import { HelpTip } from './help-tip';
 import { ChartLoadingFrame } from './chart-loading';
-import { isConnected, midpoint, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
+import { isConnected, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
 import s from './panel.module.css';
 import scene from './scene.module.css';
 
@@ -35,15 +35,14 @@ export function prepareHero(device: Device) {
   void image.decode().catch(() => { warmedArtwork.delete(url); });
 }
 
-export function Art({ device, variant = 'thumb', shared = false, loading = false, revealPhoto = false }: {
-  device: Device; variant?: ArtVariant; shared?: boolean; loading?: boolean; revealPhoto?: boolean;
+export function Art({ device, variant = 'thumb', loading = false, revealPhoto = false }: {
+  device: Device; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean;
 }) {
-  const className = shared ? s.transitionArt : undefined;
   const url = deviceArtUrl(device, variant, loading);
   return <div className={s.art + (loading ? ' ' + scene.loadingArt : '')} data-art={device.art}
     style={loading && device.art !== 'unknown' ? { '--device-mask': `url("${url}")` } as React.CSSProperties : undefined}>
-    {device.art === 'unknown' ? <CircleHelp data-device-art='' className={className} aria-hidden='true' /> :
-      <img key={url} data-device-art='' className={className} src={url} width='120' height='90' alt='' draggable={false} data-cold-photo={revealPhoto || undefined}
+    {device.art === 'unknown' ? <CircleHelp data-device-art='' aria-hidden='true' /> :
+      <img key={url} data-device-art='' src={url} width='120' height='90' alt='' draggable={false} data-cold-photo={revealPhoto || undefined}
         onLoad={revealPhoto ? event => { event.currentTarget.dataset.coldPhotoLoaded = ''; } : undefined}
         onError={event => {
           const image = event.currentTarget;
@@ -74,18 +73,27 @@ export function tone(device: Device, state: Snapshot) {
 export const readingLabel = (reading: Reading | null) => !reading ? "—" :
   reading.low === reading.high ? reading.low + "%" : reading.low + "–" + reading.high + "%";
 
+export function BatteryTrack({ reading, className, label }: { reading?: Reading | null; className?: string; label?: string }) {
+  const range = !!reading && reading.low !== reading.high;
+  const named = !!label && !!reading;
+  return <span className={className ? s.batteryTrack + ' ' + className : s.batteryTrack} data-battery-track=""
+    data-scale={range ? 'interval' : 'exact'} role={named ? 'meter' : undefined} aria-hidden={!named || undefined}
+    aria-label={named ? label : undefined} aria-valuemin={named ? 0 : undefined} aria-valuemax={named ? 100 : undefined}
+    aria-valuenow={named ? reading.low : undefined} aria-valuetext={named ? readingLabel(reading) : undefined}
+    aria-description={named && range ? '设备上报电量区间，实色为确认的下限，斜纹为上报范围。' : undefined}>
+    {reading && <span className={s.batteryConfirmed} data-battery-confirmed="" style={{ width: reading.low + '%' }} />}
+    {range && <span className={s.batteryInterval} data-battery-band=""
+      style={{ left: reading.low + '%', width: (reading.high - reading.low) + '%' }} />}
+  </span>;
+}
+
 export function BatteryMeter({ device, state }: { device: Device; state: Snapshot }) {
   const color = tone(device, state);
   const isCharging = device.reading?.power === 'charging' && device.status === 'current';
   const Icon = isCharging ? BatteryCharging : (color === 'red' || color === 'amber') ? BatteryLow : Battery;
   return <div className={s.battery} data-tone={color} data-range={!!device.reading && device.reading.low !== device.reading.high}>
     <div><Icon size={23} strokeWidth={2} /><strong>{readingLabel(device.reading)}</strong>{isCharging && <small>充电中</small>}</div>
-    <div className={s.track} role="meter" aria-label="电量" aria-valuemin={0} aria-valuemax={100}
-      aria-valuenow={device.reading ? midpoint(device.reading) : undefined} aria-valuetext={device.reading ? readingLabel(device.reading) : '暂无读数'}>
-      {device.reading && <><span style={{ width: device.reading.low + '%' }} />
-        {device.reading.low !== device.reading.high && <span className={s.rangeFill}
-          style={{ left: device.reading.low + '%', width: (device.reading.high - device.reading.low) + '%' }} />}</>}
-    </div>
+    <BatteryTrack className={s.track} reading={device.reading} label={device.status === 'current' ? '电量' : '上次电量'} />
   </div>;
 }
 export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
@@ -163,7 +171,7 @@ export function Chart(props: ComponentProps<typeof HistoryView>) {
 }
 export function CompareChart({ starting, ...props }: ComponentProps<typeof ComparisonView> & { starting: boolean }) {
   const fallback = <ChartLoadingFrame devices={props.devices} large={props.large} threshold={props.threshold}
-    reserveRows={3} renderArt={chartArt} />;
+    reserveRows={3} renderArt={chartArt} range={props.range} />;
   if (starting && !props.devices.length) return fallback;
   return <Suspense fallback={fallback}><ComparisonView {...props} /></Suspense>;
 }

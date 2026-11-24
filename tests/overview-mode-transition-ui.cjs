@@ -476,7 +476,7 @@ async function interruptible(page,subject) {
   await noTransient(page);
   await btn(nav(page),'总览').click();
   await noTransient(page);
-  await isSettled(page,'stage',dual);
+  await isSettled(page,'list',subject);
   return {rapidFrames:trace.length,rapidFinal:'list',resizeFinal:'stage',routeFinal:'overview/ready'};
 }
 

@@ -62,7 +62,8 @@ async function run() {
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '01-first-loading.png'), fullPage: true });
         await page.evaluate(() => window.scrollTo(0, 120));
         const initial = await rects();
-        expect(initial.scroll[1]).toBeGreaterThan(0);
+        expect(initial.scroll[1]).toBe(0);
+        expect(initial.scroll[2]).toBe(650);
         await finish('dual');
         await expect(plot.getByLabel(/近 24 小时电量曲线/)).toBeVisible();
         await expect(summary.locator('[data-pending="true"]')).toHaveCount(1);
@@ -84,7 +85,7 @@ async function run() {
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '03-add-loading.png'), fullPage: true });
         await page.evaluate(() => window.scrollTo(0, 120));
         const addScroll = await rects();
-        expect(addScroll.scroll[1]).toBeGreaterThan(0);
+        expect(addScroll.scroll[1]).toBe(0);
         await finish('keyboard');
         await expect(plot).toHaveAttribute('aria-busy', 'false');
         expect(await rects()).toEqual(addScroll);

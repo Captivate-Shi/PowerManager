@@ -298,7 +298,7 @@ async function loaded(page,mark,capture=false,reduced=false) {
   await inspectStatus(page,low);
   if(capture){await settle(page);await shot(page,'10-返回清单保留选择');await wait(page,600);}
   if(reduced){
-    await expect(page.locator('html[data-detail-direction]')).toHaveCount(0);
+    await expect(page.locator('[data-detail-photo-flight]')).toHaveCount(0);
     await selected(page,stale.name).focus();
     await page.keyboard.press('Enter');
     await inspectStatus(page,stale);

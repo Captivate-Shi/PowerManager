@@ -71,7 +71,7 @@ async function enterDevice(page,refreshFirst) {
   await btn(page.getByRole('table'),'DualSense').dblclick();
   const detail=page.getByRole('region',{name:'设备详情'});
   await expect(detail.getByRole('heading',{name:'DualSense',exact:true})).toBeVisible();
-  await expect(page.locator('html[data-detail-direction]')).toHaveCount(0);
+  await expect(page.locator('[data-detail-photo-flight]')).toHaveCount(0);
   await btn(detail,'调整提醒').click();
   const editor=detail.locator('[data-device-threshold]');
   const slider=editor.getByRole('slider',{name:'设备低电量阈值'});

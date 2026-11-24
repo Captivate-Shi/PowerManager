@@ -5,8 +5,9 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { release } from 'node:os';
 
-import { canProbeBluetooth, classify, defaults, isMuteDuration, type AlertState, type Device, type DeviceSettings, type Found, type HistoryPoint, type Sample, type Severity, type Settings, type Snapshot } from './model';
+import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, type AlertState, type Device, type DeviceSettings, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Sample, type Severity, type Settings, type Snapshot } from './model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
+import { accumulateHistoryDay, historyStart } from './history-plot';
 
 const executeFile = promisify(execFile);
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
@@ -31,6 +32,7 @@ function cachedDevice(value: unknown): Device | null {
 type StateFile = {
   version: 1; settings: Settings; deviceSettings: Record<string, DeviceSettings>; alerts: Record<string, AlertState>;
   watched: Pick<Found, 'id' | 'name' | 'connection'>[]; devices: Device[]; history: Record<string, HistoryPoint[]>;
+  historyDays?: Record<string, HistoryDay[]>;
 };
 type Observation = {
   id: string; name: string; connection: string; aliases: string[]; art: Device['art']; automatic?: boolean;
@@ -45,6 +47,7 @@ export class Monitor {
   private collector: Collector;
   private file: string;
   private data: StateFile;
+  private historyDays: Record<string, HistoryDay[]>;
   private rows = new Map<string, Row>();
   private found = new Map<string, Found>();
   private timer?: NodeJS.Timeout;
@@ -87,9 +90,18 @@ export class Monitor {
       return [key, typeof saved === typeof fallback ? saved : fallback];
     })) as Settings;
     if (!isMuteDuration(initial.settings.muteMinutes)) initial.settings.muteMinutes = defaults.muteMinutes;
+    if (!isHistoryRange(initial.settings.historyRange)) initial.settings.historyRange = defaults.historyRange;
     initial.deviceSettings = Object.assign(Object.create(null), initial.deviceSettings);
     initial.alerts = Object.assign(Object.create(null), initial.alerts);
     initial.history = Object.assign(Object.create(null), initial.history);
+    this.historyDays = Object.assign(Object.create(null), initial.historyDays);
+    if (!initial.historyDays) {
+      for (const [id, points] of Object.entries(initial.history)) {
+        const days = this.historyDays[id] = [];
+        for (const point of points) accumulateHistoryDay(days, point);
+      }
+    }
+    initial.historyDays = this.historyDays;
     this.data = initial;
     for (const cached of initial.devices) {
       const device = cachedDevice(cached);
@@ -138,7 +150,12 @@ export class Monitor {
     } else this.start();
   }
   history(id: string) {
-    return (this.data.history[id] ?? []).filter(point => point.time >= Date.now() - day);
+    const cutoff = Date.now() - day;
+    return (this.data.history[id] ?? []).filter(point => historyPointEnd(point) >= cutoff);
+  }
+  historySummary(id: string, range: Exclude<HistoryRange, 'day'>) {
+    const start = historyStart(Date.now(), range);
+    return (this.historyDays[id] ?? []).filter(bucket => bucket.day >= start);
   }
   log(event: string) { this.appendLog('activity.log', new Date().toISOString() + ' ' + event); }
   private appendLog(file: string, line: string) {
@@ -153,7 +170,12 @@ export class Monitor {
     try {
       const cutoff = Date.now() - day;
       for (const [id, items] of Object.entries(this.data.history)) {
-        this.data.history[id] = items.filter(item => item.time >= cutoff);
+        this.data.history[id] = items.filter(item => historyPointEnd(item) >= cutoff);
+      }
+      const summaryCutoff = historyStart(Date.now(), 'year');
+      for (const [id, buckets] of Object.entries(this.historyDays)) {
+        if (buckets.some(bucket => bucket.day < summaryCutoff))
+          this.historyDays[id] = buckets.filter(bucket => bucket.day >= summaryCutoff);
       }
       this.data.devices = [...this.rows.values()].map(({ device }) => device);
       writeFileSync(this.file + '.tmp', JSON.stringify(this.data), 'utf8');
@@ -177,7 +199,7 @@ export class Monitor {
   }
   private updateDevices() {
     this.state.devices = [...this.rows.values()].map(({ device }) => ({
-      ...device, name: this.state.deviceSettings[device.id]?.alias || device.name,
+      ...device, recognizedName: device.name, name: this.state.deviceSettings[device.id]?.alias || device.name,
     }));
   }
 
@@ -365,7 +387,7 @@ export class Monitor {
     return changed;
   }
   private merge(from: string, to: string) {
-    if (from === to || !(this.rows.has(from) || this.data.history[from] || this.state.deviceSettings[from] || this.state.alerts[from])) return false;
+    if (from === to || !(this.rows.has(from) || this.data.history[from] || this.historyDays[from] || this.state.deviceSettings[from] || this.state.alerts[from])) return false;
     this.dirty = true;
     const old = this.rows.get(from);
     if (old && !this.rows.has(to)) this.rows.set(to, { ...old, device: { ...old.device, id: to } });
@@ -381,6 +403,21 @@ export class Monitor {
       const points = [...(this.data.history[to] ?? []), ...this.data.history[from]];
       this.data.history[to] = [...new Map(points.map(point => [point.time, point])).values()].sort((a, b) => a.time - b.time);
       delete this.data.history[from];
+    }
+    if (this.historyDays[from]) {
+      const days = new Map((this.historyDays[to] ?? []).map(bucket => [bucket.day, bucket]));
+      for (const incoming of this.historyDays[from]) {
+        const existing = days.get(incoming.day);
+        if (!existing) { days.set(incoming.day, incoming); continue; }
+        const a = incoming.lowest.reading;
+        const b = existing.lowest.reading;
+        if (a.low < b.low || (a.low === b.low && a.high < b.high)) existing.lowest = incoming.lowest;
+        // The same physical device can have overlapping samples under both IDs.
+        existing.count = Math.max(existing.count, incoming.count);
+        existing.lastCharge = Math.max(existing.lastCharge ?? 0, incoming.lastCharge ?? 0) || undefined;
+      }
+      this.historyDays[to] = [...days.values()].sort((a, b) => a.day - b.day);
+      delete this.historyDays[from];
     }
     if (this.state.deviceSettings[from]) {
       this.state.deviceSettings[to] = { ...this.state.deviceSettings[from], ...this.state.deviceSettings[to] };
@@ -418,8 +455,11 @@ export class Monitor {
     }
     const rules = this.state.deviceSettings[device.id];
     row.due = time + delayFor(device, this.state.settings, rules, row.failures);
-    this.data.history[device.id] = recordHistory(this.data.history[device.id] ?? [],
-      { time, reading: sample.status === 'current' ? sample.reading : null });
+    const point = { time, reading: sample.status === 'current' ? sample.reading : null };
+    const points = this.data.history[device.id] ?? [];
+    this.data.history[device.id] = recordHistory(points, point);
+    device.historyUpdatedAt = time;
+    if (points.at(-1)?.time !== time) accumulateHistoryDay(this.historyDays[device.id] ??= [], point);
     if (this.thresholdEdits.has(device.id)) return;
     const old = this.state.alerts[device.id] ?? {};
     const next = observeRecovery(device, this.state.settings, rules, old);

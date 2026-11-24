@@ -2,7 +2,9 @@
 .editor :is(header, footer) { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; justify-content: space-between; }
 .editor h4 { font-size: 14px; margin: 0; font-weight: 600; }
 .editor output { color: var(--ink); font-size: 21px; font-weight: 550; line-height: 1; }
-.editor p, .editor footer { color: var(--muted); font-size: 12px; }
+.editor footer { color: var(--muted); font-size: 12px; min-height: 29px; }
+.editor footer > [role] { flex: 1; }
+.global { margin-inline-start: auto; }
 .editor footer [role="alert"] { color: var(--red); }
 .editor footer button { border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-height: 29px; padding: 3px 4px; color: var(--muted); font-size: 12px; }
 .editor footer button { padding-inline: 8px; }

@@ -1,7 +1,7 @@
 import { Bell, BellOff, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, RefreshCw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { inventoryState, isConnected, muteDurationLabel, severity, type Device, type Snapshot, type Toast } from './model';
-import { api, Art, Brand, dateLabel, readingLabel } from './ui';
+import { api, Art, BatteryTrack, Brand, dateLabel, readingLabel } from './ui';
 import s from './panel.module.css';
 import preferences from './preferences.module.css';
 import tray from './tray.module.css';
@@ -22,8 +22,7 @@ function TrayDevice({ device, state, kind }: { device: Device; state: Snapshot; 
     <div className={tray.art}><Art device={device} /></div>
     <span className={tray.copy}><b>{device.name}</b><small>{description}</small></span>
     <span className={tray.reading}><strong>{display}</strong>
-      {reading && <span className={tray.track} aria-hidden="true"><i style={{ width: reading.low + '%' }} />
-        {reading.high !== reading.low && <i className={tray.band} style={{ left: reading.low + '%', width: reading.high - reading.low + '%' }} />}</span>}
+      {reading && <BatteryTrack className={tray.track} reading={reading} />}
     </span>
     <ChevronRight size={13} aria-hidden="true" className={tray.chevron} />
   </button>;

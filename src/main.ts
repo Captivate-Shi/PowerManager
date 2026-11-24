@@ -3,11 +3,12 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { demoDiscovery, demoHistory, demoSnapshot, previewDevice } from './demo';
-import { classify, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type Settings,
+import { classify, isHistoryRange, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type HistoryDay, type Settings,
   type MainView, type Severity, type Snapshot, type Surface, type Toast } from './model';
 import { Monitor } from './monitor';
 import { startMetrics } from './metrics';
 import { HiddenSurface } from './hidden-surface';
+import { accumulateHistoryDay } from './history-plot';
 
 const isDemo = process.argv.includes('--demo');
 const local = process.env.LOCALAPPDATA || app.getPath('appData');
@@ -487,7 +488,8 @@ function object(value: unknown): value is Record<string, unknown> {
 }
 function saveSettings(patch: unknown) {
   if (!object(patch)) throw new Error('设置格式有误');
-  const next = { ...snapshot.settings };
+  const previous = { ...snapshot.settings };
+  const next = { ...previous };
   for (const [key, value] of Object.entries(patch)) {
     switch (key) {
       case 'low': case 'critical':
@@ -502,6 +504,10 @@ function saveSettings(patch: unknown) {
         if (!isMuteDuration(value)) throw new Error('全局静音时长无效');
         next.muteMinutes = value;
         break;
+      case 'historyRange':
+        if (!isHistoryRange(value)) throw new Error('记录范围无效');
+        next.historyRange = value;
+        break;
       case 'zoom': case 'trayZoom':
         if (!ranged(value, 75, 150)) throw new Error('缩放比例需在 75%–150% 之间');
         next[key] = value;
@@ -514,17 +520,21 @@ function saveSettings(patch: unknown) {
     }
   }
   if (next.critical >= next.low) throw new Error('紧急阈值必须低于低电量阈值');
-  if (!isDemo && next.startup !== snapshot.settings.startup) {
+  const startupChanged = !isDemo && next.startup !== previous.startup;
+  if (startupChanged) {
     if (!app.isPackaged) throw new Error('请使用打包版设置随 Windows 登录启动');
     app.setLoginItemSettings({ openAtLogin: next.startup, args: ['--background'] });
     if (app.getLoginItemSettings({ args: ['--background'] }).openAtLogin !== next.startup) throw new Error('无法更新 Windows 登录启动项');
   }
-  const muteDurationChanged = next.muteMinutes !== snapshot.settings.muteMinutes;
   Object.assign(snapshot.settings, next);
+  if (monitor && !monitor.persist()) {
+    Object.assign(snapshot.settings, previous);
+    if (startupChanged) app.setLoginItemSettings({ openAtLogin: previous.startup, args: ['--background'] });
+    throw new Error('无法保存设置，请重试');
+  }
   applyZoom('main');
   applyZoom('tray');
-  monitor?.persist();
-  if (muteDurationChanged) refreshTrayMenu();
+  if (next.muteMinutes !== previous.muteMinutes) refreshTrayMenu();
   broadcast();
   queueAlerts();
 }
@@ -533,10 +543,13 @@ function saveDeviceSettings(id: string, patch: unknown) {
   const next: DeviceSettings = { ...snapshot.deviceSettings[id] };
   for (const [key, value] of Object.entries(patch)) {
     switch (key) {
-      case 'alias':
-        if (typeof value !== 'string' || value.length > 80) throw new Error('名称最多 80 个字符');
-        next.alias = value.trim() || undefined;
+      case 'alias': {
+        if (typeof value !== 'string') throw new Error('设备备注格式有误');
+        const alias = value.trim();
+        if ([...alias].length > 50) throw new Error('设备备注最多 50 个字符');
+        next.alias = alias || undefined;
         break;
+      }
       case 'low':
         if (value === null || value === undefined) { delete next.low; break; }
         if (!ranged(value, 1, 50)) throw new Error('设备阈值需在 1%–50% 之间');
@@ -555,7 +568,8 @@ function saveDeviceSettings(id: string, patch: unknown) {
   else {
     snapshot.deviceSettings[id] = next;
     const device = snapshot.devices.find(item => item.id === id)!;
-    device.name = next.alias || demoSnapshot().devices.find(item => item.id === id)?.name || device.name;
+    device.recognizedName ??= device.name;
+    device.name = next.alias || device.recognizedName;
     broadcast();
   }
 }
@@ -588,9 +602,16 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       openMain(device?.id);
       if (surface === 'toast') closeToast();
       break;
-    case 'history':
+    case 'history': {
       if (!device) throw new Error('设备已移除');
-      return { ok: true, history: monitor ? monitor.history(device.id) : demoHistory(device) };
+      const range = command.range ?? 'day';
+      if (!isHistoryRange(range)) throw new Error('记录范围无效');
+      if (range === 'day') return { ok: true, history: monitor ? monitor.history(device.id) : demoHistory(device) };
+      if (monitor) return { ok: true, historyDays: monitor.historySummary(device.id, range) };
+      const historyDays: HistoryDay[] = [];
+      for (const point of demoHistory(device)) accumulateHistoryDay(historyDays, point);
+      return { ok: true, historyDays };
+    }
     case 'discover': return { ok: true, found: monitor ? await monitor.discover() : demoDiscovery };
     case 'add':
       if (monitor) monitor.add(command.id);

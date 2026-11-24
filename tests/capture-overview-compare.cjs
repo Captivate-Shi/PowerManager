@@ -154,7 +154,7 @@ async function clickModes(page,capture) {
   const xboxDetails=button(rail,'查看详情 · Xbox 无线手柄');
   await xboxDetails.click();
   await expect(detail.getByRole('heading',{name:'Xbox 无线手柄',exact:true})).toBeVisible();
-  await expect(show(page,'html[data-detail-direction]')).toHaveCount(0);
+  await expect(show(page,'[data-detail-photo-flight]')).toHaveCount(0);
   if(capture){ await shot(page,'03-列表打开Xbox详情'); await page.waitForTimeout(700); }
   await button(page,'返回总览').click();
   await expect(overview).toBeVisible();

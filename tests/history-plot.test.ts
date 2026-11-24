@@ -13,9 +13,10 @@ test('invalid points split exact and range data without inventing electrical sta
     point(now - 50_000, 20, 30, 'charging'), point(now - 40_000, 21, 31, 'charging'),
     point(now - 30_000, 32, 32, 'full'), point(now - 20_000, 53)], start, now);
   assert.deepEqual(data.runs.map(run => [run.kind, run.points.length]), [['exact', 1], ['range', 2], ['exact', 2]]);
-  assert.deepEqual(data.gaps, [{ start: now - 60_000, end: now - 50_000, kind: 'invalid' }]);
+  assert.deepEqual(data.gaps, [{ start: now - 60_000, end: now - 60_000, kind: 'invalid' }]);
   assert.deepEqual(data.charging.map(event => event.time), [now - 50_000]);
-  assert.equal(sampleAt(data, now - 55_000)?.reading, null);
+  assert.equal(sampleAt(data, now - 60_000)?.reading, null);
+  assert.equal(sampleAt(data, now - 55_000), undefined);
   assert.deepEqual([sampleAt(data, now - 48_000)?.reading?.low, sampleAt(data, now - 48_000)?.reading?.high], [20, 30]);
 });
 
@@ -33,20 +34,36 @@ test('retains only 24 hours and distinguishes a long no-sample interval from inv
   const data = plotHistory([point(b, 70), point(start - 1, 51), point(a, 80), point(now + 1, 50)], start, now);
   assert.deepEqual(data.points.map(sample => sample.time), [a, b]);
   assert.deepEqual(data.gaps, [
-    { start: a + unsampledAfter, end: b, kind: 'unrecorded' },
-    { start: b + unsampledAfter, end: now, kind: 'unrecorded' },
+    { start: a, end: b, kind: 'unrecorded' },
+    { start: b, end: now, kind: 'unrecorded' },
   ]);
   assert.equal(data.runs.length, 2);
   assert.equal(sampleAt(data, b - 1), undefined);
 });
 
-test('an invalid tail stays open; a gap between two charging samples marks separate observations without asserting when charging began', () => {
+test('charging resumes as a separate observation and invalid marks end at the last recorded failure', () => {
   const time = now - 60_000;
   const data = plotHistory([point(time, 14, 16, 'charging'), { time: time + 5000, reading: null },
     { time: time + 10_000, reading: null }, point(time + 30_000, 17, 19, 'charging'),
     { time: time + 40_000, reading: null }], start, now);
   assert.deepEqual(data.charging.map(event => event.time), [time, time + 30_000]);
-  assert.deepEqual(data.gaps.map(gap => gap.end), [time + 30_000, now]);
+  assert.deepEqual(data.gaps.map(gap => gap.end), [time + 10_000, time + 40_000]);
+});
+
+test('a long gap on either side of a legacy failure does not become a failed reading interval', () => {
+  const first = now - 8 * unsampledAfter;
+  const failure = first + 4 * unsampledAfter;
+  const resumed = now - 1000;
+  const data = plotHistory([point(first, 46), { time: failure, reading: null }, point(resumed, 46)], start, now);
+  assert.deepEqual(data.gaps, [
+    { start: first, end: failure, kind: 'unrecorded' },
+    { start: failure, end: failure, kind: 'invalid' },
+    { start: failure, end: resumed, kind: 'unrecorded' },
+  ]);
+  assert.equal(sampleAt(data, first + 1, now), undefined);
+  assert.equal(sampleAt(data, failure)?.reading, null);
+  assert.equal(sampleAt(data, failure + 1, now), undefined);
+  assert.equal(sampleAt(data, resumed)?.reading?.low, 46);
 });
 
 test('comparison caps at three, keeps a selected device, and selection order is stable', () => {
@@ -69,7 +86,10 @@ test('timestamp replacements follow the latest stored evidence without making tw
 test('smooth history trace passes through measured points without overshooting an extremum', async () => {
   const { exactCurve } = await import('../src/history-curve');
   const curve = exactCurve([[0, 25], [3, 20], [9, 90], [27, 92]]);
-  const commands = [...curve.matchAll(/C([\d., -]+)/g)].map(match => match[1].split(' ').map(point => point.split(',').map(Number)));
+  const commands = [...curve.matchAll(/C([\d.,-]+)/g)].map(match => {
+    const [x1, y1, x2, y2, x, y] = match[1].split(',').map(Number);
+    return [[x1, y1], [x2, y2], [x, y]];
+  });
   assert.equal(commands.length, 3);
   const observed = [[0, 25], [3, 20], [9, 90], [27, 92]];
   commands.forEach(([a, b, end], i) => {
@@ -83,28 +103,52 @@ test('smooth history trace passes through measured points without overshooting a
   assert.equal(commands[1][0][1], 20);
 });
 
-test('reduces rounded steps without removing extrema or charging anchors', async () => {
-  const { reduceCurve } = await import('../src/history-curve');
-  const input = [[0, 5], [1, 5], [2, 4], [3, 4], [4, 3], [5, 4], [6, 4]] as const;
-  const summary = reduceCurve([...input], 1.05, new Set([5]));
-  assert.deepEqual(summary, [input[0], input[4], input[5], input[6]]);
+test('interval edges change at the observation time and share the filled boundary', async () => {
+  const { intervalPaths } = await import('../src/history-curve');
+  const interval = intervalPaths([[0, 10, 30], [2, 10, 30], [3, 10, 30], [5, 20, 40], [9, 30, 50]]);
+  const vertices = (path: string) => {
+    const points = path.match(/\d+,\d+/g) ?? [];
+    return points.filter((point, index) => point !== points[index - 1]);
+  };
+  assert.deepEqual(vertices(interval.upper), ['0,10', '3,10', '5,10', '5,20', '9,20', '9,30']);
+  assert.deepEqual(vertices(interval.lower), ['0,30', '3,30', '5,30', '5,40', '9,40', '9,50']);
+  assert.ok(interval.fill.startsWith(interval.upper));
+  assert.ok(interval.fill.endsWith('L0,30Z'));
 });
 
-test('smooth reduction stays close to actual rounded samples even near a long-span turn', async () => {
-  const { exactCurve, reduceCurve } = await import('../src/history-curve');
+test('the rendered curve hits every observation even when it compacts long plateaus', async () => {
+  const { exactCurve } = await import('../src/history-curve');
   const values = Array.from({ length: 201 }, (_, i) => [i, Math.round(10 + Math.abs(150 - i) * .35)] as const);
-  const knots = reduceCurve(values, 1.05, new Set([175]));
-  assert.ok(knots.length < 60);
-  const segments = [...exactCurve(knots).matchAll(/C([\d., -]+)/g)]
-    .map(match => match[1].split(' ').map(point => point.split(',').map(Number)));
-  for (let j = 0; j < segments.length; j++) {
-    const [a, b, end] = segments[j];
-    const [startX, startY] = knots[j];
-    for (let i = startX; i <= end[0]; i++) {
-      const t = (i - startX) / (end[0] - startX);
+  const segments = [...exactCurve(values).matchAll(/C([\d.,-]+)/g)];
+  assert.ok(segments.length < values.length - 1);
+  let [startX, startY] = values[0];
+  for (const [, segment] of segments) {
+    const [, a, , b, endX, endY] = segment.split(',').map(Number);
+    for (let i = startX; i <= endX; i++) {
+      const t = (i - startX) / (endX - startX);
       const u = 1 - t;
-      const fitted = u ** 3 * startY + 3 * u ** 2 * t * a[1] + 3 * u * t ** 2 * b[1] + t ** 3 * end[1];
-      assert.ok(Math.abs(fitted - values[i][1]) <= 1.06, 'observations stay within 1.05% plus SVG rounding');
+      const fitted = u ** 3 * startY + 3 * u ** 2 * t * a + 3 * u * t ** 2 * b + t ** 3 * endY;
+      assert.ok(Math.abs(fitted - values[i][1]) < .001);
     }
+    [startX, startY] = [endX, endY];
   }
+});
+
+test('trend removes quantization stairs while preserving the measured peak and abrupt changes', async () => {
+  const { exactCurve, trendCurve } = await import('../src/history-curve');
+  const points = [[0, 36], [1, 36], [2, 35], [3, 35], [4, 35], [5, 34], [6, 34],
+    [7, 31], [8, 31], [9, 32], [10, 33]] as const;
+  const trend = trendCurve([...points], 1);
+  assert.notEqual(trend, exactCurve([...points]));
+  const endpoints = [...trend.matchAll(/C([\d.,-]+)/g)].map(([, controls]) => controls.split(',').slice(-2).join(','));
+  assert.deepEqual(endpoints, ['1,36', '3,35', '5,34', '6,34', '7,31', '8,31', '9,32', '10,33']);
+});
+
+test('trend interval ribbons use the measured time and bounds of each plateau', async () => {
+  const { intervalRibbon } = await import('../src/history-curve');
+  const ribbon = intervalRibbon([[0, 10, 30], [4, 10, 30], [8, 20, 40], [16, 20, 40]]);
+  assert.equal(ribbon.match(/M/g)?.length, 2);
+  assert.ok(ribbon.includes('Q8,10 8,14'));
+  assert.ok(ribbon.includes('M12,20'));
+  assert.ok(ribbon.includes('Q16,40 12,40'));
 });

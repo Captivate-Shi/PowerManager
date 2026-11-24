@@ -38,12 +38,14 @@ test('连续两次确认恢复后重新允许新一轮提醒', () => {
   assert.equal(second.lowAt, undefined);
   assert.equal(eligible(device, defaults, undefined, second, 0, 100), 'low');
 });
-test('断线与重连分段，历史仅保留 24 小时', () => {
+test('断线与重连分段，原始采样仅保留 24 小时', () => {
   const samples = [{ time: 1, reading }, { time: day, reading: null }];
   const gaps = recordHistory(samples, { time: day + 1, reading: null });
   assert.equal(gaps.length, 2);
   const next = recordHistory(gaps, { time: day + 2, reading });
-  assert.deepEqual(next, [{ time: day, reading: null }, { time: day + 2, reading }]);
+  assert.deepEqual(next, [{ time: day, reading: null, invalidThrough: day + 1 }, { time: day + 2, reading }]);
+  const later = { time: day + 120_002, reading: null };
+  assert.deepEqual(recordHistory(gaps, later).slice(-2), [gaps.at(-1), later]);
   assert.equal(delayFor(device, defaults, undefined, 0), 12000);
   assert.equal(delayFor({ ...device, status: 'no_radio_reply' }, defaults, undefined, 9), 12000);
 });

@@ -139,7 +139,19 @@ function installMock(options = {}) {
       commands.push(command);
       if (command.type === 'history') {
         await delay(options.historyDelay || 1100);
-        return { ok: true, history: structuredClone(histories[command.id] || []) };
+        const history = structuredClone(histories[command.id] || []);
+        if (!command.range || command.range === 'day') return { ok: true, history };
+        const buckets = new Map();
+        for (const point of history) {
+          if (!point.reading) continue;
+          const day = new Date(point.time).setHours(0, 0, 0, 0);
+          const bucket = buckets.get(day) ?? { day, lowest: point, count: 0 };
+          bucket.count++;
+          if (point.reading.low < bucket.lowest.reading.low) bucket.lowest = point;
+          if (point.reading.power === 'charging') bucket.lastCharge = point.time;
+          buckets.set(day, bucket);
+        }
+        return { ok: true, historyDays: [...buckets.values()] };
       }
       if (command.type === 'refresh') {
         state.refreshing = true;
@@ -151,6 +163,11 @@ function installMock(options = {}) {
       if (command.type === 'deviceSettings') {
         const next = { ...(state.deviceSettings[command.id] || {}), ...command.patch };
         state.deviceSettings[command.id] = next;
+        const device = state.devices.find(item => item.id === command.id);
+        if (device && 'alias' in command.patch) {
+          device.recognizedName ??= device.name;
+          device.name = next.alias?.trim() || device.recognizedName;
+        }
         if (options.portable && options.walkthrough && scenario !== 'legacy' && command.id === 'dual' && 'low' in command.patch) {
           scheduleDemoInspection();
         }

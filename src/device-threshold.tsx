@@ -105,7 +105,6 @@ export function DeviceThreshold({ deviceId, saved, global, critical, save }: {
       <HelpTip label="设备低电量阈值" text={'紧急阈值 ' + critical + '% 优先。调整后自动保存，不立即发送提醒。' +
         (actual > 50 ? ' 当前值超出滑块范围；调节后取 1%–50%。' : '')} />
     </div><output>{actual}%</output></header>
-    {!isCustom && <p id={id + '-hint'}>跟随全局</p>}
     <DetentSlider min={1} max={50} value={sliderValue} detents={presets}
       detentLabel="快速选择低电量阈值" selectedDetent={isCustom ? actual : undefined}
       name="device-threshold" aria-label="设备低电量阈值" aria-describedby={!isCustom ? id + '-hint' : undefined}
@@ -118,7 +117,8 @@ export function DeviceThreshold({ deviceId, saved, global, critical, save }: {
       onBlur={() => { if (pointer.current === null) flush(); }} />
     <footer><span role={error ? 'alert' : 'status'}>{dragValue !== undefined ? '松开后保存' : status}</span>
       {error && draft && <button type="button" onClick={() => update(draft.value, true)}>重试</button>}
-      {(isCustom || saved !== undefined) && <button type="button" onClick={() => update(undefined, true)}>恢复全局阈值</button>}
+      {isCustom ? <button type="button" className={styles.global} onClick={() => update(undefined, true)}>恢复全局阈值</button> :
+        <span className={styles.global} id={id + '-hint'}>跟随全局</span>}
     </footer>
   </section>;
 }
