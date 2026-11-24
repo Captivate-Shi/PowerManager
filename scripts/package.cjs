@@ -33,7 +33,7 @@ async function build() {
       dir: stage, out: output, name: 'PowerManager-H5', arch: 'x64', platform: 'win32',
       electronVersion: manifest.devDependencies.electron, electronZipDir: process.env.POWER_MANAGER_ELECTRON_ZIP_DIR,
       overwrite: true, asar: true, prune: false,
-      icon: join(root, 'public', 'assets', 'powermanager.ico'),
+      icon: join(root, 'public', 'assets', 'yudian-app.ico'),
       extraResource: [join(root, '.native', 'collector.exe')],
     });
   } finally {

@@ -69,17 +69,19 @@ async function verifyDemo() {
     const main = await app.firstWindow();
     const failures = [];
     main.on('pageerror', error => failures.push(String(error)));
-    await till(main, '外设电量总览');
+    await till(main, '我的桌面');
     await resize(app, 1600, 1000);
-    assert.equal(await main.getByRole('heading', { name: '已连接设备（5）', exact: true }).count(), 1);
-    await main.getByRole('button', { name: /^无线鼠标，/ }).hover();
+    await expect(main.getByText('5 台在线 · 2 台未连接')).toBeVisible();
+    await main.getByRole('button', { name: /^无线鼠标/ }).hover();
     await screenshot(main, '01-overview-1600');
     await main.getByRole('button', { name: '设备', exact: true }).click();
-    await till(main, '设备管理');
-    await main.getByRole('group', { name: 'DualSense 手柄近 24 小时电量曲线', exact: true }).waitFor();
+    await till(main, '我的设备');
+    await expect(main.getByRole('table')).toBeVisible();
     await screenshot(main, '02-devices-1600');
-    await main.getByRole('button', { name: /DualSense 手柄，/ }).dblclick();
-    await till(main, '设备详情');
+    await main.getByRole('button', { name: 'DualSense 手柄', exact: true }).dblclick();
+    await till(main, 'DualSense 手柄');
+    await expect(main.getByRole('group', { name: 'DualSense 手柄近 24 小时电量曲线' })).toBeVisible();
+    await expect(main.getByText('阶梯区间表示设备上报的电量范围')).toBeVisible();
     await main.getByRole('button', { name: '读取蓝牙电量', exact: true }).click();
     await main.getByRole('button', { name: '确认读取蓝牙电量' }).click();
     await main.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -87,12 +89,18 @@ async function verifyDemo() {
     await main.mouse.move(5, 5);
     await screenshot(main, '12-device-detail');
     await main.keyboard.press('Escape');
-    await till(main, '设备管理');
-    await main.getByRole('button', { name: '列表视图' }).click();
+    await till(main, '我的设备');
+    const detailSource = main.getByRole('button', { name: 'DualSense 手柄', exact: true });
+    await expect(detailSource).toBeFocused();
+    await detailSource.press('Enter');
+    await till(main, 'DualSense 手柄');
+    await main.getByRole('button', { name: '调整提醒' }).press('Enter');
+    await expect(main.getByRole('spinbutton', { name: '设备低电量阈值' })).toBeVisible();
+    await main.keyboard.press('Escape');
+    await expect(detailSource).toBeFocused();
     await main.getByRole('searchbox', { name: '搜索设备' }).or(main.getByRole('textbox', { name: '搜索设备' })).fill('蓝牙');
-    assert.equal(await main.getByRole('button', { name: /DualSense 手柄，/ }).count(), 1);
+    assert.equal(await main.getByRole('button', { name: 'DualSense 手柄', exact: true }).count(), 1);
     await main.getByRole('searchbox', { name: '搜索设备' }).clear();
-    await main.getByRole('button', { name: '网格视图' }).click();
     await main.getByRole('button', { name: '编辑设备名称' }).click();
     await main.getByRole('textbox', { name: '设备名称' }).fill('测试手柄');
     await main.getByRole('button', { name: '保存名称' }).click();
@@ -103,7 +111,7 @@ async function verifyDemo() {
     await main.getByRole('heading', { name: 'DualSense 手柄', exact: true }).waitFor();
 
     await main.getByRole('button', { name: '提醒', exact: true }).click();
-    await till(main, '低电量提醒');
+    await till(main, '提醒中心');
     await screenshot(main, '03-alerts-1600');
     const pendingToast = app.waitForEvent('window');
     const focusedBefore = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id);
@@ -142,10 +150,10 @@ async function verifyDemo() {
     const closedBody = dismissed.waitForEvent('close');
     await dismissed.getByRole('button', { name: /电量较低/ }).click();
     await closedBody;
-    await till(main, '低电量提醒');
+    await till(main, '提醒中心');
     const linked = await lowPreview();
     await linked.getByRole('button', { name: '查看详情' }).click();
-    await till(main, '设备详情');
+    await till(main, 'DualSense 手柄');
     await main.getByRole('heading', { name: 'DualSense 手柄', exact: true }).waitFor();
 
     const longName = '设备名称边界'.repeat(13) + '测试';
@@ -221,8 +229,8 @@ async function verifyDemo() {
       desktopResult.secondaryDisplayChecked = true;
     }
 
-    await main.getByRole('button', { name: '历史', exact: true }).click();
-    await till(main, '电量历史');
+    await main.getByRole('button', { name: '记录', exact: true }).click();
+    await till(main, '电量记录');
     await main.getByRole('group', { name: 'DualSense 手柄近 24 小时电量曲线', exact: true }).waitFor();
     await screenshot(main, '04-history-1600');
     await main.getByRole('button', { name: '设置', exact: true }).click();
@@ -253,7 +261,7 @@ async function verifyDemo() {
     await main.getByRole('button', { name: '应用', exact: true }).first().click();
     await expect.poll(() => main.evaluate(() => devicePixelRatio)).toBe(1.5);
     await main.getByRole('button', { name: '总览', exact: true }).click();
-    await till(main, '外设电量总览');
+    await till(main, '我的桌面');
     assert.equal(await main.getByRole('navigation').evaluate(nav => nav.scrollHeight <= nav.clientHeight), true);
     assert.equal(await main.getByRole('navigation').getByRole('button').evaluateAll(buttons =>
       buttons.every(button => button.getBoundingClientRect().bottom <= innerHeight)), true);
@@ -262,7 +270,7 @@ async function verifyDemo() {
       return (await window.webContents.capturePage()).toPNG().toString('base64');
     });
     writeFileSync(join(output, '18-minimum-window-navigation.png'), Buffer.from(pixels, 'base64'));
-    for (const [tab, heading] of [['设备', '设备管理'], ['提醒', '低电量提醒'], ['历史', '电量历史'], ['设置', '设置']]) {
+    for (const [tab, heading] of [['设备', '我的设备'], ['提醒', '提醒中心'], ['记录', '电量记录'], ['设置', '设置']]) {
       await main.getByRole('button', { name: tab, exact: true }).click();
       await till(main, heading);
       assert.equal(await main.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, tab);
@@ -298,7 +306,7 @@ async function verifyDemo() {
     await main.keyboard.press('Tab');
     assert.equal(await main.evaluate(() => document.activeElement.matches(':focus-visible')), true);
     await main.getByRole('button', { name: '设备', exact: true }).click();
-    const speaker = main.getByRole('button', { name: /蓝牙音箱，/ });
+    const speaker = main.getByRole('button', { name: '蓝牙音箱', exact: true });
     await speaker.click();
     const removeSpeaker = async () => {
       await main.getByRole('button', { name: '更多操作', exact: true }).click();
@@ -322,7 +330,7 @@ async function verifyDemo() {
     await emitTray(trayApp, 'click');
     await emitTray(trayApp, 'click');
     assert.equal(await trayApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(win => win.isVisible()).length), 1);
-    await tray.getByRole('img', { name: '5 台在线，共 7 台' }).waitFor();
+    await expect(tray.getByRole('heading', { name: /^5 个设备在线/ })).toBeVisible();
     const traySort = tray.getByRole('combobox', { name: '托盘设备排序' });
     await traySort.press('Space');
     await tray.getByRole('option', { name: '低电量优先' }).click();
@@ -347,9 +355,9 @@ async function verifyDemo() {
     const next = trayApp.waitForEvent('window');
     await emitTray(trayApp, 'double-click');
     const main = await next;
-    await till(main, '外设电量总览');
+    await till(main, '我的桌面');
     await tray.getByRole('button', { name: /DualSense 手柄/ }).click();
-    await till(main, '设备详情');
+    await till(main, 'DualSense 手柄');
     await main.getByRole('heading', { name: 'DualSense 手柄', exact: true }).waitFor();
     await main.getByRole('button', { name: '设置', exact: true }).click();
     await main.getByRole('spinbutton', { name: '托盘浮窗缩放百分比' }).fill('125');
@@ -372,7 +380,7 @@ async function verifyDemo() {
   const scaled = await launch('demo-scaled', '--demo', '--force-device-scale-factor=1.5');
   try {
     const main = await scaled.firstWindow();
-    await till(main, '外设电量总览');
+    await till(main, '我的桌面');
     await resize(scaled, 1280, 720);
     assert.equal(await main.evaluate(() => devicePixelRatio), 1.5);
     assert.equal(await main.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -386,8 +394,8 @@ async function verifyThresholds() {
     const main = await app.firstWindow();
     const headset = '蓝牙头戴耳机';
     const go = name => main.getByRole('button', { name, exact: true }).click();
-    const detail = main.getByRole('region', { name: '设备详情' });
-    const chooseHeadset = () => main.getByRole('button', { name: /^蓝牙头戴耳机，/ }).click();
+    const detail = main.getByRole('region', { name: '设备预览' });
+    const chooseHeadset = () => main.getByRole('button', { name: '蓝牙头戴耳机', exact: true }).click();
     const input = detail.getByRole('spinbutton', { name: '设备低电量阈值' });
     const apply = () => detail.getByRole('button', { name: '应用', exact: true }).click();
 
@@ -429,6 +437,7 @@ async function verifyThresholds() {
     await go('应用');
     await expect(main.getByRole('alert')).toContainText('紧急阈值必须低于低电量阈值');
     await globalLow.fill('25');
+    await globalCritical.fill('20');
     await go('应用');
     await expect(main.getByRole('alert')).toHaveCount(0);
     await expect(critical.getByRole('button', { name: headset, exact: true })).toBeVisible();
@@ -476,8 +485,14 @@ async function verifyReal() {
   const app = await launch(profileName);
   try {
     const main = await app.firstWindow();
-    await till(main, '外设电量总览');
+    await till(main, '我的桌面');
     await waitForCollector(main, 'occupied');
+    const sceneReply = Promise.race([once(lines, "line").then(([line]) => JSON.parse(line)),
+      holderExit.then(([code]) => { throw new Error("Collector exited during scene query: " + code); })]);
+    holder.stdin.write(JSON.stringify({ action: "scene", id: 2 }) + "\n");
+    const { result: scene } = await sceneReply;
+    assert.ok(["desktop", "fullscreen", "quiet"].includes(scene?.mode));
+    assert.ok(scene.allowed === null || typeof scene.allowed === "boolean");
     const inventory = await main.evaluate(() => window.powerManager.command({ type: 'compatibility', context: 'QA inventory' }));
     assert.equal(inventory.ok, true);
     assert.equal(JSON.parse(readFileSync(reportPath, 'utf8')).capture, 'inventory');
@@ -501,6 +516,7 @@ async function verifyReal() {
     }), { timeout: 10000 }).toBe(true);
     await screenshot(main, '11-live-overview');
     await main.getByRole('button', { name: '设置', exact: true }).click();
+    await main.getByRole('tab', { name: '诊断' }).click();
     await main.getByLabel('兼容性反馈说明（选填）').fill('本机验收，未接入待测 VGN 或 Logitech');
     await main.getByRole('button', { name: '生成兼容性报告' }).click();
     await main.getByText('兼容性报告已保存，可在诊断目录查看').waitFor();
@@ -565,7 +581,7 @@ async function verifyAutomaticToast() {
   try {
     await expect.poll(() => app.windows().some(window => window.url().includes('surface=main'))).toBe(true);
     const home = app.windows().find(window => window.url().includes('surface=main'));
-    await till(home, '外设电量总览');
+    await till(home, '我的桌面');
     await expect.poll(() => app.windows().some(window => window.url().includes('surface=toast'))).toBe(true);
     const popup = app.windows().find(window => window.url().includes('surface=toast'));
     await popup.getByRole('button', { name: /Fixture Mouse.*电量告急/ }).waitFor();
@@ -575,7 +591,7 @@ async function verifyAutomaticToast() {
     const pendingLow = app.waitForEvent('window');
     await popup.getByRole('button', { name: '查看详情' }).click();
     await closed;
-    await till(home, '设备详情');
+    await till(home, 'Fixture Mouse');
     await home.getByRole('heading', { name: 'Fixture Mouse', exact: true }).waitFor();
     const low = await pendingLow;
     await low.getByRole('button', { name: /Fixture Keyboard.*电量较低/ }).waitFor();
@@ -598,6 +614,7 @@ async function verifyAutomaticToast() {
       await expect.poll(() => app.windows().filter(window => window.url().includes('surface=toast')).length).toBe(0);
     }
     await home.getByRole('button', { name: '设置', exact: true }).click();
+    await home.getByRole('tab', { name: '诊断' }).click();
     await home.getByLabel('兼容性反馈说明（选填）').fill('V98 Pro V3 2.4 GHz fixture');
     await home.getByRole('button', { name: '生成兼容性报告' }).click();
     await home.getByText('兼容性报告已保存，可在诊断目录查看').waitFor();
@@ -627,7 +644,7 @@ async function verifyDeviceCountsAndMute() {
     const publish = (devices, collector = 'ready') => app.evaluate(({ BrowserWindow }, snapshot) => {
       BrowserWindow.getAllWindows()[0].webContents.send('state', snapshot);
     }, { ...baseline, devices, collector });
-    await till(main, '外设电量总览');
+    await till(main, '我的桌面');
     const baseline = await main.evaluate(() => window.powerManager.snapshot());
     const healthy = baseline.devices.find(device => device.id === 'mouse');
     assert.ok(healthy);
@@ -635,29 +652,21 @@ async function verifyDeviceCountsAndMute() {
     await publish([healthy], 'starting');
     await expect(main.getByRole('status')).toContainText('正在读取设备和电量');
     await expect(button('立即刷新')).toBeDisabled();
-    await expect(main.getByRole('heading', { name: /已连接设备/ })).toHaveCount(0);
+    await expect(main.getByRole('region', { name: '主设备' })).toHaveCount(0);
     await screenshot(main, '19-startup-skeleton');
     await button('设备').click();
     await expect(main.getByRole('searchbox')).toHaveCount(0);
     await button('总览').click();
     await publish([], 'occupied');
     await expect(main.getByRole('status')).toContainText('自动接管');
-    await expect(main.getByRole('heading', { name: '等待电量更新' })).toBeVisible();
-
     await publish([]);
-    await expect(main.getByRole('heading', { name: '尚未监测到设备' })).toBeVisible();
-    await expect(main.getByRole('heading', { name: '已连接设备（0）' })).toBeVisible();
+    await expect(main.getByText('尚未监测到外设', { exact: true })).toBeVisible();
     await noHorizontalOverflow();
     await publish([{ ...healthy, status: 'no_radio_reply' }]);
-    await expect(main.getByRole('heading', { name: '暂无可用电量读数' })).toBeVisible();
+    await expect(main.getByText('上次电量', { exact: true })).toBeVisible();
     await publish([healthy]);
-    const noCharge = main.getByRole('heading', { name: '当前没有待充电设备' });
-    await expect(noCharge).toBeVisible();
-    assert.equal(await noCharge.evaluate(node => {
-      const title = node.parentElement.parentElement.getBoundingClientRect();
-      const panel = node.closest('section').getBoundingClientRect();
-      return Math.abs(title.top + title.height / 2 - panel.top - panel.height / 2) <= 2;
-    }), true);
+    await expect(main.getByRole('region', { name: '主设备' }).getByText(healthy.name)).toBeVisible();
+    await expect(main.getByText('暂无其他设备')).toBeVisible();
     await screenshot(main, '20-one-device');
 
     const many = Array.from({ length: 48 }, (_, index) => {
@@ -666,21 +675,18 @@ async function verifyDeviceCountsAndMute() {
         name: '测试外设 ' + String(index + 1).padStart(2, '0') + (index === 47 ? ' ' + '长名称'.repeat(20) : '') };
     });
     await publish(many);
-    await expect(main.getByRole('heading', { name: '已连接设备（40）' })).toBeVisible();
-    await expect(main.getByRole('heading', { name: '未连接设备（8）' })).toBeVisible();
-    await expect(main.getByRole('heading', { name: '8 个设备需要充电' })).toBeVisible();
+    await expect(main.getByText('40 台在线 · 8 台未连接')).toBeVisible();
+    await expect(main.getByRole('region', { name: '主设备' }).getByText('建议充电')).toBeVisible();
     await screenshot(main, '21-many-devices');
-    await button('查看全部 8 个').click();
-    await till(main, '低电量提醒');
+    await main.getByRole('button', { name: '管理提醒' }).click();
+    await till(main, '提醒中心');
     await button('设备').click();
-    await expect(main.getByRole('heading', { name: '我的设备（48）' })).toBeVisible();
-    await button('列表视图').press('Space');
-    await expect(button('列表视图')).toHaveAttribute('aria-pressed', 'true');
+    await expect(main.getByRole('table', { name: '设备（48）' })).toBeVisible();
     await main.getByRole('searchbox').fill('测试外设 48');
-    await expect(main.getByRole('heading', { name: '我的设备（1）' })).toBeVisible();
+    await expect(main.getByRole('table', { name: '设备（1）' })).toBeVisible();
     await resize(app, 720, 520);
     await noHorizontalOverflow();
-    await button('历史').click();
+    await button('记录').click();
     const history = main.getByRole('combobox', { name: '历史设备' });
     await history.press('Space');
     await expect(main.getByRole('option')).toHaveCount(48);

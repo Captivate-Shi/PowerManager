@@ -17,8 +17,9 @@ app.setAppUserModelId('PowerManager.H5');
 const documentPath = join(__dirname, 'ui', 'index.html');
 const safePage = pathToFileURL(documentPath).href;
 const directory = join(__dirname, 'ui', 'assets');
-const iconPath = join(directory, 'powermanager.ico');
-const lowIconPath = join(directory, 'powermanager-low.ico');
+const iconPath = join(directory, 'yudian-app.ico');
+const trayIconPath = join(directory, 'yudian-tray.ico');
+const lowIconPath = join(directory, 'yudian-tray-low.ico');
 const executable = app.isPackaged ? join(process.resourcesPath, 'collector.exe') : join(__dirname, '..', '.native', 'collector.exe');
 let snapshot: Snapshot;
 let monitor: Monitor | undefined;
@@ -132,9 +133,9 @@ function openMain(id?: string) {
     const work = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     window = makeWindow('main', {
       width: Math.min(1240, work.width), height: Math.min(820, work.height), minWidth: 720, minHeight: 520,
-      title: '外设电量管理器', titleBarStyle: 'hidden',
-      titleBarOverlay: { color: '#e8f0fc', symbolColor: '#25334b', height: 36 },
-      backgroundColor: '#e8f0fc', autoHideMenuBar: true,
+      title: '余电', titleBarStyle: 'hidden',
+      titleBarOverlay: { color: '#15181e', symbolColor: '#f0f3f7', height: 48 },
+      backgroundColor: '#15181e', autoHideMenuBar: true,
     });
     window.on('close', event => {
       if (stopped) return;
@@ -178,7 +179,7 @@ function showTray() {
   trayOpening = true;
   const window = makeWindow('tray', {
     width: 420, height: 565, minWidth: 320, minHeight: 365, frame: false, resizable: pinned, skipTaskbar: true,
-    alwaysOnTop: true, backgroundColor: '#eaf3fe',
+    alwaysOnTop: true, backgroundColor: '#1b2029',
   });
   window.on('blur', () => setTimeout(() => {
     if (pinned || window.isDestroyed() || window.isFocused() || Date.now() - lastTrayClick < 240) return;
@@ -278,8 +279,8 @@ function updateTray() {
   const low = snapshot.devices.some(device => severity(device, snapshot.settings, snapshot.deviceSettings[device.id]));
   if (trayLow === low) return;
   trayLow = low;
-  tray.setImage(nativeImage.createFromPath(low ? lowIconPath : iconPath));
-  tray.setToolTip(low ? '外设电量管理器 · 有设备需要充电' : '外设电量管理器');
+  tray.setImage(nativeImage.createFromPath(low ? lowIconPath : trayIconPath));
+  tray.setToolTip(low ? '余电 · 有设备需要充电' : '余电');
 }
 function refreshTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -562,7 +563,7 @@ async function init() {
     try { return await run(canAccess(event), command); }
     catch (error) { return { ok: false, error: error instanceof Error ? error.message : '操作失败' }; }
   });
-  tray = new Tray(nativeImage.createFromPath(iconPath));
+  tray = new Tray(nativeImage.createFromPath(trayIconPath));
   tray.on('click', traySingleClick);
   tray.on('double-click', trayDoubleClick);
   tray.on('balloon-click', () => openMain(balloonDeviceId));

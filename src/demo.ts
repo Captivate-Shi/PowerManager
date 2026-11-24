@@ -14,7 +14,7 @@ export function demoSnapshot(): Snapshot {
   const now = Date.now();
   const devices: Device[] = fixture.map(([art, name, connection, value, online], index) => ({
     id: art, name, connection, art, status: online ? 'current' : 'offline', reason: online ? '读数正常' : '设备未连接',
-    reading: demoReading(value), lastRead: now - (online ? 0 : index === 5 ? 2 : 20) * 3600000, watched: false,
+    reading: art === 'dualsense' ? { ...demoReading(value), low: 10, high: 20 } : demoReading(value), lastRead: now - (online ? 0 : index === 5 ? 2 : 20) * 3600000, watched: false,
   }));
   return { devices, settings: { ...defaults }, deviceSettings: {}, collector: 'ready',
     refreshing: false, mutedUntil: 0, alerts: {}, demo: true };
@@ -30,7 +30,9 @@ export function demoHistory(device: Device): HistoryPoint[] {
   const last = device.reading.low;
   return Array.from({ length: 13 }, (_, i) => {
     const value = Math.min(100, last + Math.round((12 - i) * (100 - last) / 12));
-    return { time: now - (12 - i) * 10800000 / 1.5, reading: i === 5 && device.art === 'headset' ? null : demoReading(value) };
+    const lower = Math.floor(value / 10) * 10;
+    const reading = device.art === "dualsense" ? { ...demoReading(value), low: lower, high: Math.min(100, lower + 10) } : demoReading(value);
+    return { time: now - (12 - i) * 10800000 / 1.5, reading: i === 5 && device.art === 'headset' ? null : reading };
   });
 }
 export function previewDevice(level: 'low' | 'critical', base?: Device): Device {

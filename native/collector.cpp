@@ -21,6 +21,20 @@ using nlohmann::json;
 using namespace pm;
 using namespace std::chrono_literals;
 
+// WinRT ABI declarations from windows.ui.notifications.h. Keep external linkage
+// for these COM interfaces so GCC emits virtual calls to the Windows implementation.
+namespace notification_abi {
+struct ToastManagerStatics5 : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE GetDefault(IInspectable**) = 0;
+};
+enum class NotificationMode : int { unrestricted = 0 };
+struct ToastManagerForUser3 : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_NotificationMode(NotificationMode*) = 0;
+};
+constexpr GUID staticsId{0xd6f5f569, 0xd40d, 0x407c, {0x89,0x89,0x88,0xca,0xb4,0x2c,0xfd,0x14}};
+constexpr GUID modeId{0x3efcb176, 0x6cc1, 0x56dc, {0x97,0x3b,0x25,0x1f,0x7a,0xac,0xb1,0xc5}};
+}
+
 namespace {
 std::string utf8(std::wstring_view value)
 {
@@ -72,27 +86,20 @@ template<class T> struct Com {
 
 std::optional<bool> desktopNotificationsAllowed()
 {
-    struct ToastManager : IInspectable {
-        virtual HRESULT STDMETHODCALLTYPE GetDefault(IInspectable**) = 0;
-    };
-    struct ToastMode : IInspectable {
-        virtual HRESULT STDMETHODCALLTYPE get_NotificationMode(int*) = 0;
-    };
-    constexpr GUID managerId{0xd6f5f569, 0xd40d, 0x407c, {0x89,0x89,0x88,0xca,0xb4,0x2c,0xfd,0x14}};
-    constexpr GUID modeId{0x3efcb176, 0x6cc1, 0x56dc, {0x97,0x3b,0x25,0x1f,0x7a,0xac,0xb1,0xc5}};
+    using namespace notification_abi;
     constexpr wchar_t className[] = L"Windows.UI.Notifications.ToastNotificationManager";
     HSTRING_HEADER header{};
     HSTRING name{};
-    Com<ToastManager> factory;
+    Com<ToastManagerStatics5> factory;
     Com<IInspectable> manager;
-    Com<ToastMode> mode;
-    int result{};
+    Com<ToastManagerForUser3> mode;
+    NotificationMode result{};
     if (FAILED(WindowsCreateStringReference(className, ARRAYSIZE(className) - 1, &header, &name)) ||
-        FAILED(RoGetActivationFactory(name, managerId, reinterpret_cast<void**>(&factory.value))) || !factory.value ||
+        FAILED(RoGetActivationFactory(name, staticsId, reinterpret_cast<void**>(&factory.value))) || !factory.value ||
         FAILED(factory.value->GetDefault(&manager.value)) || !manager.value ||
         FAILED(manager.value->QueryInterface(modeId, reinterpret_cast<void**>(&mode.value))) || !mode.value ||
         FAILED(mode.value->get_NotificationMode(&result))) return std::nullopt;
-    return result == 0;
+    return result == NotificationMode::unrestricted;
 }
 
 bool lockedSession()
@@ -133,11 +140,14 @@ json scene()
     const HWND window = GetForegroundWindow();
     MONITORINFO monitor{sizeof(monitor), {}, {}, 0};
     const bool hasMonitor = window && GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONULL), &monitor);
+    const auto allowed = desktopNotificationsAllowed();
+    // The legacy BUSY state can persist on an ordinary desktop. Prefer an explicit
+    // WinRT notification mode and use the foreground window to detect fullscreen.
     const bool quiet = lockedSession() || (shellKnown && (shellState == QUNS_NOT_PRESENT ||
-        shellState == QUNS_PRESENTATION_MODE || shellState == QUNS_QUIET_TIME || shellState == QUNS_BUSY));
+        shellState == QUNS_PRESENTATION_MODE || shellState == QUNS_QUIET_TIME ||
+        (shellState == QUNS_BUSY && !allowed.value_or(false))));
     const bool fullscreen = (shellKnown && shellState == QUNS_RUNNING_D3D_FULL_SCREEN) ||
         (hasMonitor && fullScreen(window, monitor));
-    const auto allowed = desktopNotificationsAllowed();
     json point = nullptr;
     if (hasMonitor) point = {{"x", (monitor.rcMonitor.left + monitor.rcMonitor.right) / 2},
                              {"y", (monitor.rcMonitor.top + monitor.rcMonitor.bottom) / 2}};

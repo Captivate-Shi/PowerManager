@@ -1,7 +1,7 @@
 import { BatteryLow, Bell, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, X, Zap } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { isConnected, muteDurationLabel, percent, severity, type Snapshot, type Toast } from './model';
-import { api, Art, BatteryMeter, Brand, Connection, ConnectionGauge, dateLabel, SelectControl, StatusTag } from './ui';
+import { isConnected, muteDurationLabel, severity, type Snapshot, type Toast } from './model';
+import { api, Art, BatteryMeter, Brand, Connection, dateLabel, readingLabel, SelectControl, StatusTag } from './ui';
 import s from './panel.module.css';
 
 export function QuickPanel({ state }: { state: Snapshot }) {
@@ -27,25 +27,25 @@ export function QuickPanel({ state }: { state: Snapshot }) {
       <button className={s.iconButton} aria-label="关闭托盘面板" onClick={close}><X size={21} /></button>
     </div></header>
     {starting ? <section className={s.quickSummary} role="status"><h1>正在读取设备和电量…</h1></section> :
-    <section className={s.quickSummary}><ConnectionGauge online={online.length} total={state.devices.length} /><div><h1>{online.length} 个设备在线 <span>· {low.length} 个低电量</span></h1>
+    <section className={s.quickSummary}><div><h1>{online.length} 个设备在线 <span>· {low.length} 个低电量</span></h1>
       <p>{state.demo ? '示例模式' : state.collector === 'ready' ? '正在监测外设电量' : state.collector === 'occupied' ? '等待旧版退出后接管采集' : '等待电量采集'}</p></div></section>}
     <div className={s.quickScroll} hidden={starting}>
       <div className={s.quickSection}><h2>已连接设备（{online.length}）</h2><SelectControl label="托盘设备排序" value={sort} onChange={setSort}
         choices={[{ value: 'online', label: '按连接顺序' }, { value: 'low', label: '低电量优先' }]} /></div>
       {ordered.map(device => <button className={s.quickRow} key={device.id} onClick={() => { void api.command({ type: 'open', id: device.id }); }}>
-        <Art device={device} /><div><b title={device.name}>{device.name}</b><div><Connection device={device} /><StatusTag device={device} /></div></div><BatteryMeter device={device} state={state} />
+        <Art device={device} /><div><b title={device.name}>{device.name}</b><div><Connection device={device} /><StatusTag device={device} state={state} /></div></div><BatteryMeter device={device} state={state} />
       </button>)}
       {!ordered.length && <p className={s.smallEmpty}>暂无已连接设备</p>}
       <button className={s.quickSection + ' ' + s.disclosure} type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
         <h2>未连接设备（{offline.length}）</h2><ChevronDown size={19} /></button>
       {expanded && offline.map(device => <button className={s.quickRow} key={device.id} onClick={() => { void api.command({ type: 'open', id: device.id }); }}>
-        <Art device={device} /><div><b title={device.name}>{device.name}</b><StatusTag device={device} /></div><div className={s.quickOffline}>上次电量 <strong>{percent(device.reading)}</strong><br />{dateLabel(device.lastRead)}</div>
+        <Art device={device} /><div><b title={device.name}>{device.name}</b><StatusTag device={device} state={state} /></div><div className={s.quickOffline}>上次电量 <strong>{readingLabel(device.reading)}</strong><br />{dateLabel(device.lastRead)}</div>
       </button>)}
     </div>
     <footer className={s.quickFooter}>
       <button className={s.button} onClick={() => setExpanded(value => !value)}><ChevronDown size={17} />{expanded ? '折叠离线' : '展开全部'}</button>
       <button className={s.button} onClick={() => { void api.command({ type: 'mute' }); }}><Bell size={17} />{state.mutedUntil > Date.now() ? '恢复提醒' : '静音 ' + muteDurationLabel(state.settings.muteMinutes)}</button>
-      <button className={s.primary} onClick={() => { void api.command({ type: 'open' }); }}><ExternalLink size={17} />打开主界面</button>
+      <button className={s.primary} onClick={() => { void api.command({ type: 'open' }); }}><ExternalLink size={17} />打开余电</button>
     </footer>
   </main>;
 }
@@ -67,7 +67,7 @@ export function ToastPanel({ toast }: { toast: Toast }) {
       <span className={s.toastIcon} aria-hidden="true"><Icon size={23} /></span>
       <span className={s.toastCopy}>
         <strong className={s.toastName} ref={name} onPointerEnter={revealName} onPointerLeave={() => setShowName(false)}>{device.name}</strong>
-        <span className={s.toastStatus}><b>{severity === 'critical' ? '电量告急' : '电量较低'}</b> · 剩余 <b>{percent(device.reading)}</b></span>
+        <span className={s.toastStatus}><b>{severity === 'critical' ? '电量告急' : '电量较低'}</b> · 剩余 <b>{readingLabel(device.reading)}</b></span>
         <small className={s.toastHint}>请及时充电{preview && ' · 测试提醒'}</small>
       </span>
     </button>
