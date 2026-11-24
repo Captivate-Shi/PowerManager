@@ -9,6 +9,7 @@ import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLab
 import s from './panel.module.css';
 import look from './scene.module.css';
 import listLook from './overview-list.module.css';
+import { allowOverviewMotion, OverviewModeMotion } from './overview-mode-motion';
 import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
 import { DeviceThreshold } from './device-threshold';
@@ -271,6 +272,9 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   const [departing, setDeparting] = useState<Device>();
   const [listOutgoing, setListOutgoing] = useState<{ device: Device; opacity: number; y: number }>();
   const listArtwork = useRef<HTMLDivElement>(null);
+  const overviewDesk = useRef<HTMLDivElement>(null);
+  const overviewPlane = useRef<HTMLDivElement>(null);
+  const modeMotion = useRef<OverviewModeMotion | undefined>(undefined);
   const [travel, setTravel] = useState(0);
   const drag = useRef<{ pointer: number; at: number; y: number } | null>(null);
   const hero = useRef<HTMLElement>(null);
@@ -325,7 +329,43 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     return () => clearTimeout(timer);
   }, [listOutgoing]);
 
+  useEffect(() => {
+    const cancel = () => modeMotion.current?.cancel();
+    const policy = matchMedia('(min-width: 771px) and (prefers-reduced-motion: no-preference)');
+    window.addEventListener('resize', cancel);
+    document.addEventListener('visibilitychange', cancel);
+    policy.addEventListener('change', cancel);
+    return () => {
+      window.removeEventListener('resize', cancel);
+      document.removeEventListener('visibilitychange', cancel);
+      policy.removeEventListener('change', cancel);
+      cancel();
+    };
+  }, []);
+
+  useEffect(() => { modeMotion.current?.cancel(); }, [featured?.id]);
+
+  function switchMode(next: 'stage' | 'list') {
+    if (next === mode) return;
+    const animate = !!featured && allowOverviewMotion() && overviewDesk.current && overviewPlane.current;
+    let motion = modeMotion.current;
+    if (animate && !motion) motion = modeMotion.current = new OverviewModeMotion(overviewDesk.current!, overviewPlane.current!);
+    const before = animate && featured ? motion?.read(mode, featured.id) : undefined;
+    motion?.cancel();
+    const commit = () => {
+      setListOutgoing(undefined);
+      setDeparting(undefined);
+      setRevealId(undefined);
+      setStageResumed(next === 'stage' && !before?.photo);
+      setMode(next);
+    };
+    if (!before || !motion || !featured) { commit(); return; }
+    flushSync(commit);
+    motion.play(before, motion.read(next, featured.id, false), next);
+  }
+
   function previewInList(device: Device) {
+    modeMotion.current?.cancel();
     if (device.id === featured?.id) return;
     let outgoing: typeof listOutgoing;
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches && featured && listArtwork.current) {
@@ -348,6 +388,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   const critical = !!featured && inventory === 'ready' && level(featured, state) === 'critical';
 
   function activate(device: Device, way?: 'next' | 'previous') {
+    modeMotion.current?.cancel();
     if (initial || device.id === featured?.id) return;
     const destination = ordered.findIndex(item => item.id === device.id);
     setDirection(way ?? (destination < index ? 'previous' : 'next'));
@@ -367,19 +408,20 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     setTravel(0);
     if (commit && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.1) step(dx < 0 ? 1 : -1);
   }
-  return <div className={look.desk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined}>
+  return <div ref={overviewDesk} className={look.desk + ' ' + listLook.modeDesk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined}>
+    <div className={listLook.modeOverlay} ref={overviewPlane} aria-hidden="true" />
     {(initial || reveal) && <div className={look.coldCopy} data-cold-copy="" data-exiting={!initial || undefined} aria-hidden={!initial || undefined}>
       <h2>正在识别设备</h2>
       <p role={initial ? 'status' : undefined}>正在读取设备…</p>
     </div>}
     {featured && !initial && mode === 'stage' && <section ref={hero} className={look.hero + (stageResumed ? ' ' + listLook.stageResume : '')} aria-label="主设备">
-      <div className={look.heroData} aria-live="polite">
+      <div className={look.heroData + ' ' + listLook.modeStageCopy} aria-live="polite">
         <h2 title={featured?.name}>{featured.name}</h2>
         <SceneBattery device={featured} state={state} phase={phase} />
         <div className={look.heroState} data-tone={featured && !initial ? tone(featured, state) : 'normal'}>
           {phase === 'refreshing' && featured?.status === 'current' ? <span role="status">正在更新 · 保留上次读数</span> : featured && <><i aria-hidden="true" />{batteryState(featured, state)}{featured.status !== 'current' && featured.reading && <small>上次电量 · {dateLabel(featured.lastRead)}</small>}</>}
         </div>
-        {featured && <button className={look.ghost} onClick={() => openDetail(featured.id, hero.current ?? undefined)}>
+        {featured && <button className={look.ghost} onClick={() => { modeMotion.current?.cancel(); openDetail(featured.id, hero.current ?? undefined); }}>
           查看详情 <ChevronRight size={14} aria-hidden="true" />
         </button>}
       </div>
@@ -392,6 +434,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
         }}
         onPointerDown={event => {
           if (initial || ordered.length < 2 || !event.isPrimary || event.button !== 0 || (event.target as Element).closest('button')) return;
+          modeMotion.current?.cancel();
           drag.current = { pointer: event.pointerId, at: event.clientX, y: event.clientY };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
@@ -425,11 +468,11 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
         {critical && <span className={listLook.critical} data-list-critical=""><CircleAlert size={15} aria-hidden="true" />电量告急</span>}
       </div>
     </>}
-    {!initial && <section className={look.rail + (mode === 'list' ? ' ' + listLook.rail : '')} aria-label="切换设备">
+    {!initial && <section className={look.rail + ' ' + listLook.modeRail + (mode === 'list' ? ' ' + listLook.rail : '')} data-mode-rail="" aria-label="切换设备">
       <header className={look.railHeader}>
         <div className={look.modeControl} role="group" aria-label="总览显示方式">
-          <button disabled={initial} aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => { if (mode === 'list') { setListOutgoing(undefined); setStageResumed(true); setMode('stage'); } }}><LayoutGrid size={15} /></button>
-          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => { if (mode === 'stage') { setRevealId(undefined); setStageResumed(false); setMode('list'); } }}><List size={17} /></button>
+          <button disabled={initial} aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => switchMode('stage')}><LayoutGrid size={15} /></button>
+          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => switchMode('list')}><List size={17} /></button>
         </div>
         <button className={look.ghost} onClick={() => showDevices('all')}>全部设备 <ChevronRight size={14} aria-hidden="true" /></button>
       </header>
@@ -439,7 +482,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
           <button className={look.railRow + (mode === 'list' ? ' ' + listLook.selectRow : '')} aria-label={device.name}
             aria-pressed={device.id === featured?.id} disabled={initial}
             title={device.name} onClick={() => mode === 'stage' ? activate(device) : previewInList(device)}
-            onDoubleClick={event => { if (mode === 'stage') openDetail(device.id, event.currentTarget); }}>
+            onDoubleClick={event => { if (mode === 'stage') { modeMotion.current?.cancel(); openDetail(device.id, event.currentTarget); } }}>
             <Art device={device} variant="card" />
             <div className={look.railInfo}>
               <div className={look.railName}><b>{device.name}</b>

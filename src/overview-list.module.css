@@ -14,7 +14,6 @@
   pointer-events: none;
   z-index: -1;
   mask-image: linear-gradient(90deg, #000 0% 78%, transparent);
-  animation: list-mode-arrive 220ms ease-out both;
 }
 .artLayer {
   position: absolute;
@@ -86,10 +85,28 @@
 @media (max-width: 1050px) { .artFrame { opacity: .68; } }
 @media (max-width: 770px) {
   .listDesk[data-mode="list"] { grid-template-columns: minmax(0, min(100%,510px)); padding-block: 12px 48px; min-height: 0; }
-  .artFrame { width: 23vw; opacity: .29; }
+  .artFrame { width: 23vw; opacity: .29; animation: list-mode-arrive 220ms ease-out both; }
   .status { position: static; grid-row: 2; justify-self: end; padding-inline: 4px; margin-top: 4px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .artFrame, .stageResume, .artLayer[data-animated] { animation: none; }
   .artLayer[data-exiting] { display: none; }
 }
+
+/* Local shared-object mode transition. Existing document View Transitions stay
+   reserved for opening device details. */
+.modeDesk { isolation: isolate; }
+.modeRail { z-index: 2; position: relative; }
+.modeOverlay {
+  position: absolute;
+  inset: 0 auto 0 calc(50% - 50vw);
+  width: 100vw;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.modeOverlay > img { position: absolute; object-fit: fill; max-width: none; transform-origin: top left; }
+.modeDesk[data-overview-morph] :is([data-active-stage], [data-list-artwork]) { visibility: hidden; }
+/* Let the returning art clear the metadata lane before text fades in. */
+.modeDesk[data-overview-morph="stage"] .modeStageCopy { animation: mode-copy-return 450ms linear both; }
+@keyframes mode-copy-return { 0%, 68% { opacity: 0; } 100% { opacity: 1; } }
