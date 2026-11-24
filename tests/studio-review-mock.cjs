@@ -8,6 +8,7 @@ function installMock(options = {}) {
       { id: 'dual', art: 'dualsense', name: 'DualSense', reading: value(10, 20), connection: '蓝牙' },
       { id: 'keyboard', art: 'keyboard', name: '机械键盘', reading: value(67), connection: '无线 2.4G' },
       { id: 'headset', art: 'headset', name: '头戴耳机', reading: value(9), connection: '蓝牙' },
+      { id: 'xbox', art: 'xbox', name: 'Xbox 无线手柄', reading: value(46), connection: '蓝牙' },
     ].map(item => ({ ...item, status: 'current', lastRead: now, watched: true, reason: '设备读数正常' })),
     settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, soundOnly: false, voltage: false,
       startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60 },
@@ -38,7 +39,8 @@ function installMock(options = {}) {
   })];
   const keyboard = seq.map(i => ({ time: stamp(i), reading: value(Math.round(86 - i * 19 / 1440)) }));
   const headset = seq.map(i => ({ time: stamp(i), reading: value(Math.round(70 - i * 61 / 1440)) }));
-  const histories = { mouse, dual: range, keyboard, headset };
+  const xbox = seq.map(i => ({ time: stamp(i), reading: value(Math.round(ease(i, 0, 1440, 64, 46))) }));
+  const histories = { mouse, dual: range, keyboard, headset, xbox };
   const toastQuery = new URLSearchParams(location.search);
   const toastSeverity = toastQuery.get('kind') === 'low' ? 'low' : 'critical';
   const toastDevice = state.devices.find(d => d.id === toastQuery.get('device')) ?? state.devices[3];
@@ -55,6 +57,13 @@ function installMock(options = {}) {
   window.studioReview = {
     commands,
     ready: () => { state.collector = 'ready'; publish(); },
+    readAs: (id, percent) => {
+      const device = state.devices.find(item => item.id === id);
+      if (!device) throw Error('Unknown fixture device: ' + id);
+      device.reading = percent === null ? null : value(percent);
+      device.lastRead = Date.now();
+      publish();
+    },
     finishRefresh: () => {
       if (!completeRefresh) throw Error('Refresh was not requested');
       state.refreshing = false;

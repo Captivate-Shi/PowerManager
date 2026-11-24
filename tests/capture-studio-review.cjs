@@ -1,15 +1,17 @@
 // Built renderer proof with a deterministic mock at its real preload API boundary.
-// Build first. Optional CHROMIUM_PATH, STUDIO_REVIEW_OUT, and FFMPEG_PATH.
+// Build first. Optional CHROMIUM_PATH, STUDIO_REVIEW_OUT, STUDIO_REVIEW_DIST,
+// STUDIO_REVIEW_BASELINE_HTML and FFMPEG_PATH.
 const { chromium, expect } = require('@playwright/test');
-const { mkdirSync, mkdtempSync, writeFileSync, rmSync } = require('node:fs');
+const { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
 const { spawnSync } = require('node:child_process');
-const { pathToFileURL } = require('node:url');
+const { createHash } = require('node:crypto');
+const { pathToFileURL, fileURLToPath } = require('node:url');
 const { installMock } = require('./studio-review-mock.cjs');
 
 const output = resolve(process.env.STUDIO_REVIEW_OUT || 'studio-review-captures');
-const dist = pathToFileURL(join(__dirname, '../dist/ui/index.html')).href;
+const dist = pathToFileURL(resolve(process.env.STUDIO_REVIEW_DIST || join(__dirname, '../dist/ui/index.html'))).href;
 const viewport = { width: 1586, height: 992 };
 const files = [];
 const screenshot = async (page, name, fullPage = false) => {
@@ -24,6 +26,67 @@ async function assetCheck(page) {
   });
 }
 
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const digest = pathname => hash(readFileSync(pathname));
+const assetKeys = {
+  stage: 'stage.webp', initialDualSense: 'dualsense-loading.webp', dualsense: 'dualsense-hero.webp',
+  xbox: 'xbox-hero.webp', mouse: 'mouse-hero.webp', keyboard: 'keyboard-hero.webp',
+  dualsenseThumb: 'dualsense-thumb.webp', xboxThumb: 'xbox-thumb.webp',
+  mouseThumb: 'mouse-thumb.webp', keyboardThumb: 'keyboard-thumb.webp',
+};
+function priorAssets() {
+  const path = process.env.STUDIO_REVIEW_BASELINE_HTML;
+  if (!path) return null;
+  const match = readFileSync(path, 'utf8').match(/const assets = (\{[^\n]+\});/);
+  if (!match) throw Error('Unexpected original standalone preview asset schema');
+  return JSON.parse(match[1]);
+}
+function compareAssets(proven) {
+  const embedded = priorAssets();
+  if (!embedded) return undefined;
+  return Object.fromEntries(Object.entries(proven).map(([kind, current]) => {
+    const baseline = embedded['./assets/studio-v2/' + assetKeys[kind]];
+    return [kind, baseline ? hash(Buffer.from(baseline.split(',')[1], 'base64')) !== current : null];
+  }));
+}
+async function verifyBackground(page) {
+  const src = await page.locator('[data-view=overview]').evaluate(async shell => {
+    const bg = getComputedStyle(shell, '::before').backgroundImage;
+    const uri = bg.match(/url\("(file:[^"]+?\/studio-v2\/stage\.webp)"\)/)?.[1];
+    if (!uri) throw Error('The stage image is not included in the actual background paint');
+    const image = new Image();
+    image.src = uri;
+    await image.decode();
+    if (image.naturalWidth < 500) throw Error('Unexpected stage dimensions');
+    return uri;
+  });
+  const fromDist = digest(fileURLToPath(src));
+  expect(fromDist).toBe(digest(join(__dirname, '../public/assets/studio-v2/stage.webp')));
+  return fromDist;
+}
+const meterPaint = meter => meter.evaluate(node => {
+  const props = el => {
+    const css = getComputedStyle(el);
+    return [css.background, css.opacity, css.transform, css.animationName, el.offsetWidth, el.offsetHeight];
+  };
+  const after = getComputedStyle(node, '::after');
+  return { track: props(node), fill: [...node.children].map(props), railPulse: after.animationName };
+});
+async function verifyStageAsset(stage, art, variant = 'hero') {
+  const photo = stage.locator('img[data-device-art]:visible');
+  await expect(photo).toHaveCount(1);
+  const { src, width, fallback } = await photo.evaluate(async img => {
+    await img.decode();
+    return { src: img.currentSrc, width: img.naturalWidth, fallback: img.getAttribute('data-fallback') };
+  });
+  expect(fallback, 'must not be old fallback art').toBeNull();
+  expect(width).toBeGreaterThan(100);
+  expect(src).toMatch(new RegExp('/studio-v2/' + art + '-' + variant + '\\.webp$'));
+  const source = join(__dirname, '../public/assets/studio-v2', art + '-' + variant + '.webp');
+  const hash = digest(fileURLToPath(src));
+  expect(hash, 'published asset bytes equal repository source').toBe(digest(source));
+  return hash;
+}
 async function record(page, scenario) {
   const client = await page.context().newCDPSession(page);
   const framesDir = mkdtempSync(join(tmpdir(), 'yudian-studio-'));
@@ -89,17 +152,45 @@ async function main() {
     await expect(loadState('initial')).toBeVisible();
     await expect(read(hero, '正在读取设备…')).toBeVisible();
     await expect(read(hero, '10–20%')).toHaveCount(0);
-    await expect(hero.getByRole('progressbar', { name: '正在读取电量' })).toBeVisible();
+    for (const pct of ['10–20%', '92%', '67%', '46%']) await expect(read(rail, pct)).toHaveCount(0);
+    const initialProgress = hero.getByRole('progressbar', { name: '正在读取电量' });
+    await expect(initialProgress).toBeVisible();
+    expect(await initialProgress.getAttribute('aria-valuenow')).toBeNull();
     await expect(hero.getByRole('meter')).toHaveCount(0);
+    const provenAssets = { stage: await verifyBackground(page), initialDualSense: await verifyStageAsset(stage, 'dualsense', 'loading') };
+    expect(await assetCheck(page), 'initial silhouette and rail art decode').toBe(true);
+    const softbox = await stage.locator('img[data-device-art]').evaluate(img => {
+      const light = getComputedStyle(img.parentElement, '::after');
+      return { type: light.backgroundImage, mask: light.maskImage, motion: light.animationName };
+    });
+    expect(softbox.type).toMatch(/radial-gradient/);
+    expect(softbox.type).not.toMatch(/url\(/);
+    expect(softbox.mask).toContain('dualsense-loading.webp');
+    expect(softbox.motion).not.toBe('none');
+    expect(await initialProgress.locator('i').evaluate(node => getComputedStyle(node).animationName)).toContain('meter-indeterminate');
     const observed = await record(page, async () => {
-      await page.waitForTimeout(750);
+      await page.waitForTimeout(850);
       await screenshot(page, '06-总览-首次读取');
       await page.evaluate(() => window.studioReview.ready());
       await expect(loadState('ready')).toBeVisible();
       await expect(button(rail, 'DualSense')).toHaveAttribute('aria-pressed', 'true');
       await expect(read(hero, '10–20%')).toBeVisible();
       expect(await assetCheck(page), 'ready device art decodes').toBe(true);
+      provenAssets.dualsense = await verifyStageAsset(stage, 'dualsense');
+      for (const [name, art] of [['DualSense', 'dualsense'], ['Xbox 无线手柄', 'xbox'], ['无线鼠标', 'mouse'], ['机械键盘', 'keyboard']]) {
+        provenAssets[art + 'Thumb'] = await verifyStageAsset(button(rail, name), art, 'thumb');
+      }
+      const meter = hero.getByRole('meter', { name: '电量' });
+      await expect(meter).toHaveAttribute('aria-valuetext', '10–20%');
+      const readyMeter = await meterPaint(meter);
       const readyBox = await hero.boundingBox();
+      const floor = await stage.locator('[data-art=dualsense][data-loading=false]').evaluate(node => ({
+        cast: getComputedStyle(node, '::before').backgroundImage,
+        bounce: Number(getComputedStyle(node, '::after').opacity),
+      }));
+      expect(floor.cast).toMatch(/radial-gradient.*radial-gradient/);
+      expect(floor.bounce).toBeGreaterThan(0);
+      expect(floor.bounce).toBeLessThan(.25);
       await screenshot(page, '01-总览');
       await page.waitForTimeout(500);
       const refresh = button(page, '立即刷新');
@@ -109,6 +200,11 @@ async function main() {
       await expect(read(hero, '正在更新 · 保留上次读数')).toBeVisible();
       await expect(read(hero, '10–20%')).toBeVisible();
       await expect(button(rail, 'DualSense')).toHaveAttribute('aria-pressed', 'true');
+      await expect(meter).toHaveAttribute('aria-valuetext', '10–20%');
+      await expect(initialProgress).toHaveCount(0);
+      expect(await meterPaint(meter), 'refresh must not change the known battery fill or animate the meter').toEqual(readyMeter);
+      expect(await read(hero, '正在更新 · 保留上次读数').evaluate(node => getComputedStyle(node, '::before').animationName)).toContain('status-turn');
+      expect(await verifyStageAsset(stage, 'dualsense')).toBe(provenAssets.dualsense);
       const refreshBox = await hero.boundingBox();
       expect(Math.abs(readyBox.height - refreshBox.height)).toBeLessThan(2);
       await cleanMouse();
@@ -119,6 +215,7 @@ async function main() {
       await expect(loadState('ready')).toBeVisible();
       await expect(read(hero, '20–30%')).toBeVisible();
       await expect(button(rail, 'DualSense')).toHaveAttribute('aria-pressed', 'true');
+      await expect(meter).toHaveAttribute('aria-valuetext', '20–30%');
       await screenshot(page, '08-总览-同步完成');
       await page.waitForTimeout(700);
       await button(rail, '机械键盘').click();
@@ -138,14 +235,32 @@ async function main() {
       await expect(hero.getByRole('heading', { name: '机械键盘' })).toBeVisible();
       await expect(read(hero, '67%')).toBeVisible();
       await expect(button(rail, '机械键盘')).toHaveAttribute('aria-pressed', 'true');
+      provenAssets.keyboard = await verifyStageAsset(stage, 'keyboard');
+      await expect(meter).toHaveAttribute('aria-valuetext', '67%');
       await screenshot(page, '10-轮播-切换落位');
-      await page.waitForTimeout(770);
+      await page.waitForTimeout(620);
       const ordered = await rail.locator('button[aria-pressed]').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')).filter(name => name && !name.endsWith('模式')));
       const next = ordered[(ordered.indexOf('机械键盘') + 1) % ordered.length];
       await stage.focus();
       await stage.press('ArrowRight');
       await expect(hero.getByRole('heading', { name: next })).toBeVisible();
-      if (next !== 'DualSense') await button(rail, 'DualSense').click();
+      await button(rail, 'Xbox 无线手柄').click();
+      await expect(hero.getByRole('heading', { name: 'Xbox 无线手柄' })).toBeVisible();
+      await expect(stage.locator('[data-animate=true]')).toHaveCount(0);
+      await expect(meter).toHaveAttribute('aria-valuetext', '46%');
+      provenAssets.xbox = await verifyStageAsset(stage, 'xbox');
+      await cleanMouse();
+      await screenshot(page, '19-总览-Xbox无线手柄');
+      await page.waitForTimeout(580);
+      await button(rail, '无线鼠标').click();
+      await expect(hero.getByRole('heading', { name: '无线鼠标' })).toBeVisible();
+      await expect(stage.locator('[data-animate=true]')).toHaveCount(0);
+      await expect(meter).toHaveAttribute('aria-valuetext', '92%');
+      provenAssets.mouse = await verifyStageAsset(stage, 'mouse');
+      await cleanMouse();
+      await screenshot(page, '20-总览-无线鼠标');
+      await page.waitForTimeout(580);
+      await button(rail, 'DualSense').click();
       await expect(hero.getByRole('heading', { name: 'DualSense' })).toBeVisible();
       await expect(stage.locator('[data-animate=true]')).toHaveCount(0);
       await button(hero, '查看详情').click();
@@ -191,7 +306,7 @@ async function main() {
       await cleanMouse();
       await fullScreenshot('04-历史-双设备对比');
       await page.waitForTimeout(700);
-      return { chartHasExactGap: true, chartHasSteppedRange: true };
+      return { chartHasExactGap: true, chartHasSteppedRange: true, renderedAssetSHA256: provenAssets, renderedAssetChangedVsV1: compareAssets(provenAssets) };
     });
 
     await go('设备');
@@ -307,6 +422,21 @@ async function main() {
     await button(rail, '机械键盘').click();
     await expect(stage.locator('[data-animate=true]')).toHaveCount(0);
     await expect(hero.getByRole('heading', { name: '机械键盘' })).toBeVisible();
+    await button(page, '立即刷新').click();
+    await expect(loadState('refreshing')).toBeVisible();
+    expect(await read(hero, '正在更新 · 保留上次读数').evaluate(node => getComputedStyle(node, '::before').animationName)).toBe('none');
+    await button(rail, 'Xbox 无线手柄').click();
+    await expect(hero.getByRole('meter', { name: '电量' })).toHaveAttribute('aria-valuetext', '46%');
+    await page.evaluate(() => window.studioReview.finishRefresh());
+    await expect(loadState('ready')).toBeVisible();
+    await expect(button(rail, 'Xbox 无线手柄')).toHaveAttribute('aria-pressed', 'true');
+    await expect(hero.getByRole('meter', { name: '电量' })).toHaveAttribute('aria-valuetext', '46%');
+    await page.evaluate(() => window.studioReview.readAs('xbox', 0));
+    await expect(hero.getByRole('meter', { name: '电量' })).toHaveAttribute('aria-valuetext', '0%');
+    await expect(hero.getByRole('meter', { name: '电量' })).toHaveAttribute('aria-valuenow', '0');
+    await page.evaluate(() => window.studioReview.readAs('xbox', null));
+    await expect(hero.getByRole('meter', { name: '电量' })).toHaveCount(0);
+    await expect(hero.getByText('—', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 800, height: 630 });
     for (const name of ['总览', '设备', '提醒', '记录', '设置']) {
       await go(name);

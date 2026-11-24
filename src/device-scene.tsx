@@ -22,7 +22,7 @@ export function SceneBattery({ device, state, phase }: { device?: Device; state:
   const initial = phase === 'initial';
   const hasRange = !!reading && reading.low !== reading.high;
   return <div className={view.meter} data-phase={phase} data-tone={color}>
-    {initial ? <i className={view.numberGhost} aria-hidden="true">—</i> : <strong>{readingLabel(reading ?? null)}</strong>}
+    {!initial && <strong>{readingLabel(reading ?? null)}</strong>}
     {initial ? <div role="progressbar" className={view.progress} aria-label="正在读取电量"><i aria-hidden="true" /></div> :
       <div role={reading ? "meter" : undefined} className={view.track} aria-hidden={!reading || undefined} aria-label={reading ? "电量" : undefined}
         aria-valuemin={reading ? 0 : undefined} aria-valuemax={reading ? 100 : undefined}

@@ -173,7 +173,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
     settings: ['设置', '显示、监测与诊断'],
   };
   return <div className={s.shell + ' ' + look.shell + ' ' + preferences.mainPalette} data-theme={palette} data-view={detailed ? 'detail' : page}
-    style={{ '--studio-stage': `url("${studioPath('stage.webp')}")`, '--studio-light': `url("${studioPath('sync-light.webp')}")` } as CSSProperties}>
+    style={{ '--studio-stage': `url("${studioPath('stage.webp')}")` } as CSSProperties}>
     <a className={s.skipLink} href="#main-content">跳到主要内容</a>
     <header className={s.topbar + ' ' + look.topbar}>
       <Brand />
