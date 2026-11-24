@@ -51,7 +51,9 @@ function installMock(options = {}) {
   const shownToastDevice = {
     ...toastDevice,
     ...(toastQuery.get('long') === '1' ? { name: '用于长设备名称验证的无线头戴式蓝牙游戏耳机名称' } : {}),
-    ...(options.portable ? { reading: toastSeverity === 'low' ? value(12, 18) : value(9) } : {}),
+    ...(options.walkthrough || (scenario !== 'legacy' && toastQuery.has('kind'))
+      ? { reading: value(toastSeverity === 'low' ? 15 : 5) }
+      : options.portable ? { reading: toastSeverity === 'low' ? value(12, 18) : value(9) } : {}),
   };
   const commands = [];
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));

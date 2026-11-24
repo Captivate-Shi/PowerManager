@@ -267,6 +267,7 @@ async function main() {
       const toastInFlow = iframe.getByRole('main',{name:'桌面电量提醒'});
       try {
         await expect(toastInFlow).toBeVisible({timeout:2500});
+        await expect(toastInFlow.getByText('15%',{exact:true})).toBeVisible();
         await expect.poll(() => toastInFlow.evaluate(node => Number(getComputedStyle(node).opacity))).toBe(1);
         await snapshot(page,'15-提醒-测试通知层');
         milestone('手动发送测试通知，演示浮窗');
@@ -332,10 +333,11 @@ async function main() {
     await snapshot(warm,'20-补充-暖启动上次读数');
     const toast = await browser.newPage({ viewport:{width:460,height:146}, deviceScaleFactor:1, locale:'zh-CN' });
     toast.on('pageerror', error => errors.push(error.message));
-    await toast.addInitScript(installMock, { scenario:'legacy', portable:true });
+    await toast.addInitScript(installMock, { scenario:'legacy', portable:true, walkthrough:true });
     await toast.goto(renderer+'?surface=toast&kind=low&device=dual');
     await expect(toast.getByRole('main',{name:'桌面电量提醒'})).toBeVisible();
     await expect(toast.getByText('DualSense',{exact:true})).toBeVisible();
+    await expect(toast.getByText('15%',{exact:true})).toBeVisible();
     await delay(toast,300);
     await snapshot(toast,'21-补充-460x146测试通知');
     expect(errors).toEqual([]);
