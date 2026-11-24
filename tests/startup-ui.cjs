@@ -84,11 +84,11 @@ async function main() {
     await page.goto(url + '?surface=tray');
     await expect(page.getByRole('status')).toContainText('正在连接应用主进程');
     await page.evaluate(() => window.publish('cache', 'starting'));
-    await expect(page.getByRole('heading', { name: '显示上次记录' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: '显示上次记录' })).toBeVisible();
     await expect(page.getByRole('button', { name: /工作鼠标.*上次电量 9%/ })).toBeVisible();
-    await expect(page.getByText(/0 个设备在线/)).toHaveCount(0);
+    await expect(page.getByText(/0 台在线/)).toHaveCount(0);
     await page.evaluate(() => window.publish('live', 'ready'));
-    await expect(page.getByText(/1 个设备在线/)).toBeVisible();
+    await expect(page.getByText(/1 台在线/)).toBeVisible();
     console.log('Startup UI: IPC recovery, cold/no devices, retry vs confirmed empty, warm stale details and tray, live replacement.');
   } finally { await browser.close(); }
 }

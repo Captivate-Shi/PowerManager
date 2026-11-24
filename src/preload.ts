@@ -4,6 +4,8 @@ import type { DesktopApi, Snapshot } from './model';
 const api: DesktopApi = {
   snapshot: () => ipcRenderer.invoke('snapshot'),
   toast: () => ipcRenderer.invoke('toast'),
+  mainView: () => ipcRenderer.invoke('main-view'),
+  rememberMainView: view => ipcRenderer.invoke('remember-main-view', view),
   command: command => ipcRenderer.invoke('command', command),
   onSnapshot(callback) {
     const listener = (_event: unknown, state: Snapshot) => callback(state);

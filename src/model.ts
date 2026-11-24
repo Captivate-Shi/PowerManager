@@ -36,6 +36,13 @@ export function inventoryState(snapshot: Pick<Snapshot, 'devices' | 'collector'>
   return snapshot.collector === 'starting' ? 'cold' : 'unavailable';
 }
 export type Surface = 'main' | 'tray' | 'toast';
+export type MainView = {
+  page: 'overview' | 'devices' | 'alerts' | 'history' | 'settings';
+  detailId?: string;
+  selected?: string;
+  featured?: string;
+  mode?: 'stage' | 'list';
+};
 export type Command =
   | { type: 'refresh' | 'discover' | 'diagnostics' | 'mute' | 'pin' | 'closeSurface' }
   | { type: 'open'; id?: string }
@@ -50,6 +57,8 @@ export type CommandResult = { ok: true; history?: HistoryPoint[]; found?: Found[
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;
   toast(): Promise<Toast | null>;
+  mainView?(): Promise<MainView | undefined>;
+  rememberMainView?(view: MainView): Promise<void>;
   command(command: Command): Promise<CommandResult>;
   onSnapshot(fn: (state: Snapshot) => void): () => void;
   onNavigate(fn: (id?: string) => void): () => void;

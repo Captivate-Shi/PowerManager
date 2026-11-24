@@ -4,7 +4,7 @@ import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, Chev
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { canProbeBluetooth, inventoryState, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type Snapshot } from './model';
+import { canProbeBluetooth, inventoryState, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -40,15 +40,17 @@ const needCharge = (state: Snapshot) => state.devices.filter(device => level(dev
 const minutes = (values: number[]) => values.map(value => ({ value: String(value), label: value ? value + ' 分钟' : '关闭' }));
 const powerLabels = { charging: '充电中', full: '已充满', discharging: '电池供电', unknown: '设备未上报' };
 
-export function Dashboard({ state }: { state: Snapshot }) {
-  const [page, setPage] = useState<Page>('overview');
+export function Dashboard({ state, remembered }: { state: Snapshot; remembered?: MainView }) {
+  const [page, setPage] = useState<Page>(remembered?.page ?? 'overview');
   const [palette, setPalette] = useState(readPalette);
   const choosePalette = (value: Palette) => {
     setPalette(value);
     try { localStorage.setItem(paletteKey, value); } catch { /* Keep the selection for this window. */ }
   };
-  const [selected, select] = useState<string>();
-  const [detailId, setDetailId] = useState<string>();
+  const [selected, select] = useState<string | undefined>(remembered?.selected);
+  const [detailId, setDetailId] = useState<string | undefined>(remembered?.detailId);
+  const [featured, chooseFeatured] = useState<string | undefined>(remembered?.featured);
+  const [overviewMode, setOverviewMode] = useState<'stage' | 'list'>(remembered?.mode ?? 'stage');
   const main = useRef<HTMLElement>(null);
   const detailBack = useRef<HTMLButtonElement>(null);
   const returnScroll = useRef(0);
@@ -63,6 +65,9 @@ export function Dashboard({ state }: { state: Snapshot }) {
   const starting = state.collector === 'starting';
   const inventory = inventoryState(state);
   const low = needCharge(state);
+  useEffect(() => {
+    void api.rememberMainView?.({ page, selected, detailId, featured, mode: overviewMode }).catch(() => {});
+  }, [page, selected, detailId, featured, overviewMode]);
   useEffect(() => api.onNavigate(id => {
     if (id) {
       cancelTransition();
@@ -210,7 +215,8 @@ export function Dashboard({ state }: { state: Snapshot }) {
         { starting: inventory === 'cached' ? '显示上次记录，正在确认连接和电量。' : '正在读取设备和电量…', occupied: '旧版 PowerManager 正在监测。请从旧版托盘退出，新版会自动接管。',
           retrying: '采集暂时中断，正在尝试重新连接。' }[state.collector]}</span></div>}
       {state.error && <div className={s.notice} role="alert"><TriangleAlert size={19} />{state.error}</div>}
-      {page === 'overview' && <Overview state={state} openDetail={openDetail} showDevices={showDevices} find={() => setFinding(true)} />}
+      {page === 'overview' && <Overview state={state} openDetail={openDetail} showDevices={showDevices} find={() => setFinding(true)}
+        chosen={featured} choose={chooseFeatured} mode={overviewMode} setMode={setOverviewMode} />}
       {page === 'devices' && (inventory === 'cold' ? <DeviceSkeleton /> :
         inventory === 'unavailable' ? <Empty>暂无法读取设备，等待采集恢复</Empty> :
         <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
@@ -281,12 +287,13 @@ function overviewListFacts(device: Device, state: Snapshot, live: boolean) {
   };
 }
 
-function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
+function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, setMode }: { state: Snapshot;
   openDetail: (id: string, source?: HTMLElement) => void;
-  showDevices: (value: Filter) => void; find: () => void }) {
+  showDevices: (value: Filter) => void; find: () => void;
+  chosen?: string; choose: (id?: string) => void;
+  mode: 'stage' | 'list'; setMode: (value: 'stage' | 'list') => void;
+}) {
   const [order, setOrder] = useState(() => overviewOrder(state));
-  const [chosen, choose] = useState<string>();
-  const [mode, setMode] = useState<'stage' | 'list'>('stage');
   const [stageResumed, setStageResumed] = useState(false);
   const [modeInfo, setModeInfo] = useState<'entry' | 'exit'>();
   const [direction, setDirection] = useState<'next' | 'previous'>('next');

@@ -1,12 +1,13 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, Tray, type BrowserWindowConstructorOptions, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, Tray, type BrowserWindowConstructorOptions, type IpcMainInvokeEvent, type Rectangle } from 'electron';
 import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { demoDiscovery, demoHistory, demoSnapshot, previewDevice } from './demo';
 import { classify, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type Settings,
-  type Severity, type Snapshot, type Surface, type Toast } from './model';
+  type MainView, type Severity, type Snapshot, type Surface, type Toast } from './model';
 import { Monitor } from './monitor';
 import { startMetrics } from './metrics';
+import { HiddenSurface } from './hidden-surface';
 
 const isDemo = process.argv.includes('--demo');
 const local = process.env.LOCALAPPDATA || app.getPath('appData');
@@ -25,6 +26,14 @@ let snapshot: Snapshot;
 let monitor: Monitor | undefined;
 let tray: Tray;
 const windows: Partial<Record<Surface, BrowserWindow>> = {};
+const hiddenSurfaces = new WeakMap<BrowserWindow, HiddenSurface>();
+const mainIdleMs = 25_000;
+const trayIdleMs = 15_000;
+let mainFrame: { bounds: Rectangle; maximized: boolean } | undefined;
+let mainView: MainView | undefined;
+type InteractiveSurface = 'main' | 'tray';
+let wantedSurface: InteractiveSurface | undefined;
+const mainReady = new WeakSet<BrowserWindow>();
 let toast: Toast | null = null;
 let toastTimer: NodeJS.Timeout | undefined;
 let checking = false;
@@ -36,6 +45,7 @@ let pendingPage: string | undefined;
 let toastMonitorId: number | undefined;
 let trayClickTimer: NodeJS.Timeout | undefined;
 let trayOpening = false;
+const trayReady = new WeakSet<BrowserWindow>();
 let lastTrayDoubleClick = 0;
 let lastTrayClick = 0;
 let balloonDeviceId: string | undefined;
@@ -95,6 +105,7 @@ if (!maintenanceId && gateTime !== undefined && Date.now() - gateTime < 300_000)
   app.whenReady().then(init).catch(error => { console.error(error); app.exit(1); });
   app.on('before-quit', () => {
     stopped = true;
+    for (const window of Object.values(windows)) hiddenSurfaces.get(window)?.shown();
     stopMetrics?.();
     if (!maintenanceExit) monitor?.close();
   });
@@ -119,6 +130,23 @@ function makeWindow(surface: Surface, options: BrowserWindowConstructorOptions) 
   });
   return window;
 }
+function keepWhileRecentlyHidden(surface: InteractiveSurface, window: BrowserWindow) {
+  const idle = new HiddenSurface(surface === 'main' ? mainIdleMs : trayIdleMs,
+    switching => !stopped && windows[surface] === window && !window.isDestroyed() &&
+      (!window.isVisible() || (switching && window.isMinimized())) &&
+      (switching || (!window.isMinimized() && (surface !== 'tray' || !pinned))),
+    () => window.destroy());
+  hiddenSurfaces.set(window, idle);
+  window.on('show', () => {
+    idle.shown();
+    if (surface === 'main' && wantedSurface === 'tray') wantedSurface = undefined;
+  });
+  window.on('closed', () => {
+    idle.shown();
+    reconcileSurface();
+  });
+  return idle;
+}
 function applyZoom(surface: Surface) {
   const window = windows[surface];
   if (!window || window.isDestroyed()) return;
@@ -126,32 +154,83 @@ function applyZoom(surface: Surface) {
   window.webContents.setZoomFactor((requested ?? 100) / 100);
 }
 
-function openMain(id?: string) {
-  pendingPage = id;
-  let window = windows.main;
-  if (!window) {
-    const work = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-    window = makeWindow('main', {
-      width: Math.min(1240, work.width), height: Math.min(820, work.height), minWidth: 720, minHeight: 520,
-      title: '余电', titleBarStyle: 'hidden',
-      titleBarOverlay: { color: '#15181e', symbolColor: '#f0f3f7', height: 48 },
-      backgroundColor: '#15181e', autoHideMenuBar: true,
-    });
-    window.on('close', event => {
-      if (stopped) return;
-      event.preventDefault();
-      window?.hide();
-    });
-    window.once('ready-to-show', () => {
-      if (pendingPage) window?.webContents.send('navigate', pendingPage);
-      window?.show();
-    });
-  } else if (!window.webContents.isLoadingMainFrame()) {
-    if (window.isMinimized()) window.restore();
-    window.show();
-    window.focus();
-    if (id) window.webContents.send('navigate', id);
+function mainIsShowing() {
+  const main = windows.main;
+  return !!main && main.isVisible() && !main.isMinimized();
+}
+function rememberFrame(window: BrowserWindow) {
+  mainFrame = { bounds: window.getNormalBounds(), maximized: window.isMaximized() };
+}
+function reconcileSurface() {
+  if (stopped || !wantedSurface) return;
+  if (wantedSurface === 'tray' && mainIsShowing()) { wantedSurface = undefined; return; }
+  const current = wantedSurface;
+  const other = windows[current === 'main' ? 'tray' : 'main'];
+  if (other) {
+    if (current === 'main') {
+      // A pinned tray panel must yield to the main window; pinning applies to its current visit.
+      pinned = false;
+      trayOpening = false;
+    } else if (other.isVisible() || other.isMinimized()) rememberFrame(other);
+    other.hide();
+    hiddenSurfaces.get(other)?.switchAway();
+    return;
   }
+  wantedSurface = undefined;
+  if (current === 'main') openMainWindow();
+  else showTrayWindow();
+}
+function openMain(id?: string) {
+  if (id) {
+    pendingPage = id;
+    mainView = { ...mainView, page: 'devices', detailId: id, selected: id };
+  }
+  wantedSurface = 'main';
+  reconcileSurface();
+}
+function openMainWindow() {
+  const existing = windows.main;
+  if (existing) {
+    hiddenSurfaces.get(existing)?.shown();
+    if (mainReady.has(existing)) {
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      if (pendingPage) existing.webContents.send('navigate', pendingPage);
+    }
+    return;
+  }
+  const saved = mainFrame?.bounds;
+  const work = (saved ? screen.getDisplayMatching(saved) :
+    screen.getDisplayNearestPoint(screen.getCursorScreenPoint())).workArea;
+  const width = Math.min(saved?.width ?? 1240, work.width);
+  const height = Math.min(saved?.height ?? 820, work.height);
+  const placement = saved ? {
+    x: Math.max(work.x, Math.min(saved.x, work.x + work.width - width)),
+    y: Math.max(work.y, Math.min(saved.y, work.y + work.height - height)),
+  } : {};
+  const window = makeWindow('main', {
+    width, height, ...placement, minWidth: 720, minHeight: 520, title: '余电', titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#15181e', symbolColor: '#f0f3f7', height: 48 },
+    backgroundColor: '#15181e', autoHideMenuBar: true,
+  });
+  const idle = keepWhileRecentlyHidden('main', window);
+  window.on('close', event => {
+    if (stopped) return;
+    event.preventDefault();
+    rememberFrame(window);
+    // X sends the app to the tray. Minimize and focus loss do not schedule eviction.
+    if (window.isMinimized()) window.restore();
+    window.hide();
+    idle.hide();
+  });
+  window.once('ready-to-show', () => {
+    mainReady.add(window);
+    if (stopped || window.isDestroyed() || wantedSurface === 'tray') return;
+    if (pendingPage) window.webContents.send('navigate', pendingPage);
+    if (mainFrame?.maximized) window.maximize();
+    window.show();
+  });
 }
 function placeTray() {
   const window = windows.tray;
@@ -169,9 +248,19 @@ function placeTray() {
     y: Math.round(Math.max(work.y, Math.min(top, work.y + work.height - size.height))) });
 }
 function showTray() {
+  if (mainIsShowing()) return;
+  wantedSurface = 'tray';
+  reconcileSurface();
+}
+function showTrayWindow() {
   const existing = windows.tray;
   if (existing?.isVisible() || trayOpening) return;
   if (existing) {
+    hiddenSurfaces.get(existing)?.shown();
+    if (!trayReady.has(existing)) {
+      trayOpening = true;
+      return;
+    }
     if (!pinned) placeTray();
     existing.show();
     return;
@@ -181,6 +270,8 @@ function showTray() {
     width: 420, height: 565, minWidth: 320, minHeight: 365, frame: false, resizable: pinned, skipTaskbar: true,
     alwaysOnTop: true, backgroundColor: '#1b2029',
   });
+  const idle = keepWhileRecentlyHidden('tray', window);
+  window.on('hide', () => { if (!pinned) idle.hide(); });
   window.on('blur', () => setTimeout(() => {
     if (pinned || window.isDestroyed() || window.isFocused() || Date.now() - lastTrayClick < 240) return;
     const icon = tray.getBounds();
@@ -191,7 +282,8 @@ function showTray() {
   }, 100));
   window.once('closed', () => { trayOpening = false; });
   window.once('ready-to-show', () => {
-    if (!trayOpening) return;
+    trayReady.add(window);
+    if (stopped || !trayOpening || wantedSurface === 'main') return;
     trayOpening = false;
     placeTray();
     window.show();
@@ -203,7 +295,7 @@ function traySingleClick() {
   if (Date.now() - lastTrayDoubleClick < 180) return;
   clearTimeout(trayClickTimer);
   trayClickTimer = undefined;
-  if (windows.tray?.isVisible()) return;
+  if (mainIsShowing() || windows.tray?.isVisible()) return;
   // Delay opening until Windows has had a chance to emit its double-click event.
   trayClickTimer = setTimeout(() => {
     trayClickTimer = undefined;
@@ -214,8 +306,6 @@ function trayDoubleClick() {
   lastTrayDoubleClick = Date.now();
   clearTimeout(trayClickTimer);
   trayClickTimer = undefined;
-  trayOpening = false;
-  if (!pinned) windows.tray?.hide();
   openMain();
 }
 function placeToast() {
@@ -372,7 +462,7 @@ async function drainAlerts() {
     monitor.log(String(error));
   } finally { checking = false; }
 }
-function canAccess(event: IpcMainInvokeEvent): Surface {
+function canAccess(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>): Surface {
   const frame = event.senderFrame;
   const [surface] = Object.entries(windows).find(([, window]) => window.webContents === event.sender) ?? [];
   if (!surface || !frame || frame !== event.sender.mainFrame || frame.url.split('?')[0] !== safePage) {
@@ -497,7 +587,6 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
     case 'open':
       openMain(device?.id);
       if (surface === 'toast') closeToast();
-      if (surface === 'tray' && !pinned) windows.tray?.hide();
       break;
     case 'history':
       if (!device) throw new Error('设备已移除');
@@ -567,10 +656,29 @@ async function init() {
   }
   ipcMain.handle('snapshot', event => { canAccess(event); return snapshot; });
   ipcMain.handle('initial-route', event => canAccess(event) === 'main' ? pendingPage : undefined);
+  ipcMain.handle('main-view', event => canAccess(event) === 'main' ? mainView : undefined);
+  ipcMain.handle('remember-main-view', (event, value: unknown) => {
+    if (canAccess(event) !== 'main' || !object(value)) return;
+    const { page, detailId, selected, featured, mode } = value;
+    if (page !== 'overview' && page !== 'devices' && page !== 'alerts' && page !== 'history' && page !== 'settings') return;
+    if ([detailId, selected, featured].some(id => id !== undefined && !validId(id))) return;
+    if (mode !== undefined && mode !== 'stage' && mode !== 'list') return;
+    const restored = { page, detailId, selected, featured, mode } as MainView;
+    // A deep link takes precedence over a stale renderer's first state report.
+    if (pendingPage && restored.detailId !== pendingPage) return;
+    pendingPage = undefined;
+    mainView = restored;
+  });
   ipcMain.handle('toast', event => { if (canAccess(event) !== 'toast') return null; return toast; });
   ipcMain.handle('command', async (event, command: Command) => {
-    try { return await run(canAccess(event), command); }
-    catch (error) { return { ok: false, error: error instanceof Error ? error.message : '操作失败' }; }
+    let done: (() => void) | undefined;
+    try {
+      const surface = canAccess(event);
+      const window = windows[surface];
+      if (window) done = hiddenSurfaces.get(window)?.hold();
+      return await run(surface, command);
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : '操作失败' }; }
+    finally { done?.(); }
   });
   tray = new Tray(nativeImage.createFromPath(trayIconPath));
   tray.on('click', traySingleClick);
