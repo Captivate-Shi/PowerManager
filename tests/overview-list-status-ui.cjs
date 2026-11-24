@@ -152,7 +152,10 @@ async function inspectStatus(page, { id,name,status,amount,power,alert=false }) 
   await expect(brief(page)).toContainText(status);
   const number=selected(page,name).locator('strong');
   if(amount)await expect(number).toContainText(amount);
-  if(status!=='已连接')await expect(number).toContainText('上次电量');
+  if(status!=='已连接'){
+    await expect(number).toContainText(/^上次\s+\d/);
+    await expect(selected(page,name)).toHaveAccessibleDescription(/上次电量：/);
+  }
   await expect(brief(page)).toHaveAttribute('data-connection-state',
     status==='已连接'?'connected':status==='未连接'?'offline':'pending');
   if(power)await expect(number).toHaveAttribute('data-tone','green');

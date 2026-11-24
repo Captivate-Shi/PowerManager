@@ -177,7 +177,7 @@
 .modeDesk[data-mode="list"] .modeExtra { opacity: 1; }
 .modeDesk[data-mode="stage"] .status { opacity: 0; pointer-events: none; }
 .modeDesk[data-mode="list"][data-mode-info-entry] :is(.modeExtra, .status) {
-  animation: mode-extra-in 150ms ease-out 440ms both;
+  animation: mode-extra-in 150ms ease-out 450ms both;
 }
 .modeDesk[data-mode="stage"][data-mode-info-exit] :is(.modeExtra, .status) {
   animation: mode-extra-out 110ms ease-out both;
@@ -208,7 +208,7 @@
 @media (min-width: 1120px) {
   .modeDesk[data-mode] .sharedInfo > div:first-child b { font-size: 14px; font-weight: 550; }
   .modeDesk[data-mode] .sharedInfo > strong { font-weight: 560; }
-  .modeDesk[data-mode="list"] .sharedInfo > div:first-child {
+  .modeDesk[data-mode="list"]:not([data-overview-rail-motion]) .sharedInfo > div:first-child {
     max-width: min(196px, max(72px, calc(100% - 324px)));
   }
   .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra {
@@ -225,7 +225,7 @@
   .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra svg { width: 13px; height: 13px; }
 }
 @media (min-width: 1120px) and (max-width: 1320px) {
-  .modeDesk[data-mode="list"] .sharedInfo > div:first-child {
+  .modeDesk[data-mode="list"]:not([data-overview-rail-motion]) .sharedInfo > div:first-child {
     max-width: min(172px, max(60px, calc(100% - 288px)));
   }
   .modeDesk:is([data-mode="list"], [data-mode-info-exit]) .modeExtra {

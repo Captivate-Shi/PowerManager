@@ -188,7 +188,8 @@ async function startTrace(page) {
         const name=b.querySelector('b');
         const pct=b.querySelector('strong');
         return {id:b.ariaLabel,row:vertical(b.closest('[data-mode-row]')||b),thumb:vertical(b.querySelector('[data-art]')),name:textLine(name),pct:textLine(pct),
-          nameWrap:name?getComputedStyle(name).whiteSpace:null,pctWrap:pct?getComputedStyle(pct).whiteSpace:null};
+          nameWrap:name?getComputedStyle(name).whiteSpace:null,pctWrap:pct?getComputedStyle(pct).whiteSpace:null,
+          clipped:name?name.scrollWidth>name.clientWidth+1:false};
       });
       const listStatus=elem('[aria-label="所选设备状态"]');
       const veil=elem('[data-mode-bottom-veil]');
@@ -329,6 +330,8 @@ function summarizeMotion(trace,subject,kind){
 function summarizeVertical(trace,{responsive=false}={}) {
   const src=trace[0];
   const firstById=new Map(src.vertical.rows.map(row=>[row.id,row]));
+  const lastById=new Map(last(trace).vertical.rows.map(row=>[row.id,row]));
+  const temporaryClip=new Set();
   const drift={railTop:0,headerTop:0,headerHeight:0,headerBaseline:0,modesTop:0,viewportTop:0,viewportHeight:0,rows:0,rowHeights:0,thumbnail:0,name:0,percent:0,nameGlyphWidth:0,percentGlyphWidth:0,scrollTop:0,windowScroll:0};
   const delta=(key,a,b)=>{
     expect(Number.isFinite(a)&&Number.isFinite(b),key+' measurable').toBe(true);
@@ -365,13 +368,15 @@ function summarizeVertical(trace,{responsive=false}={}) {
       expect(row.pctWrap,'percent has nowrap policy across widths').toBe('nowrap');
       expect(row.name?.lineCount,'name remains single line').toBe(1);
       expect(row.pct?.lineCount,'percentage remains single line').toBe(1);
+      if(!before.clipped&&!lastById.get(row.id)?.clipped&&row.clipped)temporaryClip.add(row.id);
     }
   }
   const exceptions=responsive?new Set(['railTop','headerTop','headerBaseline','modesTop','viewportTop','windowScroll']):new Set();
   for(const [key,value] of Object.entries(drift)) {
     if(!exceptions.has(key))expect(value,'maximum vertical drift: '+key).toBeLessThanOrEqual(.75);
   }
-  return {rows:firstById.size,scrollOffset:src.vertical.scrollTop,maxDriftPx:drift,frames:trace.length};
+  expect([...temporaryClip],'names readable at both endpoints must not briefly truncate during travel').toEqual([]);
+  return {rows:firstById.size,scrollOffset:src.vertical.scrollTop,maxDriftPx:drift,temporaryNameClips:temporaryClip.size,frames:trace.length};
 }
 
 
