@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Keyboard
 import { RefreshCw, Zap } from 'lucide-react';
 import type { Device, HistoryPoint } from './model';
 import { historyWindow, plotHistory, sampleAt, type PlotSeries } from './history-plot';
-import { api } from './ui';
+import { api, Art, readingLabel } from './ui';
 import { ChartSkeleton } from './chart-loading';
 import s from './panel.module.css';
 
-const colors = ['#a8c8ed', '#c3adf7', '#82d9be'];
-const dash = [undefined, '7 3', '2 3'];
-const hour = 3_600_000;
+const colors = ['#c5e4f6', '#cbbbf1', '#a2c9ba'];
+const dash = [undefined, '6 3', '2 3'];
+const dayTick = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' });
 const tick = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const stamp = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 type ReadingResult = { points?: HistoryPoint[]; error?: string; query?: string };
@@ -18,10 +18,11 @@ export function Chart({ device, threshold, large = false }: { device: Device; re
   return <HistoryComparison devices={[device]} threshold={threshold} large={large} />;
 }
 
-export function HistoryComparison({ devices, threshold, large = true }: { devices: Device[]; threshold?: number; large?: boolean }) {
+export function HistoryComparison({ devices, threshold, anchor, large = true }: { devices: Device[]; threshold?: number; anchor?: number; large?: boolean }) {
   const [results, setResults] = useState<Record<string, ReadingResult>>({});
   const [retry, setRetry] = useState(0);
-  const [end, setEnd] = useState(() => Date.now());
+  const [internalEnd, setEnd] = useState(() => Date.now());
+  const end = anchor ?? internalEnd;
   const requests = useRef(new Map<string, { query: string }>());
   // Each device has its own revision and request token: do not reload or
   // invalidate other series when devices report at different cadences.
@@ -53,10 +54,12 @@ export function HistoryComparison({ devices, threshold, large = true }: { device
     }
   }, [request]);
 
+  const controlled = anchor !== undefined;
   useEffect(() => {
+    if (controlled) return;
     const timer = window.setInterval(() => { if (!document.hidden) setEnd(Date.now()); }, 60_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [controlled]);
 
   const start = end - historyWindow;
   const plotById = useMemo(() => new Map(Object.entries(results).map(([id, result]) =>
@@ -93,13 +96,33 @@ export function HistoryComparison({ devices, threshold, large = true }: { device
         <button className={s.textButton} onClick={() => setRetry(value => value + 1)} disabled={pending}><RefreshCw size={13} />重试</button>
       </div>}
     </div>
+    {activeSeries.length > 0 && <HistorySummary series={activeSeries} />}
   </div>;
 }
 
+function HistorySummary({ series }: { series: Series[] }) {
+  return <table className={s.historySummary} aria-label="近 24 小时记录摘要">
+    <thead><tr><th scope="col">设备</th><th scope="col">最低记录</th><th scope="col">最近充电采样</th><th scope="col">有效采样</th></tr></thead>
+    <tbody>{series.map(({ device, plot, color }) => {
+      const valid = plot.points.filter(point => !!point.reading);
+      const lowest = valid.reduce<HistoryPoint | undefined>((best, point) => !best || point.reading!.low < best.reading!.low ||
+        (point.reading!.low === best.reading!.low && point.reading!.high < best.reading!.high) ? point : best, undefined);
+      const latestCharge = valid.findLast(point => point.reading?.power === 'charging');
+      return <tr key={device.id}>
+        <th scope="row"><div><Art device={device} /><i style={{ background: color }} /><span>{device.name}</span></div></th>
+        <td>{lowest ? <>{readingLabel(lowest.reading)} <small>{tick.format(lowest.time)}</small></> : '—'}</td>
+        <td>{latestCharge ? stamp.format(latestCharge.time) : '—'}</td><td>{valid.length.toLocaleString('zh-CN')} 次</td>
+      </tr>;
+    })}</tbody>
+  </table>;
+}
+
+type HoverEvent = { name: string; kind: 'invalid' | 'unrecorded' | 'charging'; at: number; end?: number; reading?: HistoryPoint['reading'] };
 function Graph({ series, start, end, threshold }: { series: Series[]; start: number; end: number; threshold?: number }) {
   const outer = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 600, height: 260 });
+  const [size, setSize] = useState({ width: 900, height: 420 });
   const [pointer, setPointer] = useState<number | null>(null);
+  const [over, setOver] = useState<HoverEvent | null>(null);
   const [keyboard, setKeyboard] = useState(false);
   useEffect(() => {
     if (!outer.current) return;
@@ -111,45 +134,69 @@ function Graph({ series, start, end, threshold }: { series: Series[]; start: num
     return () => ro.disconnect();
   }, []);
   const { width, height } = size;
-  const left = 42;
-  const right = width - 13;
-  const top = 18;
-  const bottom = Math.max(54, height - 32 - series.length * 15);
+  const left = width < 560 ? 39 : 65;
+  const right = width - (width < 560 ? 10 : 24);
+  const top = 24;
+  const bottom = Math.max(54, height - 49);
   const x = (time: number) => left + (time - start) / (end - start) * (right - left);
   const y = (value: number) => bottom - value / 100 * (bottom - top);
   const time = pointer === null ? null : start + pointer * (end - start);
   const xCursor = time === null ? null : x(time);
-  const laneY = (lane: number) => bottom + 12 + lane * 15;
-  const divisions = width < 420 ? 3 : 6;
-  // Actual paths change only when data or chart geometry changes, not while
-  // inspecting a timestamp with the pointer.
+  const stepHours = width < 560 ? 8 : 4;
+  const wallTick = new Date(start);
+  wallTick.setHours(Math.floor(wallTick.getHours() / stepHours) * stepHours, 0, 0, 0);
+  const ticks = [start];
+  for (let count = 0; count < 9; count++) {
+    wallTick.setHours(wallTick.getHours() + stepHours);
+    const instant = wallTick.getTime();
+    if (instant >= end || x(end) - x(instant) < 67) break;
+    if (x(instant) - x(ticks.at(-1)!) >= 67) ticks.push(instant);
+  }
+  ticks.push(end);
   const paths = useMemo(() => series.map(({ plot, index, color }) => {
     const line: string[] = [];
     const dots: string[] = [];
     const bands: string[] = [];
     const brackets: string[] = [];
     const xy = (t: number, v: number) => x(t).toFixed(1) + ',' + y(v).toFixed(1);
-    const step = (from: number, to: number, height: number) => 'H' + x(from).toFixed(1) + 'V' + y(height).toFixed(1) + 'H' + x(to).toFixed(1);
+    const step = (from: number, to: number, value: number) => 'H' + x(from).toFixed(1) + 'V' + y(value).toFixed(1) + 'H' + x(to).toFixed(1);
     for (const run of plot.runs) {
       if (run.kind === 'exact') {
         const segments = run.points.map(point => xy(point.time, point.reading.low));
         if (segments.length > 1) line.push('M' + segments.join('L'));
         else dots.push(segments[0]);
-      } else {
-        const first = run.points[0];
-        if (run.points.length === 1) {
-          const pos = x(first.time).toFixed(1);
-          brackets.push('M' + pos + ',' + y(first.reading.low).toFixed(1) + 'V' + y(first.reading.high).toFixed(1));
-          continue;
-        }
-        const last = run.points.at(-1)!;
-        const upper = run.points.slice(1).map(point => 'H' + x(point.time).toFixed(1) + 'V' + y(point.reading.high).toFixed(1));
-        const reverse = run.points.slice(0, -1).reverse();
-        const lower = reverse.map((point, i) => step(run.points[run.points.length - 1 - i].time, point.time, point.reading.low));
-        bands.push('M' + xy(first.time, first.reading.high) + upper.join('') + 'L' + xy(last.time, last.reading.low) + lower.join('') + 'Z');
+        continue;
       }
+      const first = run.points[0];
+      if (run.points.length === 1) {
+        const pos = x(first.time).toFixed(1);
+        brackets.push('M' + pos + ',' + y(first.reading.low).toFixed(1) + 'V' + y(first.reading.high).toFixed(1));
+        continue;
+      }
+      const last = run.points.at(-1)!;
+      const upper = run.points.slice(1).map(point => 'H' + x(point.time).toFixed(1) + 'V' + y(point.reading.high).toFixed(1));
+      const lower = run.points.slice(0, -1).reverse().map((point, i) =>
+        step(run.points[run.points.length - 1 - i].time, point.time, point.reading.low));
+      bands.push('M' + xy(first.time, first.reading.high) + upper.join('') + 'L' + xy(last.time, last.reading.low) + lower.join('') + 'Z');
     }
     return { index, color, line: line.join(''), dots, bands: bands.join(''), brackets: brackets.join('') };
+  }), [series, start, end, width, height]);
+  const eventPositions = useMemo(() => series.map(({ plot, index, color, device }) => {
+    const valid = plot.runs.flatMap(run => run.points);
+    let next = 0;
+    const gaps = plot.gaps.map(gap => {
+      while (next < valid.length && valid[next].time < gap.start) next++;
+      const before = valid[next - 1];
+      const after = valid[next];
+      const matching = before ?? after;
+      // The bracket is annotation, never an imputed value or line. Place it in
+      // the vicinity of the adjacent trace, safely inset from plot edges.
+      const labelAt = matching ? Math.min(88, Math.max(12, matching.reading.high)) : 58 - index * 14;
+      const l = Math.min(right - 7, Math.max(left + 2, x(gap.start)));
+      const r = Math.min(right, Math.max(l + 6, x(gap.end)));
+      return { ...gap, l, r, top: y(labelAt) + (index === 0 ? 0 : index % 2 ? 14 : -14) };
+    });
+    return { device, plot, index, color, gaps, valid };
   }), [series, start, end, width, height]);
 
   function moveKey(event: KeyboardEvent) {
@@ -157,6 +204,7 @@ function Graph({ series, start, end, threshold }: { series: Series[]; start: num
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return;
     event.preventDefault();
     setKeyboard(true);
+    setOver(null);
     const stride = 1 / (event.shiftKey ? 24 : 96);
     setPointer(event.key === 'Escape' ? null : event.key === 'Home' ? 0 : event.key === 'End' ? 1 :
       Math.min(1, Math.max(0, value + (event.key === 'ArrowLeft' ? -stride : stride))));
@@ -164,59 +212,93 @@ function Graph({ series, start, end, threshold }: { series: Series[]; start: num
   const cursorValues = time === null ? [] : series.map(({ device, plot, color }) => {
     const sample = sampleAt(plot, time);
     const read = sample?.reading;
-    const value = read ? (read.low === read.high ? read.low : read.low + '–' + read.high) + '%' :
-      sample ? '无有效读数' : '未记录采样';
-    return { device, color, sample, read, value };
+    return { device, color, sample, read, value: read ? readingLabel(read) : sample ? '无有效读数' : '未记录采样' };
   });
+  const hoverSide = over ? ((over.end ?? over.at) + over.at) / 2 > start + (end - start) * .53 : (pointer ?? 0) > .53;
+  const eventName = over?.kind === 'charging' ? '采样显示正在充电' : over?.kind === 'invalid' ? '无有效读数' : '无采样';
   return <div className={s.graph} ref={outer} tabIndex={0} onKeyDown={moveKey}
     aria-label="近 24 小时电量曲线。用左右方向键查看时间点，Escape 退出。"
     onPointerMove={event => {
       setKeyboard(false);
       const bounds = event.currentTarget.getBoundingClientRect();
       setPointer(Math.max(0, Math.min(1, (event.clientX - bounds.left - left) / (right - left))));
-    }} onPointerLeave={() => { if (!keyboard) setPointer(null); }} onBlur={() => { setKeyboard(false); setPointer(null); }}>
+    }} onPointerLeave={() => { setOver(null); if (!keyboard) setPointer(null); }}
+    onBlur={() => { setKeyboard(false); setPointer(null); setOver(null); }}>
     <svg className={s.graphSvg} width="100%" height="100%" aria-hidden="true">
       {[0, 25, 50, 75, 100].map(value => <g key={value}>
-        <line className={s.graphGrid} x1={left} x2={right} y1={y(value)} y2={y(value)} />
-        <text className={s.graphLabel} x={left - 8} y={y(value) + 4} textAnchor="end">{value}%</text>
+        <line className={value === 0 ? s.graphAxis : s.graphGrid} x1={left - 6} x2={right} y1={y(value)} y2={y(value)} />
+        <text className={s.graphLabel} x={left - 11} y={y(value) + 4.5} textAnchor="end">{value}%</text>
       </g>)}
-      {Array.from({ length: divisions + 1 }, (_, i) => {
-        const instant = start + i * (end - start) / divisions;
-        return <text key={i} className={s.graphLabel} x={x(instant)} y={height - 7}
-          textAnchor={i === 0 ? 'start' : i === divisions ? 'end' : 'middle'}>{i === divisions ? '现在' : tick.format(instant)}</text>;
+      <line className={s.graphAxis} x1={left} x2={left} y1={top} y2={bottom} />
+      {ticks.map((instant, i) => {
+        const last = i === ticks.length - 1;
+        const anchor = i === 0 ? 'start' : last ? 'end' : 'middle';
+        const px = x(instant);
+        return <g key={i}>
+          <line className={s.graphAxis} x1={px} x2={px} y1={bottom} y2={bottom + 7}/>
+          <text className={s.graphLabel} x={px} y={bottom + 23} textAnchor={anchor}>{last ? '现在' : tick.format(instant)}</text>
+          <text className={s.graphDate} x={px} y={bottom + 41} textAnchor={anchor}>{dayTick.format(instant)}</text>
+        </g>;
       })}
       {threshold !== undefined && series.length === 1 && <line x1={left} x2={right} y1={y(threshold)} y2={y(threshold)}
         className={s.graphThreshold} strokeDasharray="4 5"><title>提醒阈值 {threshold}%</title></line>}
       {paths.map(item => <g key={item.index} stroke={item.color} fill={item.color} data-series={item.index}>
-        <path d={item.bands} fillOpacity=".19" strokeOpacity=".65" strokeWidth="1" />
-        <path d={item.brackets} fill="none" strokeWidth="3" strokeOpacity=".7" />
-        <path d={item.line} fill="none" strokeWidth="2" strokeDasharray={dash[item.index]} strokeLinejoin="round" />
+        <path d={item.bands} fillOpacity=".19" strokeOpacity=".78" strokeWidth="1.4" />
+        <path d={item.brackets} fill="none" strokeWidth="2.6" strokeOpacity=".75" />
+        <path d={item.line} fill="none" strokeWidth="2.2" strokeDasharray={dash[item.index]} strokeLinejoin="round" strokeLinecap="round" />
         {item.dots.map((value, index) => { const [cx, cy] = value.split(','); return <circle key={index} cx={cx} cy={cy} r="2" />; })}
       </g>)}
-      {series.map(({ plot, color, index, device }, lane) => <g key={device.id} stroke={color}
-        aria-hidden="true" data-event-series={index}>
-        <text x={left - 8} y={laneY(lane) + 3} textAnchor="end" className={s.eventLaneLabel} stroke="none" fill={color}>{index + 1}</text>
-        <line x1={left} x2={right} y1={laneY(lane)} y2={laneY(lane)} className={s.graphGrid} />
-        {plot.gaps.map(gap => <line key={gap.start + ':' + gap.kind} x1={x(gap.start)} x2={Math.max(x(gap.start) + 3, x(gap.end))}
-          y1={laneY(lane)} y2={laneY(lane)} strokeDasharray={gap.kind === 'invalid' ? '3 2' : '1 3'}
-          data-event={gap.kind} strokeWidth="3" strokeOpacity={gap.kind === 'invalid' ? '.90' : '.55'}>
-          <title>{device.name}：{gap.kind === 'invalid' ? '无有效读数' : '未记录采样'} · {stamp.format(gap.start)}–{stamp.format(gap.end)}</title>
-        </line>)}
-        {plot.charging.map(({ time: at }) => <g key={at} transform={'translate(' + x(at) + ' ' + laneY(lane) + ')'} data-event="charging">
-          <circle r="6" fill="var(--panel)" strokeWidth="1.5" />
-          <path d="M1 -4L-2 1H0L-1 4L3 -1H0Z" fill={color} stroke="none" />
-          <title>{device.name}：采样显示正在充电 · {stamp.format(at)}</title>
-        </g>)}
+      {eventPositions.map(({ device, color, index, gaps, valid, plot }) => <g key={device.id} data-event-series={index}>
+        {index === 0 && valid.length > 1 && [valid[0], valid.at(-1)!].map((point, i) => point.reading.low === point.reading.high &&
+          <g key={point.time} fill={color} pointerEvents="none">
+            <circle cx={x(point.time)} cy={y(point.reading.high)} r="3.5" />
+            <text x={x(point.time) + (i === 0 ? 7 : -7)} y={y(point.reading.high) + (point.reading.high > 92 ? 17 : -10)}
+              textAnchor={i === 0 ? 'start' : 'end'} className={s.endpointValue}>{readingLabel(point.reading)}</text>
+          </g>)}
+        {gaps.map(gap => {
+          const span = gap.r - gap.l;
+          const mid = (gap.l + gap.r) / 2;
+          const label = gap.kind === 'invalid' ? '无有效读数' : '无采样';
+          const inset = gap.kind === 'invalid' ? 41 : 29;
+          const showLabel = span > inset * 2 + 16;
+          const mark = (a: number, b: number) => 'M' + a + ',' + gap.top + 'H' + b;
+          const event: HoverEvent = { name: device.name, kind: gap.kind, at: gap.start, end: gap.end };
+          return <g key={gap.start + ':' + gap.kind} data-event={gap.kind} data-event-label={label}
+            className={s.chartEvent} onPointerEnter={() => setOver(event)} onPointerLeave={() => setOver(null)}>
+            <rect fill="transparent" x={gap.l - 5} y={gap.top - 13} width={span + 10} height="26"/>
+            <path d={(showLabel ? mark(gap.l, mid - inset) + mark(mid + inset, gap.r) : mark(gap.l, gap.r)) +
+              'M' + gap.l + ',' + (gap.top - 7) + 'v14M' + gap.r + ',' + (gap.top - 7) + 'v14'}
+              stroke={color} strokeOpacity={index === 0 ? '.87' : '.75'} strokeWidth="1.15" fill="none"
+              strokeDasharray={gap.kind === 'unrecorded' ? '3 3' : undefined} pointerEvents="none" />
+            {showLabel && <text x={mid} y={gap.top + 4} textAnchor="middle" className={s.gapLabel} fill={color} pointerEvents="none">{label}</text>}
+          </g>;
+        })}
+        {plot.charging.map(({ time: at, reading }) => {
+          // For an interval, pin to its upper bound and explain the full
+          // interval in the tooltip; do not synthesize an exact reading.
+          const event: HoverEvent = { name: device.name, kind: 'charging', at, reading };
+          return <g key={at} data-event="charging" className={s.chartEvent}
+            transform={'translate(' + x(at) + ' ' + y(reading.high) + ')'}
+            onPointerEnter={() => setOver(event)} onPointerLeave={() => setOver(null)}>
+            <circle r="13" fill="transparent" />
+            <circle r="8" fill={color} stroke="var(--window)" strokeWidth="1.5" pointerEvents="none" />
+            <path d="M1.5 -5L-3 1H0L-1 5L3.8 -1.2H.5Z" fill="var(--window)" pointerEvents="none" />
+          </g>;
+        })}
       </g>)}
-      {xCursor !== null && <line className={s.graphCursor} x1={xCursor} x2={xCursor} y1={top} y2={bottom} />}
+      {xCursor !== null && !over && <line className={s.graphCursor} x1={xCursor} x2={xCursor} y1={top} y2={bottom} />}
     </svg>
-    {time !== null && <div className={s.graphTooltip} data-side={(pointer ?? 0) > .52 ? 'start' : 'end'}>
+    {over ? <div className={s.graphTooltip} data-side={hoverSide ? 'start' : 'end'} data-kind={over.kind}>
+      <b>{over.name} · {eventName}</b>
+      <span>{stamp.format(over.at)}{over.end !== undefined ? ' – ' + stamp.format(over.end) : ''}</span>
+      {over.reading && <span>{readingLabel(over.reading)}</span>}
+    </div> : time !== null && <div className={s.graphTooltip} data-side={hoverSide ? 'start' : 'end'}>
       <span>{stamp.format(time)}</span>
       {cursorValues.map(({ device, color, sample, read, value }) => <div key={device.id} style={{ '--series': color } as CSSProperties}>
-          <i /><b>{device.name}</b><span>{value}</span>
-          {read?.power === 'charging' && <Zap size={12} aria-label="充电记录" />}
-          {read && sample && <small>读于 {stamp.format(sample.time)}</small>}
-        </div>)}
+        <i /><b>{device.name}</b><span>{value}</span>
+        {read?.power === 'charging' && <Zap size={12} aria-label="充电记录" />}
+        {read && sample && <small>读于 {stamp.format(sample.time)}</small>}
+      </div>)}
     </div>}
     <span className={s.chartSrOnly} role="status">{keyboard && time !== null ?
       stamp.format(time) + ' ' + cursorValues.map(({ device, value, sample, read }) => device.name + ' ' + value +

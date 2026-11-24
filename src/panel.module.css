@@ -442,7 +442,7 @@
 .detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(208px, 31vh, 320px); }
 .chartPlot .chartSkeleton, .chartPlot .chartEmpty { height: 100%; }
 .chartSkeleton { position: relative; display: grid; overflow: hidden; place-items: center; color: var(--muted); border-radius: 9px; font-size: 12px; background: var(--panel); }
-.chartSkeleton svg { position: absolute; inset: 12px 8px; width: calc(100% - 16px); height: calc(100% - 24px); fill: none; stroke: var(--line); stroke-width: 1; }
+.chartSkeleton svg { position: absolute; inset: 24px 24px 49px 65px; width: calc(100% - 89px); height: calc(100% - 73px); fill: none; stroke: var(--line); stroke-width: 1; }
 .chartSkeleton span { z-index: 1; padding: 4px 9px; background: var(--panel); border-radius: 4px; }
 .chartSkeleton::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 25%, #b8c6de0c 45%, transparent 65%); transform: translateX(-100%); animation: history-shimmer 1.25s ease-in-out 2; }
 @keyframes history-shimmer { to { transform: translateX(100%); } }
@@ -485,3 +485,87 @@
 
 .eventLaneLabel, .historyChoice small { font-size: 10px; font-variant-numeric: tabular-nums; }
 .historyChoice small { color: var(--muted); }
+
+/* Comparison follows the flat reference, not the earlier panel-and-lanes UI. */
+.heading[data-history="true"] { margin-bottom: 24px; }
+.heading[data-history="true"] > div:first-child { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+.heading[data-history="true"] h1 { font-size: clamp(22px, 2.3vw, 34px); font-weight: 610; }
+.heading[data-history="true"] p { border-inline-start: 1px solid #ffffff28; padding-inline-start: 15px; margin: 0; font-size: 13px; }
+.history { border: 0; border-radius: 0; padding: 0; background: transparent; }
+.historyToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.historySpan, .historyChoices { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.historySpan { flex-wrap: wrap; }
+.historySpan b, .historyAdd, .historyChoice { border: 1px solid #ffffff38; border-radius: 8px; min-height: 38px; background: #ffffff06; }
+.historySpan b { background: #ffffff12; padding: 8px 12px; font-weight: 600; }
+.historySpan > span { white-space: nowrap; font-size: 13px; color: var(--muted); }
+.historyChoices { justify-content: flex-end; margin: 0; padding: 0; max-height: none; overflow: visible; }
+.historyChoice { min-width: 0; max-width: min(36vw, 240px); color: var(--ink); gap: 8px; padding: 4px 9px; }
+.historyChoice[aria-pressed="true"] { background: #ffffff06; }
+.historyChoice:disabled[aria-pressed="true"] { opacity: 1; }
+.historyChoice .art { width: 39px; height: 26px; min-width: 39px; flex: none; }
+.historyChoice .art img { width: 100%; height: 100%; }
+.historyChoice i { width: 8px; height: 8px; border-radius: 99px; border: 0; background: currentColor; opacity: 1; }
+.historyChoice[data-series="0"] i { color: #c5e4f6; }
+.historyChoice[data-series="1"] i { color: #cbbbf1; }
+.historyChoice[data-series="2"] i { color: #a2c9ba; }
+.historyChoice:hover:not(:disabled), .historyAdd:hover { border-color: #ffffff71; background: #ffffff0e; }
+.historyRemove { color: var(--quiet); }
+.historyAdd { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; }
+.historyMenu { z-index: 10; min-width: 168px; max-width: min(470px, 88vw); max-height: 300px; overflow-y: auto; background: var(--raised); border: 1px solid var(--line); padding: 5px; border-radius: 9px; box-shadow: 0 8px 22px #0007; }
+.historyMenu .menuOption { display: flex; justify-content: space-between; gap: 14px; }
+.historyMenu .menuOption[data-disabled] { opacity: .5; }
+.historyMenu .menuOption > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history .chartFrame, .history > .chartSkeleton { margin-top: clamp(14px, 2vw, 28px); }
+.chartPlot[data-large="true"], .chartSkeleton[data-large="true"] { height: clamp(265px, 49vh, 515px); }
+.detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(225px, 38vh, 360px); }
+.chartSkeleton { background: #ffffff03; border-radius: 0; }
+.chartSkeleton span { background: var(--window); }
+.graphGrid { stroke: #aab0bd3a; }
+.graphAxis { stroke: #c6cbd87b; stroke-width: 1; }
+.graphLabel { fill: #d8dce5; font-size: clamp(11px, 1.05vw, 14px); }
+.graphDate { fill: var(--quiet); font-size: 10px; }
+.endpointValue { font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 580; paint-order: stroke; stroke: var(--window); stroke-width: 3px; }
+.gapLabel { font-size: 13px; font-weight: 520; paint-order: stroke; stroke: var(--window); stroke-width: 5px; }
+.chartEvent { cursor: help; }
+.graphTooltip[data-kind] { display: grid; gap: 4px; }
+.chartMeta { padding: 8px 0 7px; justify-content: space-between; }
+.chartGuide { font-size: 11px; }
+.historySummary { text-align: left; width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #ffffff28; border-radius: 8px; overflow: hidden; margin-top: 16px; table-layout: fixed; }
+.historySummary th, .historySummary td { padding: 8px clamp(5px, 1.5vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.historySummary :is(th, td):not(:first-child) { text-align: center; }
+.historySummary thead { color: var(--muted); font-size: 12px; }
+.historySummary thead th { font-weight: 500; }
+.historySummary tbody tr:nth-child(odd) { background: #ffffff07; }
+.historySummary tbody :is(th, td) { border-top: 1px solid #ffffff16; }
+.historySummary tbody th { font-weight: 560; }
+.historySummary tbody th > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.historySummary tbody th span { overflow: hidden; text-overflow: ellipsis; }
+.historySummary .art { width: 29px; height: 19px; flex: none; }
+.historySummary .art img { width: 100%; height: 100%; }
+.historySummary th i { width: 6px; height: 6px; border-radius: 99px; flex: none; }
+.historySummary small { color: var(--quiet); margin-inline-start: 3px; }
+
+/* The overview keeps the same stage and rows before, during and after reads. */
+.initialArt { isolation: isolate; }
+.initialArt .art { filter: grayscale(1) brightness(.3); opacity: .72; }
+.initialArt::after { content: ""; position: absolute; inset: 8% 3%; pointer-events: none; background: linear-gradient(112deg, transparent 32%, #d3dbec12 48%, transparent 58%); transform: translateX(-100%); animation: history-shimmer 1.5s ease-in-out 2; mix-blend-mode: screen; }
+.emptySilhouette { width: 52%; aspect-ratio: 1.35; background: #ffffff07; border: 1px solid #ffffff08; border-radius: 28%; }
+.placeholderValue, .placeholderRule, .placeholderThumb { display: block; background: #ffffff12; border-radius: 100px; }
+.placeholderValue { width: clamp(58px, 8vw, 99px); height: 34px; }
+.placeholderRule { width: 64%; min-width: 12px; height: 5px; }
+.placeholderThumb { width: 64%; height: 23px; margin-inline: auto; }
+.initialRow .art { filter: grayscale(1) brightness(.42); opacity: .62; }
+.initialRow > div > .placeholderRule + .placeholderRule { width: 45%; margin-top: 8px; opacity: .65; }
+.overviewTop[data-load-state="refreshing"] .heroReadout .track { overflow: hidden; position: relative; }
+.overviewTop[data-load-state="refreshing"] .heroReadout .track::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(102deg, transparent 0%, #f5c16f95 50%, transparent 100%); transform: translateX(-100%); animation: history-shimmer 1.25s ease-in-out 2; }
+@media (max-width: 590px) {
+  .chartSkeleton svg { inset-inline: 39px 10px; width: calc(100% - 49px); }
+  .historyChoices { justify-content: flex-start; gap: 6px; }
+  .historyChoice { max-width: 47vw; }
+  .historyChoice .art { width: 26px; min-width: 26px; }
+  .historySummary td, .historySummary th { font-size: 11px; }
+  .historySummary .art { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .initialArt::after, .overviewTop[data-load-state="refreshing"] .heroReadout .track::after { animation: none; }
+}

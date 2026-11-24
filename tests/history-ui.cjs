@@ -55,6 +55,9 @@ async function main() {
     const resolve = (id, success = true, data, index) => page.evaluate(
       ({ id, success, data, index }) => window.testHistory.resolve(id, success, data, index), { id, success, data, index });
     const picker = page.getByRole('group', { name: '选择对比设备' });
+    const openPicker = () => picker.getByRole('button', { name: '设备', exact: true }).click();
+    const option = name => page.getByRole('menuitemcheckbox', { name, exact: true });
+    const add = async name => { await openPicker(); await option(name).click(); };
     await page.goto(pathToFileURL(join(__dirname, '../dist/ui/index.html')).href);
     await page.getByRole('button', { name: '记录', exact: true }).click();
     const skeleton = page.getByRole('status', { name: '正在加载电量历史' });
@@ -69,13 +72,18 @@ async function main() {
     await expect(graph).toBeVisible();
     expect(Math.abs(await graph.evaluate(node => node.getBoundingClientRect().height) - height)).toBeLessThan(2);
     await expect(graph.locator('[data-event-series="0"] [data-event="invalid"]')).toHaveCount(1);
-    await expect(graph.locator('[data-event-series="0"] [data-event="charging"]')).toHaveCount(1);
+    const charge = graph.locator('[data-event-series="0"] [data-event="charging"]');
+    await expect(charge).toHaveCount(1);
+    await charge.hover();
+    await expect(graph.getByText('Alpha · 采样显示正在充电')).toBeVisible();
+    await graph.locator('[data-event-series="0"] [data-event="invalid"] rect').hover();
+    await expect(graph.getByText('Alpha · 无有效读数')).toBeVisible();
     await graph.focus();
     await graph.press('End');
     await expect(graph.getByText('53–61%', { exact: true })).toBeVisible();
-    await picker.getByRole('button', { name: 'Beta' }).focus();
+    await picker.getByRole('button', { name: '设备', exact: true }).focus();
     await expect(graph.getByText('53–61%', { exact: true })).toHaveCount(0);
-    await picker.getByRole('button', { name: 'Beta' }).click();
+    await add('Beta');
     await expect(graph).toBeVisible();
     await expect(page.getByText('正在更新，暂显示已有记录')).toBeVisible();
     await wait('Alpha', 0); // another device's selection does not reload Alpha
@@ -83,13 +91,17 @@ async function main() {
     await resolve('Beta');
     await expect(graph.locator('[data-series="1"]')).toHaveCount(1);
     await expect(graph.locator('[data-event-series="1"] [data-event="invalid"],[data-event-series="1"] [data-event="charging"]')).toHaveCount(0);
-    await picker.getByRole('button', { name: 'Gamma' }).click();
-    await expect(picker.getByRole('button', { name: 'Delta' })).toBeDisabled();
+    await add('Gamma');
+    await openPicker();
+    await expect(option('Delta')).toBeDisabled();
+    await page.keyboard.press('Escape');
     await wait('Gamma');
-    await picker.getByRole('button', { name: 'Gamma' }).click();
+    await picker.getByRole('button', { name: '移除对比：Gamma' }).click();
     await resolve('Gamma'); // Old response must not draw a superseded series.
     await expect(graph.locator('[data-series="2"]')).toHaveCount(0);
-    await expect(picker.getByRole('button', { name: 'Delta' })).toBeEnabled();
+    await openPicker();
+    await expect(option('Delta')).toBeEnabled();
+    await page.keyboard.press('Escape');
     await page.evaluate(() => window.testHistory.refresh('Alpha'));
     await wait('Alpha');
     await page.evaluate(() => window.testHistory.refresh('Alpha'));

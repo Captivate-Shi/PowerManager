@@ -688,12 +688,13 @@ async function verifyDeviceCountsAndMute() {
     await noHorizontalOverflow();
     await button('记录').click();
     const history = main.getByRole('group', { name: '选择对比设备' });
-    await expect(history.getByRole('button')).toHaveCount(48);
-    const last = history.getByRole('button', { name: many.at(-1).name });
+    await history.getByRole('button', { name: '设备', exact: true }).press('Space');
+    await expect(main.getByRole('menuitemcheckbox')).toHaveCount(48);
+    const last = main.getByRole('menuitemcheckbox', { name: many.at(-1).name });
     await last.focus();
     await expect(last).toBeFocused();
     await last.press('Space');
-    await expect(last).toHaveAttribute('aria-pressed', 'true');
+    await expect(history.getByRole('button', { name: '移除对比：' + many.at(-1).name })).toBeVisible();
     await screenshot(main, '22-history-picker-many');
     await noHorizontalOverflow();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1.5));

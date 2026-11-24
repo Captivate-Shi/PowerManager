@@ -1,7 +1,7 @@
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { canProbeBluetooth, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type Snapshot } from './model';
@@ -148,7 +148,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
   function open(id: string) { search(''); setFilter('all'); select(id); setPage('devices'); setDetailId(undefined); }
   function showDevices(next: Filter) { search(''); select(undefined); setFilter(next); setPage('devices'); setDetailId(undefined); }
   const descriptions: Record<Page, [string, string]> = {
-    overview: ['我的桌面', state.devices.filter(isConnected).length + ' 台在线 · ' + state.devices.filter(device => !isConnected(device)).length + ' 台未连接'],
+    overview: ['我的桌面', starting ? '正在同步设备状态' : state.devices.filter(isConnected).length + ' 台在线 · ' + state.devices.filter(device => !isConnected(device)).length + ' 台未连接'],
     devices: ['我的设备', '查看设备连接与电量'],
     alerts: ['提醒中心', '待充电设备和通知偏好'],
     history: ['电量记录', '过去 24 小时的设备读数'],
@@ -164,7 +164,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
     </header>
     <main className={s.content} id="main-content" tabIndex={-1} ref={main}>
       <div hidden={!!detailed}>
-      <header className={s.heading}><div><h1>{descriptions[page][0]}</h1><p>{descriptions[page][1]}</p></div>
+      <header className={s.heading} data-history={page === 'history'}><div><h1>{page === 'history' ? '电量对比' : descriptions[page][0]}</h1><p>{page === 'history' ? '近 24 小时 · 设备记录' : descriptions[page][1]}</p></div>
         {(page === 'overview' || page === 'devices') && <div className={s.headingActions}>
           {page === "devices" && !starting && <label className={s.searchBox}><Search size={17} aria-hidden="true" />
             <input type="search" autoComplete="off" name="device-search" aria-label="搜索设备" value={query}
@@ -175,11 +175,11 @@ export function Dashboard({ state }: { state: Snapshot }) {
           <button className={page === "devices" ? s.primary : s.button} onClick={() => setFinding(true)}><Plus size={18} />查找设备</button>
         </div>}
       </header>
-      {state.collector !== 'ready' && <div className={s.notice} role="status"><Activity size={19} /><span>{
+      {(state.collector !== 'ready' && !(page === 'overview' && starting)) && <div className={s.notice} role="status"><Activity size={19} /><span>{
         { starting: '正在读取设备和电量…', occupied: '旧版 PowerManager 正在监测。请从旧版托盘退出，新版会自动接管。',
           retrying: '采集暂时中断，正在尝试重新连接。' }[state.collector]}</span></div>}
       {state.error && <div className={s.notice} role="alert"><TriangleAlert size={19} />{state.error}</div>}
-      {page === 'overview' && (starting ? <DeviceSkeleton overview /> :
+      {page === 'overview' && (starting ? <DeviceSkeleton overview state={state} /> :
         <Overview state={state} openDetail={openDetail} showDevices={showDevices} find={() => setFinding(true)} />)}
       {page === 'devices' && (starting ? <DeviceSkeleton /> :
         <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
@@ -208,10 +208,29 @@ function Empty({ children, button }: { children: ReactNode; button?: () => void 
   return <div className={s.empty}><MonitorSmartphone size={32} /><p>{children}</p>
     {button && <button className={s.button} onClick={button}><Plus size={17} />查找设备</button>}</div>;
 }
-function DeviceSkeleton({ overview = false }: { overview?: boolean }) {
-  return <div className={overview ? s.overviewTop : s.deviceSplit} aria-hidden="true">
+function DeviceSkeleton({ overview = false, state }: { overview?: boolean; state?: Snapshot }) {
+  if (!overview) return <div className={s.deviceSplit} aria-hidden="true">
     <div className={s.skeletonHero} />
     <div>{[0, 1, 2, 3].map(index => <div className={s.skeletonRow} key={index} />)}</div>
+  </div>;
+  const known = state?.devices ?? [];
+  const featured = state ? known.find(item => item.id === overviewOrder(state)[0]) : undefined;
+  const others = known.filter(item => item.id !== featured?.id);
+  return <div className={s.overviewTop} data-load-state="initial">
+    <section className={s.hero} aria-label="主设备">
+      <header><h2>{featured?.name ?? '主设备'}</h2><span className={s.readingState} role="status">正在读取设备…</span></header>
+      <div className={s.heroBody}>
+        <div className={s.stage + ' ' + s.initialArt} aria-hidden="true">{featured ? <Art device={featured} variant="card" /> : <div className={s.emptySilhouette} />}</div>
+        <div className={s.heroReadout}><span>当前电量</span><i className={s.placeholderValue} aria-hidden="true" /><i className={s.placeholderRule} aria-hidden="true" /></div>
+      </div>
+    </section>
+    <section className={s.otherDevices} aria-hidden="true"><SectionTitle>其他设备</SectionTitle>
+      <div className={s.overviewRows}>{(others.length ? others.slice(0, 5) : [null, null, null]).map((device, index) =>
+        <div className={s.overviewRow + ' ' + s.initialRow} key={device?.id ?? index}>
+          {device ? <Art device={device} /> : <i className={s.placeholderThumb} />}
+          <div><i className={s.placeholderRule} /><i className={s.placeholderRule} /></div><i className={s.placeholderRule} />
+        </div>)}</div>
+    </section>
   </div>;
 }
 
@@ -255,13 +274,13 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   const others = ordered.filter(device => device.id !== featured?.id);
   const hero = useRef<HTMLElement>(null);
   return <>
-    <div className={s.overviewTop}>
+    <div className={s.overviewTop} data-load-state={state.refreshing ? "refreshing" : "ready"}>
       {featured ? <section className={s.hero} ref={hero} aria-label="主设备">
         <header><h2 title={featured.name}>{featured.name}</h2><span className={s.readingState} data-tone={tone(featured, state)}>{batteryState(featured, state)}</span></header>
         <div className={s.heroBody}>
           <div className={s.stage}><Art device={featured} variant="card" /></div>
           <div className={s.heroReadout}>
-            <span>{!featured.reading ? "暂无电量读数" : featured.status === "current" ? "当前电量" : "上次电量"}</span>
+            <span>{state.refreshing ? "正在更新 · 保留上次读数" : !featured.reading ? "暂无电量读数" : featured.status === "current" ? "当前电量" : "上次电量"}</span>
             <BatteryMeter device={featured} state={state} />
             {featured.status !== "current" && featured.reading && <small>{dateLabel(featured.lastRead)}</small>}
             <button className={s.primary} onClick={() => openDetail(featured.id, hero.current ?? undefined)}>查看详情 <ChevronRight size={16} /></button>
@@ -515,29 +534,54 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
   </div>;
 }
 
+const historyClock = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 function History({ state, starting }: { state: Snapshot; starting: boolean }) {
-  const [ids, select] = useState<string[]>([]);
-  const fallback = state.devices.find(item => item.art === 'dualsense') ?? state.devices[0];
-  const selected = ids.map(id => state.devices.find(item => item.id === id)).filter((item): item is Device => !!item);
-  if (!selected.length && fallback) selected.push(fallback);
+  const [ids, select] = useState<string[]>();
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const sync = () => { if (!document.hidden) setClock(Date.now()); };
+    const timer = window.setInterval(sync, 30_000);
+    document.addEventListener('visibilitychange', sync);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', sync); };
+  }, []);
+  const first = state.devices.find(item => item.art === 'mouse') ?? state.devices[0];
+  const second = state.devices.find(item => item.id !== first?.id && item.art === 'dualsense');
+  const selected = (ids ?? [first?.id, second?.id]).map(id => state.devices.find(item => item.id === id))
+    .filter((item): item is Device => !!item);
+  if (!selected.length && first) selected.push(first);
   const activeIds = selected.map(item => item.id);
-  if (!fallback && !starting) return <Empty>设备产生读数后，可在这里查看电量变化</Empty>;
+  if (!first && !starting) return <Empty>设备产生读数后，可在这里查看电量变化</Empty>;
   const single = selected.length === 1 ? selected[0] : undefined;
-  return <section className={s.history}>
-    <SectionTitle>近 24 小时 <span>最多对比 {compareLimit} 台</span></SectionTitle>
-    <div className={s.historyChoices} role="group" aria-label="选择对比设备">
-      {state.devices.map(item => {
-        const index = activeIds.indexOf(item.id);
-        const pressed = index !== -1;
-        return <button key={item.id} className={s.historyChoice} aria-pressed={pressed} data-series={pressed ? index : undefined}
-          disabled={!pressed && activeIds.length >= compareLimit} title={item.status === 'offline' ? item.name + ' · 当前断开' : item.name}
-          aria-label={item.status === 'offline' ? item.name + '，当前断开' : undefined}
+  const now = Math.max(clock, ...selected.map(item => item.lastRead ?? 0));
+  return <section className={s.history} aria-label="电量对比记录">
+    <div className={s.historyToolbar}>
+      <div className={s.historySpan}><b>24 小时</b><span aria-label="实际查看时段">{historyClock.format(now - 86400000)} – {historyClock.format(now)}</span></div>
+      <div className={s.historyChoices} role="group" aria-label="选择对比设备">
+        {selected.map((item, index) => <button type="button" key={item.id} className={s.historyChoice}
+          data-series={index} data-device={item.id} aria-pressed="true" disabled={activeIds.length === 1}
+          aria-label={activeIds.length > 1 ? '移除对比：' + item.name : item.name} title={item.name}
           onClick={() => select(toggleHistorySelection(activeIds, item.id))}>
-          <i aria-hidden="true" />{pressed && <small aria-hidden="true">{index + 1}</small>}<span>{item.name}</span>{item.status === 'offline' && <Unplug size={12} aria-hidden="true" />}
-        </button>;
-      })}
+          <Art device={item} /><i aria-hidden="true" /><span>{item.name}</span>
+          {item.status === 'offline' && <Unplug size={13} aria-label="当前断开" />}
+          {activeIds.length > 1 && <X className={s.historyRemove} size={12} aria-hidden="true" />}
+        </button>)}
+        {state.devices.length > 1 && <Menu.Root>
+          <Menu.Trigger asChild><button className={s.historyAdd}><Plus size={15} aria-hidden="true" />设备</button></Menu.Trigger>
+          <Menu.Portal><Menu.Content align="end" sideOffset={6} className={s.historyMenu} aria-label="可对比设备">
+            {state.devices.map(item => {
+              const checked = activeIds.includes(item.id);
+              return <Menu.CheckboxItem key={item.id} checked={checked} className={s.menuOption}
+                disabled={checked ? activeIds.length === 1 : activeIds.length >= compareLimit}
+                onCheckedChange={() => select(toggleHistorySelection(activeIds, item.id))}>
+                <span>{item.name}</span><Menu.ItemIndicator aria-hidden="true">✓</Menu.ItemIndicator>
+              </Menu.CheckboxItem>;
+            })}
+          </Menu.Content></Menu.Portal>
+        </Menu.Root>}
+      </div>
     </div>
-    <CompareChart devices={selected} starting={starting}
+    <CompareChart devices={selected} starting={starting} anchor={now}
       threshold={single ? state.deviceSettings[single.id]?.low ?? state.settings.low : undefined} />
   </section>;
 }
