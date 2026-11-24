@@ -15,7 +15,7 @@
   overflow: hidden;
   pointer-events: none;
   z-index: -1;
-  mask-image: linear-gradient(90deg, #000 0% 78%, transparent);
+  mask-image: var(--overview-art-matte);
 }
 .artLayer {
   position: absolute;
@@ -97,7 +97,10 @@
 
 /* Local shared-object mode transition. Existing document View Transitions stay
    reserved for opening device details. */
-.modeDesk { isolation: isolate; }
+.modeDesk {
+  isolation: isolate;
+  --overview-art-matte: linear-gradient(90deg, #000 0% 78%, transparent);
+}
 .modeRail { z-index: 2; position: relative; }
 .modeOverlay {
   position: absolute;
@@ -106,6 +109,8 @@
   z-index: 1;
   pointer-events: none;
   overflow: hidden;
+  mask-image: var(--overview-art-matte);
+  mask-repeat: no-repeat;
 }
 .modeOverlay > img { position: absolute; object-fit: fill; max-width: none; transform-origin: top left; }
 .modeDesk[data-overview-morph] :is([data-active-stage], [data-list-artwork]) { visibility: hidden; }

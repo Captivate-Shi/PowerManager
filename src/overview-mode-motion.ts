@@ -1,5 +1,5 @@
 type Box = Pick<DOMRect, 'x' | 'y' | 'width' | 'height'>;
-type Photo = { src: string; deviceId: string; rect: Box; filter: string; opacity: number; clipRight: number };
+type Photo = { src: string; deviceId: string; rect: Box; filter: string; opacity: number; matteRight: number };
 type Frame = { photo?: Photo; rail?: Box };
 type Mode = 'stage' | 'list';
 type Running = { animations: Animation[]; node?: HTMLImageElement };
@@ -36,7 +36,7 @@ export class OverviewModeMotion {
     if (proxy?.dataset.deviceId === deviceId) {
       const style = getComputedStyle(proxy);
       return { rail, photo: { src: proxy.src, deviceId, rect: proxy.getBoundingClientRect(),
-        filter: style.filter, opacity: Number(style.opacity), clipRight: this.clip() } };
+        filter: style.filter, opacity: Number(style.opacity), matteRight: this.liveMatteRight() } };
     }
     const target = this.desk.querySelector<HTMLImageElement>(
       mode === 'stage'
@@ -51,12 +51,13 @@ export class OverviewModeMotion {
     return { rail, photo: { src: target.currentSrc || target.src, deviceId, rect: fitted,
       filter: getComputedStyle(layer ?? target).filter,
       opacity: (layer ? Number(getComputedStyle(layer).opacity) : 1) * (frame ? Number(getComputedStyle(frame).opacity) : 1),
-      clipRight: frame?.getBoundingClientRect().right ?? innerWidth } };
+      matteRight: frame?.getBoundingClientRect().right ?? innerWidth } };
   }
 
-  private clip() {
-    const inset = getComputedStyle(this.plane).clipPath.match(/^inset\(0px ([\d.]+)px/);
-    return inset ? this.plane.getBoundingClientRect().right - Number(inset[1]) : this.plane.getBoundingClientRect().right;
+  private liveMatteRight() {
+    const plane = this.plane.getBoundingClientRect();
+    const mask = getComputedStyle(this.plane).maskSize.match(/^([\d.]+)px\s/);
+    return mask ? plane.left + Number(mask[1]) : plane.right;
   }
 
   cancel() {
@@ -94,8 +95,10 @@ export class OverviewModeMotion {
         { transform: `translate3d(${x}px,${y}px,0) scale(${sx},${sy})`, filter: first.filter, opacity: first.opacity },
         { transform: 'translate3d(0,0,0) scale(1)', filter: last.filter, opacity: last.opacity },
       ], timing));
-      const clip = (right: number) => `inset(0px ${Math.max(0, plane.right - right)}px 0px 0px)`;
-      animations.push(this.plane.animate([{ clipPath: clip(first.clipRight) }, { clipPath: clip(last.clipRight) }], timing));
+      // Use the same soft edge as the real list artwork, moving its width
+      // instead of swapping a hard clip for a feathered one at handoff.
+      const matte = (right: number) => `${Math.max(0, right - plane.left)}px 100%`;
+      animations.push(this.plane.animate([{ maskSize: matte(first.matteRight) }, { maskSize: matte(last.matteRight) }], timing));
     }
     if (rail && from.rail && to.rail && from.rail.width > 0 && to.rail.width > 0) {
       const before = from.rail, after = to.rail;
