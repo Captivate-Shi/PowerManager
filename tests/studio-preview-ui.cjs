@@ -21,7 +21,7 @@ async function main() {
     const walkthrough = process.env.STUDIO_REVIEW_WALKTHROUGH === '1';
     const startup = async () => {
       if (walkthrough) {
-        await expect(hero.getByRole('heading', { name: '正在识别设备' })).toBeVisible();
+        await expect(page.locator('[data-cold-copy]').getByRole('heading', { name: '正在识别设备' })).toBeVisible();
         await expect(hero.getByRole('heading', { name: 'Xbox 无线手柄' })).toBeVisible();
         await rail.getByRole('button', { name: 'DualSense', exact: true }).click();
       }

@@ -194,7 +194,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
     <main className={s.content + ' ' + look.content} id="main-content" tabIndex={-1} ref={main}>
       <div hidden={!!detailed}>
       <header className={s.heading + (page === 'overview' ? ' ' + look.deskToolbar : '')} data-history={page === 'history'} data-page-heading={page}><div><h1>{page === 'history' ? '电量对比' : descriptions[page][0]}</h1><p>{page === 'history' ? '近 24 小时 · 设备记录' : descriptions[page][1]}</p></div>
-        {(page === 'overview' || page === 'devices') && <div className={s.headingActions}>
+        {((page === 'overview' && inventory !== 'cold') || page === 'devices') && <div className={s.headingActions}>
           {page === "devices" && !starting && <label className={s.searchBox}><Search size={17} aria-hidden="true" />
             <input type="search" autoComplete="off" name="device-search" aria-label="搜索设备" value={query}
               onChange={event => search(event.target.value)} placeholder="搜索设备" />
@@ -222,7 +222,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
         </header>
         <Details key={detailed.id} device={detailed} state={state} run={run} full />
       </div>}
-      <footer className={s.appFooter + ' ' + look.footer}>
+      <footer className={s.appFooter + ' ' + look.footer} data-cold={page === 'overview' && !detailed && inventory === 'cold'}>
         {page === "overview" && !detailed && <span><Bell size={16} />{state.settings.fullscreenSound ? "全屏时使用提示音" : "全屏提示音已关闭"}</span>}
         <span className={s.monitorState}><i data-state={state.collector} />{state.collector === "ready" ? "后台监测中" : "等待采集"}</span>
         {page === "overview" && !detailed && <button className={s.textButton} onClick={() => { setPage("alerts"); window.scrollTo(0, 0); }}>管理提醒 <ChevronRight size={16} /></button>}
@@ -279,6 +279,20 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
   const index = ordered.findIndex(device => device.id === featured?.id);
   const inventory = inventoryState(state);
   const initial = inventory === 'cold';
+  const [previousInitial, setPreviousInitial] = useState(initial);
+  const [revealId, setRevealId] = useState<string>();
+  const [reveal, setReveal] = useState(false);
+  if (initial !== previousInitial) {
+    setPreviousInitial(initial);
+    const revealDevice = !initial && inventory === 'ready' && featured && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setRevealId(revealDevice ? featured.id : undefined);
+    setReveal(!!revealDevice);
+  }
+  useEffect(() => {
+    if (!reveal) return;
+    const timer = window.setTimeout(() => setReveal(false), 340);
+    return () => clearTimeout(timer);
+  }, [reveal]);
   const phase = initial ? 'initial' : inventory === 'ready' && state.refreshing ? 'refreshing' : 'ready';
   useEffect(() => {
     const ranked = overviewOrder(state);
@@ -306,6 +320,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     const destination = ordered.findIndex(item => item.id === device.id);
     setDirection(way ?? (destination < index ? 'previous' : 'next'));
     setDeparting(matchMedia('(prefers-reduced-motion: reduce)').matches ? undefined : featured);
+    setRevealId(undefined);
     choose(device.id);
   }
   function step(delta: number) {
@@ -320,13 +335,17 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     setTravel(0);
     if (commit && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.1) step(dx < 0 ? 1 : -1);
   }
-  return <div className={look.desk} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode}>
-    {(featured || initial) && mode === 'stage' && <section ref={hero} className={look.hero} aria-label="主设备">
+  return <div className={look.desk} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined}>
+    {(initial || reveal) && <div className={look.coldCopy} data-cold-copy="" data-exiting={!initial || undefined} aria-hidden={!initial || undefined}>
+      <h2>正在识别设备</h2>
+      <p role={initial ? 'status' : undefined}>正在读取设备…</p>
+    </div>}
+    {featured && !initial && mode === 'stage' && <section ref={hero} className={look.hero} aria-label="主设备">
       <div className={look.heroData} aria-live="polite">
-        <h2 title={featured?.name}>{featured?.name ?? '正在识别设备'}</h2>
+        <h2 title={featured?.name}>{featured.name}</h2>
         <SceneBattery device={featured} state={state} phase={phase} />
         <div className={look.heroState} data-tone={featured && !initial ? tone(featured, state) : 'normal'}>
-          {initial ? <span role="status">正在读取设备…</span> : phase === 'refreshing' && featured?.status === 'current' ? <span role="status">正在更新 · 保留上次读数</span> : featured && <><i aria-hidden="true" />{batteryState(featured, state)}{featured.status !== 'current' && featured.reading && <small>上次电量 · {dateLabel(featured.lastRead)}</small>}</>}
+          {phase === 'refreshing' && featured?.status === 'current' ? <span role="status">正在更新 · 保留上次读数</span> : featured && <><i aria-hidden="true" />{batteryState(featured, state)}{featured.status !== 'current' && featured.reading && <small>上次电量 · {dateLabel(featured.lastRead)}</small>}</>}
         </div>
         {featured && <button className={look.ghost} onClick={() => openDetail(featured.id, hero.current ?? undefined)}>
           查看详情 <ChevronRight size={14} aria-hidden="true" />
@@ -351,7 +370,7 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
         onPointerCancel={event => endDrag(event, false)}
         onLostPointerCapture={event => endDrag(event, false)}>
         {departing && !initial && <div className={look.departing} data-departing="" key={'out-' + departing.id} aria-hidden="true"><SceneStage device={departing} /></div>}
-        <div className={look.arriving} data-active-stage="" key={featured?.id ?? 'placeholder'} data-animate={!!departing}><SceneStage device={featured} loading={initial} /></div>
+        <div className={look.arriving} data-active-stage="" key={featured.id} data-animate={!!departing}><SceneStage device={featured} revealPhoto={revealId === featured.id} /></div>
         {ordered.length > 1 && ordered.length <= 8 && <div className={look.dots} aria-label="主设备切换">{ordered.map(device => <button
           key={device.id} aria-label={'展示 ' + device.name} aria-pressed={device.id === featured?.id} disabled={initial}
           onClick={() => activate(device)} />)}</div>}
@@ -359,11 +378,11 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
     </section>}
     {!featured && !initial && mode === 'stage' && (inventory === 'unavailable'
       ? <Empty>暂无法读取设备，等待采集恢复</Empty> : <Empty button={find}>尚未监测到外设</Empty>)}
-    <section className={look.rail} aria-label="切换设备">
+    {!initial && <section className={look.rail} aria-label="切换设备">
       <header className={look.railHeader}>
         <div className={look.modeControl} role="group" aria-label="总览显示方式">
           <button disabled={initial} aria-label="展台模式" aria-pressed={mode === 'stage'} onClick={() => setMode('stage')}><LayoutGrid size={15} /></button>
-          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => setMode('list')}><List size={17} /></button>
+          <button disabled={initial} aria-label="列表模式" aria-pressed={mode === 'list'} onClick={() => { setRevealId(undefined); setMode('list'); }}><List size={17} /></button>
         </div>
         <button className={look.ghost} onClick={() => showDevices('all')}>全部设备 <ChevronRight size={14} aria-hidden="true" /></button>
       </header>
@@ -388,10 +407,9 @@ function Overview({ state, openDetail, showDevices, find }: { state: Snapshot;
           </div>
           <ChevronRight size={15} className={look.railArrow} aria-hidden="true" />
         </button>)}
-        {initial && <div className={look.inventoryPlaceholder} aria-hidden="true"><i /><i /><i /></div>}
         {!ordered.length && !initial && <p className={s.smallEmpty}>{inventory === 'unavailable' ? '设备状态暂不可用' : '暂无受监测设备'}</p>}
       </div>
-    </section>
+    </section>}
   </div>;
 }
 

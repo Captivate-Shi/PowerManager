@@ -141,8 +141,9 @@ async function main() {
     };
 
     await expect(phase('initial')).toBeVisible();
-    await expect(hero.getByRole('heading',{name:'正在识别设备'})).toBeVisible();
-    await expect(hero.getByRole('progressbar',{name:'正在读取电量'})).toBeVisible();
+    await expect(phase('initial').getByRole('heading',{name:'正在识别设备'})).toBeVisible();
+    await expect(phase('initial').getByRole('status')).toHaveText('正在读取设备…');
+    await expect(rail).toHaveCount(0);
     await expect(meter).toHaveCount(0);
     await expect(rail.getByRole('button',{name:'DualSense',exact:true})).toHaveCount(0);
     await expect(activeArt(page)).toHaveCount(0);
@@ -151,7 +152,7 @@ async function main() {
       mark('总览 · 真冷启动、首台 Xbox、轮播与刷新');
       evidence.tabs.push('总览');
       await delay(page,1350);
-      await snapshot(page,'01-总览-冷启动通用轮廓');
+      await snapshot(page,'01-总览-冷启动文字');
       await page.evaluate(() => window.studioReview.detect('xbox'));
       await expect(hero.getByRole('heading',{ name:'Xbox 无线手柄' })).toBeVisible();
       await expect(meter).toHaveAttribute('aria-valuetext','46%');

@@ -34,15 +34,16 @@ export function prepareHero(device: Device) {
   void image.decode().catch(() => { warmedArtwork.delete(url); });
 }
 
-export function Art({ device, variant = 'thumb', shared = false, loading = false }: {
-  device: Device; variant?: ArtVariant; shared?: boolean; loading?: boolean;
+export function Art({ device, variant = 'thumb', shared = false, loading = false, revealPhoto = false }: {
+  device: Device; variant?: ArtVariant; shared?: boolean; loading?: boolean; revealPhoto?: boolean;
 }) {
   const className = shared ? s.transitionArt : undefined;
   const url = deviceArtUrl(device, variant, loading);
   return <div className={s.art + (loading ? ' ' + scene.loadingArt : '')} data-art={device.art}
     style={loading && device.art !== 'unknown' ? { '--device-mask': `url("${url}")` } as React.CSSProperties : undefined}>
     {device.art === 'unknown' ? <CircleHelp data-device-art='' className={className} aria-hidden='true' /> :
-      <img key={url} data-device-art='' className={className} src={url} width='120' height='90' alt='' draggable={false}
+      <img key={url} data-device-art='' className={className} src={url} width='120' height='90' alt='' draggable={false} data-cold-photo={revealPhoto || undefined}
+        onLoad={revealPhoto ? event => { event.currentTarget.dataset.coldPhotoLoaded = ''; } : undefined}
         onError={event => {
           const image = event.currentTarget;
           if (image.dataset.fallback) return;

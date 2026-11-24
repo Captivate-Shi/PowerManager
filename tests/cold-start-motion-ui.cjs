@@ -67,6 +67,10 @@ const { performance } = require('node:perf_hooks');
     try {
       await page.goto((options.baseline || url) + (options.tray ? '?surface=tray' : ''));
       if (options.motion) {
+        const initial = page.locator('[data-load-state="initial"]');
+        await expect(initial.getByRole('status')).toHaveText('正在读取设备…');
+        for (const name of ['切换设备', '主设备']) await expect(initial.getByRole('region', {name})).toHaveCount(0);
+        await expect(initial.getByRole('progressbar')).toHaveCount(0);
         if (proof) await page.screenshot({ path: proof + '/01-static.png' });
         await expect(page.locator(clip + '[data-playing]')).toBeAttached();
         if (proof) {
@@ -78,12 +82,22 @@ const { performance } = require('node:perf_hooks');
           return { totalVideoFrames, droppedVideoFrames };
         });
         await page.evaluate(() => window.publish());
+        await expect(page.locator('[data-cold-reveal]')).toHaveCount(1);
+        await expect(page.getByRole('button', { name: '查看详情' })).toBeEnabled();
+        const exit = await page.locator('[data-cold-copy][data-exiting]').evaluate(node => ({
+          name: getComputedStyle(node).animationName, hidden: node.getAttribute('aria-hidden'),
+        }));
+        expect(exit.name).toContain('cold-copy-exit');
+        expect(exit.hidden).toBe('true');
+        const image = page.locator('img[data-cold-photo][data-cold-photo-loaded]');
+        await expect(image).toHaveCount(1);
+        expect(await image.evaluate(node => getComputedStyle(node).animationName)).toContain('cold-photo-reveal');
       } else if (options.fallback) {
         const stage = page.locator('[data-load-state="initial"]');
-        await expect(stage.getByRole('progressbar')).toBeVisible();
+        await expect(stage.getByRole('status')).toBeVisible();
         await page.waitForTimeout(980);
         await expect(page.locator(clip + '[src]')).toHaveCount(0);
-        await expect(stage.getByRole('progressbar')).toBeVisible();
+        await expect(stage.getByRole('status')).toBeVisible();
         await page.evaluate(() => window.publish());
       } else if (mode === 'warm') {
         await expect(page.getByText(options.tray ? '显示上次记录' : '工作鼠标', {exact: true}).first()).toBeVisible();
@@ -97,9 +111,19 @@ const { performance } = require('node:perf_hooks');
         if (!timing.motion || timing.motion < timing.static + 140 || requested.length < 1) throw Error(JSON.stringify({timing, requested}));
         await expect(page.locator(clip + '[src]')).toHaveCount(0);
       } else if (options.label !== 'enhanced-bench' && timing.motion != null) throw Error('Unexpected visible motion: ' + JSON.stringify(timing));
+      if (options.reduced) await expect(page.locator('[data-cold-copy], [data-cold-reveal], [data-cold-photo]')).toHaveCount(0);
       if (options.noRequest && requested.length) throw Error('Unexpected media request: ' + requested.join());
       results.push({ mode: options.label || mode, ...timing, requests: requested.length, quality });
       if (proof && options.motion) await page.screenshot({ path: proof + '/03-live-ready.png' });
+      if (options.motion) {
+        const nav = page.getByRole('navigation', { name: '主导航' });
+        await nav.getByRole('button', { name: '设备', exact: true }).click();
+        await nav.getByRole('button', { name: '总览', exact: true }).click();
+        await expect(page.locator('[data-cold-copy], [data-cold-reveal], [data-cold-photo], [data-cold-motion][src]')).toHaveCount(0);
+      }
+      if ((mode === 'warm' && !options.tray) || mode === 'direct-ready') {
+        await expect(page.locator('[data-cold-copy], [data-cold-reveal], [data-cold-photo]')).toHaveCount(0);
+      }
     } finally { await page.close(); }
   }
   try {

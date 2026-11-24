@@ -37,7 +37,12 @@ async function main() {
     await expect(page.locator('[data-device-art]')).toHaveCount(0);
     await page.evaluate(() => window.publish('none', 'starting'));
     await expect(phase('initial')).toBeVisible();
-    await expect(hero.getByRole('progressbar')).toBeVisible();
+    await expect(phase('initial').getByRole('heading', { name: '正在识别设备' })).toBeVisible();
+    await expect(phase('initial').getByRole('status')).toHaveText('正在读取设备…');
+    await expect(phase('initial').getByRole('progressbar')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '切换设备' })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '主设备' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '查找设备' })).toHaveCount(0);
     await expect(hero.getByRole('meter')).toHaveCount(0);
     await expect(hero.getByRole('button', { name: '查看详情' })).toHaveCount(0);
     await expect(page.locator('[data-device-art]')).toHaveCount(0);

@@ -6,7 +6,7 @@ const { installMock } = require('./studio-review-mock.cjs');
 
 const root = resolve(__dirname, '..');
 const output = resolve(process.argv[2] || '余电-交互预览-离线Mock.html');
-const mime = { png: 'image/png', webp: 'image/webp' };
+const mime = { png: 'image/png', webp: 'image/webp', webm: 'video/webm' };
 function inlineAssets(folder, subdir = '', result = {}) {
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
     const path = join(folder, entry.name);

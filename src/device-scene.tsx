@@ -5,13 +5,13 @@ import view from './scene.module.css';
 
 type Phase = 'initial' | 'refreshing' | 'ready';
 
-export function SceneStage({ device, loading = false, shared = false, detail = false }: {
-  device?: Device; loading?: boolean; shared?: boolean; detail?: boolean;
+export function SceneStage({ device, loading = false, shared = false, detail = false, revealPhoto = false }: {
+  device?: Device; loading?: boolean; shared?: boolean; detail?: boolean; revealPhoto?: boolean;
 }) {
   const reflected = device && device.art !== 'unknown' && !loading ? `url("${studioPath(device.art + '-hero.webp')}")` : undefined;
   return <div className={view.visual} data-art={device?.art} data-detail={detail} data-loading={loading}
     style={reflected ? { '--reflection': reflected } as CSSProperties : undefined}>
-    {device ? <Art device={device} variant={detail ? 'detail' : 'stage'} shared={shared} loading={loading} /> :
+    {device ? <Art device={device} variant={detail ? 'detail' : 'stage'} shared={shared} loading={loading} revealPhoto={revealPhoto} /> :
       <i className={view.emptyStage} aria-hidden="true" />}
   </div>;
 }

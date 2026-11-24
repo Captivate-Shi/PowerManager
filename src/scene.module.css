@@ -210,19 +210,7 @@
 .railArrow { color: #9aa6b6; opacity: .66; }
 .railValue { font-size: clamp(13px, 1.15vw, 18px); font-weight: 530; white-space: nowrap; }
 .rowPlaceholder { display: block; width: 66%; height: 6px; margin-top: 5px; border-radius: 10px; background: linear-gradient(90deg, #a7bada10, #adbfdf3d, #a7bada0d); }
-.inventoryPlaceholder {
-  min-height: clamp(122px, 24vh, 240px);
-  display: grid;
-  place-content: center start;
-  gap: 12px;
-  padding-inline: 20px;
-  border: 1px solid #9aaac719;
-  border-radius: 12px;
-  background: linear-gradient(125deg, #a1b4d410, #a1b4d403);
-}
-.inventoryPlaceholder i { width: min(105px, 22vw); height: 4px; border-radius: 9px; background: #adbfdf28; }
-.inventoryPlaceholder i:nth-child(2) { width: 73%; opacity: .8; }
-.inventoryPlaceholder i:nth-child(3) { width: 48%; opacity: .6; }
+
 .lastReading { color: var(--muted); font-size: 10px; font-weight: 500; }
 .railRows[aria-busy] img[data-fallback="true"] { filter: brightness(.56) grayscale(.62); }
 .railRows[aria-busy] .loadingArt::after { animation: none; }
@@ -375,4 +363,42 @@
 .visual, .visual > div { grid-template: minmax(0, 1fr) / minmax(0, 1fr); min-height: 0; }
 .carousel:has(.departing) {
   mask-image: linear-gradient(90deg, transparent, #000 11%, #000 89%, transparent);
+}
+
+/* The cold scan status occupies no permanent device cell; the returning data
+   mounts immediately and its controls are usable while the opacity settles. */
+.footer[data-cold="true"] { visibility: hidden; }
+.shell:has(.desk[data-load-state="initial"]) .deskToolbar { min-height: 32px; }
+.coldCopy {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  margin-top: -40px;
+  z-index: 3;
+  pointer-events: none;
+}
+.coldCopy h2 {
+  margin: 0 0 11px;
+  font-size: clamp(17px, 1.65vw, 25px);
+  font-weight: 510;
+  letter-spacing: -.025em;
+}
+.coldCopy p { margin: 0; color: #b8c0cd; font-size: 12px; }
+.coldCopy[data-exiting] { animation: cold-copy-exit 155ms ease-out both; }
+.desk[data-cold-reveal] :is(.heroData, .rail) { animation: cold-content-reveal 260ms ease-out both; }
+.visual img[data-cold-photo-loaded] { animation: cold-photo-reveal 320ms cubic-bezier(.16,1,.3,1) both; }
+@keyframes cold-copy-exit {
+  to { opacity: 0; transform: translateY(-4px); visibility: hidden; }
+}
+@keyframes cold-content-reveal {
+  from { opacity: .08; }
+  to { opacity: 1; }
+}
+@keyframes cold-photo-reveal {
+  from { opacity: .08; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coldCopy[data-exiting] { display: none; }
+  .desk[data-cold-reveal] :is(.heroData, .rail), .visual img[data-cold-photo-loaded] { animation: none; }
 }

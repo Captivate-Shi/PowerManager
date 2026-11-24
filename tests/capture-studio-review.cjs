@@ -152,24 +152,11 @@ async function main() {
     const fullScreenshot = (name) => screenshot(page, name, true);
 
     await expect(loadState('initial')).toBeVisible();
-    await expect(read(hero, '正在读取设备…')).toBeVisible();
-    await expect(read(hero, '10–20%')).toHaveCount(0);
-    for (const pct of ['10–20%', '92%', '67%', '46%']) await expect(read(rail, pct)).toHaveCount(0);
-    const initialProgress = hero.getByRole('progressbar', { name: '正在读取电量' });
-    await expect(initialProgress).toBeVisible();
-    expect(await initialProgress.getAttribute('aria-valuenow')).toBeNull();
-    await expect(hero.getByRole('meter')).toHaveCount(0);
-    const provenAssets = { stage: await verifyBackground(page), initialDualSense: await verifyStageAsset(stage, 'dualsense', 'loading') };
-    expect(await assetCheck(page), 'initial silhouette and rail art decode').toBe(true);
-    const softbox = await stage.locator('img[data-device-art]').evaluate(img => {
-      const light = getComputedStyle(img.parentElement, '::after');
-      return { type: light.backgroundImage, mask: light.maskImage, motion: light.animationName };
-    });
-    expect(softbox.type).toMatch(/radial-gradient/);
-    expect(softbox.type).not.toMatch(/url\(/);
-    expect(softbox.mask).toContain('dualsense-loading.webp');
-    expect(softbox.motion).not.toBe('none');
-    expect(await initialProgress.locator('i').evaluate(node => getComputedStyle(node).animationName)).toContain('meter-indeterminate');
+    await expect(loadState('initial').getByRole('status')).toHaveText('正在读取设备…');
+    await expect(hero).toHaveCount(0);
+    await expect(rail).toHaveCount(0);
+    await expect(stage).toHaveCount(0);
+    const provenAssets = { stage: await verifyBackground(page) };
     const observed = await record(page, async () => {
       await page.waitForTimeout(850);
       await screenshot(page, '06-总览-首次读取');
@@ -203,7 +190,7 @@ async function main() {
       await expect(read(hero, '10–20%')).toBeVisible();
       await expect(button(rail, 'DualSense')).toHaveAttribute('aria-pressed', 'true');
       await expect(meter).toHaveAttribute('aria-valuetext', '10–20%');
-      await expect(initialProgress).toHaveCount(0);
+      await expect(hero.getByRole('progressbar')).toHaveCount(0);
       expect(await meterPaint(meter), 'refresh must not change the known battery fill or animate the meter').toEqual(readyMeter);
       expect(await read(hero, '正在更新 · 保留上次读数').evaluate(node => getComputedStyle(node, '::before').animationName)).toContain('status-turn');
       expect(await verifyStageAsset(stage, 'dualsense')).toBe(provenAssets.dualsense);
