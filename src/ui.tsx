@@ -3,6 +3,7 @@ import * as Select from '@radix-ui/react-select';
 import * as Switch from '@radix-ui/react-switch';
 import { Battery, BatteryCharging, BatteryLow, Bluetooth, Cable, Check, ChevronDown, ChevronUp, CircleHelp, Wifi, X } from 'lucide-react';
 import { lazy, Suspense, useRef, type ComponentProps, type ReactNode } from 'react';
+import { ChartSkeleton } from './chart-loading';
 import { isConnected, midpoint, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
 import s from './panel.module.css';
 
@@ -120,7 +121,12 @@ export const dateLabel = (value: number | null) => value ? new Intl.DateTimeForm
 
 const loadCharts = () => import('./charts');
 const HistoryView = lazy(() => loadCharts().then(charts => ({ default: charts.Chart })));
+const ComparisonView = lazy(() => loadCharts().then(charts => ({ default: charts.HistoryComparison })));
 
 export function Chart(props: ComponentProps<typeof HistoryView>) {
-  return <Suspense fallback={<div className={s.chartEmpty} data-large={props.large} role="status">正在加载电量历史…</div>}><HistoryView {...props} /></Suspense>;
+  return <Suspense fallback={<ChartSkeleton large={props.large} />}><HistoryView {...props} /></Suspense>;
+}
+export function CompareChart({ starting, ...props }: ComponentProps<typeof ComparisonView> & { starting: boolean }) {
+  if (starting && !props.devices.length) return <ChartSkeleton />;
+  return <Suspense fallback={<ChartSkeleton large={props.large} />}><ComparisonView {...props} /></Suspense>;
 }

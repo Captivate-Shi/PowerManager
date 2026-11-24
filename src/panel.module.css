@@ -245,8 +245,7 @@
 .details[data-full="true"] .detailTop { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); align-items: start; gap: clamp(18px, 3.5vw, 52px); }
 .details[data-full="true"] .detailsHeader .stage .art { height: clamp(220px, min(28vw, 41vh), 425px); }
 .detailHistory { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
-.detailHistory .chartLegend { max-width: 30vw; }
-.detailHistory :is(.chart, .chartEmpty) { grid-column: 1 / -1; }
+.detailHistory > :is(.chartFrame, .chartSkeleton) { grid-column: 1 / -1; }
 .transitionArt { view-transition-name: device-photo; }
 :global(::view-transition-group(app-header)) { animation-duration: 0s; z-index: 2; }
 :global(::view-transition-group(device-photo)) { animation-duration: 330ms; animation-timing-function: cubic-bezier(.22,.74,.28,1); z-index: 1; }
@@ -435,3 +434,54 @@
   .spin, .skeletonHero, .skeletonRow, .toast { animation: none; }
   .switch span { transition: none; }
 }
+
+/* This surface loads independently; the history skeleton never covers the app. */
+.chartFrame { min-width: 0; }
+.chartPlot, .chartSkeleton { height: 158px; min-width: 0; }
+.chartPlot[data-large="true"], .chartSkeleton[data-large="true"] { height: clamp(224px, 36vh, 390px); }
+.detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(208px, 31vh, 320px); }
+.chartPlot .chartSkeleton, .chartPlot .chartEmpty { height: 100%; }
+.chartSkeleton { position: relative; display: grid; overflow: hidden; place-items: center; color: var(--muted); border-radius: 9px; font-size: 12px; background: var(--panel); }
+.chartSkeleton svg { position: absolute; inset: 12px 8px; width: calc(100% - 16px); height: calc(100% - 24px); fill: none; stroke: var(--line); stroke-width: 1; }
+.chartSkeleton span { z-index: 1; padding: 4px 9px; background: var(--panel); border-radius: 4px; }
+.chartSkeleton::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(110deg, transparent 25%, #b8c6de0c 45%, transparent 65%); transform: translateX(-100%); animation: history-shimmer 1.25s ease-in-out 2; }
+@keyframes history-shimmer { to { transform: translateX(100%); } }
+.chartMeta, .chartGuide, .chartNotice { display: flex; flex-wrap: wrap; align-items: center; }
+.chartMeta { gap: 4px 16px; padding-top: 8px; min-height: 28px; }
+.chartGuide { color: var(--muted); gap: 5px 14px; font-size: 12px; }
+.chartGuide span { display: inline-flex; align-items: center; gap: 5px; }
+.chartGuide i { width: 14px; height: 8px; display: inline-block; }
+.chartGuide .exactKey { height: 2px; background: var(--muted); }
+.chartGuide .rangeKey { border-block: 1px solid var(--muted); background: #a8c8ed2b; }
+.chartGuide .gapKey { height: 1px; border-top: 2px dotted var(--muted); }
+.chartGuide .thresholdKey { height: 1px; border-top: 1px dashed var(--amber); }
+.chartNotice { color: var(--muted); gap: 6px; font-size: 12px; }
+.chartNotice button { padding: 3px 4px; min-height: auto; }
+.graph { position: relative; isolation: isolate; width: 100%; height: 100%; border-radius: 5px; touch-action: pan-y; }
+.graphSvg { display: block; color: var(--muted); overflow: hidden; }
+.graphGrid { stroke: var(--line); }
+.graphLabel { fill: currentColor; font-size: 11px; font-variant-numeric: tabular-nums; }
+.graphThreshold { stroke: #f5c16f; opacity: .72; }
+.graphCursor { stroke: #c6d5e6; stroke-dasharray: 3 4; pointer-events: none; }
+.graphTooltip { position: absolute; inset: 8px 12px auto auto; max-width: calc(100% - 24px); min-width: 140px; max-height: calc(100% - 20px); overflow: hidden; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 6px 9px; font-size: 12px; pointer-events: none; z-index: 1; }
+.graphTooltip[data-side="start"] { inset-inline: 12px auto; }
+.graphTooltip > span, .graphTooltip small { color: var(--muted); }
+.graphTooltip > div { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; padding-block-start: 4px; }
+.graphTooltip b { word-break: break-word; }
+.graphTooltip > div > i { width: 6px; height: 6px; background: var(--series); border-radius: 10px; }
+.graphTooltip > div > span { font-variant-numeric: tabular-nums; }
+.chartSrOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.historyChoices { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 3px; max-height: 86px; overflow-y: auto; }
+.historyChoice { min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: transparent; }
+.historyChoice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.historyChoice i { flex: none; width: 11px; height: 2px; color: inherit; border-top: 2px solid currentColor; opacity: .75; }
+.historyChoice[aria-pressed="true"] { color: var(--ink); background: var(--raised); }
+.historyChoice[data-series="0"] i { color: #a8c8ed; }
+.historyChoice[data-series="1"] i { color: #c3adf7; border-top-style: dashed; }
+.historyChoice[data-series="2"] i { color: #82d9be; border-top-style: dotted; }
+@media (prefers-reduced-motion: reduce) {
+  .chartSkeleton::after { animation: none; }
+}
+
+.eventLaneLabel, .historyChoice small { font-size: 10px; font-variant-numeric: tabular-nums; }
+.historyChoice small { color: var(--muted); }

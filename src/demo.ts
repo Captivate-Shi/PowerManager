@@ -28,11 +28,21 @@ export function demoHistory(device: Device): HistoryPoint[] {
   if (!device.reading) return [];
   const now = device.lastRead ?? Date.now();
   const last = device.reading.low;
-  return Array.from({ length: 13 }, (_, i) => {
-    const value = Math.min(100, last + Math.round((12 - i) * (100 - last) / 12));
+  // Dense synthetic intervals help the demo show explicit gaps and charging,
+  // without pretending sparse or interrupted data was a continuous curve.
+  return Array.from({ length: 1_441 }, (_, i) => {
+    const peak = Math.min(100, last + 37);
+    const floor = Math.max(0, last - 13);
+    const charging = i >= 740 && i < 865;
+    const level = i < 740 ? peak + (floor - peak) * i / 740 :
+      charging ? floor + (peak - floor) * (i - 740) / 125 :
+      peak + (last - peak) * (i - 865) / 575;
+    const value = Math.round(level);
     const lower = Math.floor(value / 10) * 10;
-    const reading = device.art === "dualsense" ? { ...demoReading(value), low: lower, high: Math.min(100, lower + 10) } : demoReading(value);
-    return { time: now - (12 - i) * 10800000 / 1.5, reading: i === 5 && device.art === 'headset' ? null : reading };
+    const reading = { ...demoReading(value), ...device.art === 'dualsense' ? { low: lower, high: Math.min(100, lower + 10) } : {},
+      power: charging ? 'charging' as const : 'discharging' as const };
+    const invalid = device.art === 'headset' && i >= 560 && i < 700;
+    return { time: now - (1440 - i) * 60_000, reading: invalid ? null : reading };
   });
 }
 export function previewDevice(level: 'low' | 'critical', base?: Device): Device {

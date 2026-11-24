@@ -1,13 +1,14 @@
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, Clock, Ellipsis, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, Zap } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { canProbeBluetooth, isConnected, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type Snapshot } from './model';
-import { api, Art, BatteryMeter, Brand, Chart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, SwitchControl, tone } from './ui';
+import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import { ZoomControl } from './zoom';
+import { compareLimit, toggleHistorySelection } from './history-plot';
 
 const pages = [
   ['overview', '总览'], ['devices', '设备'], ['alerts', '提醒'], ['history', '记录'], ['settings', '设置'],
@@ -183,7 +184,7 @@ export function Dashboard({ state }: { state: Snapshot }) {
       {page === 'devices' && (starting ? <DeviceSkeleton /> :
         <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
       {page === 'alerts' && <Alerts state={state} run={run} open={open} />}
-      {page === 'history' && <History state={state} />}
+      {page === 'history' && <History state={state} starting={starting} />}
       {page === 'settings' && <Settings state={state} run={run} />}
       </div>
       {detailed && <div>
@@ -514,15 +515,30 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
   </div>;
 }
 
-function History({ state }: { state: Snapshot }) {
-  const [id, select] = useState('');
-  const device = state.devices.find(item => item.id === id) ?? state.devices.find(item => item.art === 'dualsense') ?? state.devices[0];
-  if (!device) return <Empty>设备产生读数后，可在这里查看电量变化</Empty>;
+function History({ state, starting }: { state: Snapshot; starting: boolean }) {
+  const [ids, select] = useState<string[]>([]);
+  const fallback = state.devices.find(item => item.art === 'dualsense') ?? state.devices[0];
+  const selected = ids.map(id => state.devices.find(item => item.id === id)).filter((item): item is Device => !!item);
+  if (!selected.length && fallback) selected.push(fallback);
+  const activeIds = selected.map(item => item.id);
+  if (!fallback && !starting) return <Empty>设备产生读数后，可在这里查看电量变化</Empty>;
+  const single = selected.length === 1 ? selected[0] : undefined;
   return <section className={s.history}>
-    <SectionTitle aside={<SelectControl label="历史设备" value={device.id} onChange={select} choices={state.devices.map(item => ({ value: item.id, label: item.name }))} />}>近 24 小时</SectionTitle>
-    <div className={s.historyDevice}><Art device={device} /><div><h3>{device.name}</h3><Connection device={device} /><p>上次读数 {dateLabel(device.lastRead)}</p></div>
-      <BatteryMeter device={device} state={state} /></div>
-    <Chart device={device} revision={device.lastRead} threshold={state.deviceSettings[device.id]?.low ?? state.settings.low} large />
+    <SectionTitle>近 24 小时 <span>最多对比 {compareLimit} 台</span></SectionTitle>
+    <div className={s.historyChoices} role="group" aria-label="选择对比设备">
+      {state.devices.map(item => {
+        const index = activeIds.indexOf(item.id);
+        const pressed = index !== -1;
+        return <button key={item.id} className={s.historyChoice} aria-pressed={pressed} data-series={pressed ? index : undefined}
+          disabled={!pressed && activeIds.length >= compareLimit} title={item.status === 'offline' ? item.name + ' · 当前断开' : item.name}
+          aria-label={item.status === 'offline' ? item.name + '，当前断开' : undefined}
+          onClick={() => select(toggleHistorySelection(activeIds, item.id))}>
+          <i aria-hidden="true" />{pressed && <small aria-hidden="true">{index + 1}</small>}<span>{item.name}</span>{item.status === 'offline' && <Unplug size={12} aria-hidden="true" />}
+        </button>;
+      })}
+    </div>
+    <CompareChart devices={selected} starting={starting}
+      threshold={single ? state.deviceSettings[single.id]?.low ?? state.settings.low : undefined} />
   </section>;
 }
 function Settings({ state, run }: { state: Snapshot; run: Run }) {
@@ -531,12 +547,12 @@ function Settings({ state, run }: { state: Snapshot; run: Run }) {
   const send = (command: Command) => { void run(command); };
   return <Tabs.Root className={s.settingsPage} orientation="vertical" defaultValue="display">
     <Tabs.List className={s.settingsNav} aria-label="设置分类">
-      <Tabs.Trigger value="display">显示大小</Tabs.Trigger>
+      <Tabs.Trigger value="display">外观</Tabs.Trigger>
       <Tabs.Trigger value="monitoring">监测与运行</Tabs.Trigger>
       <Tabs.Trigger value="diagnostics">诊断</Tabs.Trigger>
     </Tabs.List>
     <Tabs.Content value="display" className={s.settingsContent}>
-      <SectionTitle>显示大小</SectionTitle>
+      <SectionTitle>外观 <span>缩放即刻预览</span></SectionTitle>
       <ZoomControl name="主界面" value={state.settings.zoom} apply={value => run({ type: 'settings', patch: { zoom: value } })} />
       <ZoomControl name="托盘浮窗" value={state.settings.trayZoom} apply={value => run({ type: 'settings', patch: { trayZoom: value } })} />
     </Tabs.Content>
