@@ -19,6 +19,7 @@
 #include <deque>
 #include <stdexcept>
 #include <set>
+#include <cwctype>
 
 using nlohmann::json;
 using namespace pm;
@@ -210,6 +211,36 @@ json processMetrics()
         {"handles", haveHandles ? json(handles) : json(nullptr)}};
 }
 
+bool genericDeviceLabel(std::string_view name)
+{
+    return name.starts_with("兼容") || name == "Logitech HID++ 外设" || name == "HID 键盘" ||
+        name == "HID Keyboard Device" || name == "HID-compliant mouse" || name == "USB Input Device" ||
+        name == "HID-compliant device" || name == "USB 输入设备" || name == "符合 HID 标准的鼠标";
+}
+
+std::wstring endpointContainer(std::wstring_view value)
+{
+    const auto colon = value.find(L':');
+    if (colon == std::wstring_view::npos || colon == 0 ||
+        !std::ranges::all_of(value.substr(0, colon), [](wchar_t c) { return c >= L'0' && c <= L'9'; })) return {};
+    const auto guid = value.substr(colon + 1);
+    if (guid.size() != 38 || guid.front() != L'{' || guid.back() != L'}') return {};
+    std::wstring result(guid);
+    std::ranges::transform(result, result.begin(), [](wchar_t c) { return std::towlower(c); });
+    return result;
+}
+
+std::set<std::wstring> claimedContainers(const std::vector<Device>& endpoints)
+{
+    std::set<std::wstring> seen;
+    for (const auto& endpoint : endpoints) {
+        auto id = endpointContainer(endpoint.endpointKey);
+        if (id.empty()) id = endpointContainer(endpoint.parentEndpoint);
+        if (!id.empty()) seen.insert(std::move(id));
+    }
+    return seen;
+}
+
 using ReportTargets = std::map<std::wstring, std::string>;
 
 std::string reportTarget(ReportTargets& targets, const std::wstring& id)
@@ -305,6 +336,8 @@ public:
         if (action == "tone") return {{"played", Beep(880, 145) != FALSE}};
         if (action == "discover") return discover();
         if (action == "compatibility") return compatibility();
+        if (action == "diagnostic_devices") return diagnosticDevices();
+        if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("id").get<std::string>()));
         if (action == "bluetooth") return bluetooth(wide(request.at("key").get<std::string>()));
         if (action == "poll") return poll(request);
         throw std::runtime_error("Unknown action");
@@ -316,6 +349,74 @@ private:
     ReportTargets targets_;
     std::set<std::wstring> bleContainers_;
     std::chrono::steady_clock::time_point bleRefresh_{};
+    std::chrono::steady_clock::time_point windowsRefresh_{};
+    std::vector<FoundDevice> windowsDevices_;
+    std::map<std::wstring, std::wstring> diagnosticFirmwareTargets_;
+
+    const std::vector<FoundDevice>& defaultWindowsDevices(bool force)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (force || now >= windowsRefresh_) {
+            if (auto observed = findWindowsDevices()) windowsDevices_ = std::move(*observed);
+            windowsRefresh_ = now + 30s;
+        }
+        return windowsDevices_;
+    }
+
+    json diagnosticDevices()
+    {
+        json result = json::array();
+        std::set<std::wstring> seen;
+        diagnosticFirmwareTargets_.clear();
+        const auto firmwareServices = bleFirmwareContainers();
+        auto firmwareCandidate = [&](const std::wstring& id, const std::wstring& container) {
+            if (container.empty() || !firmwareServices.contains(container)) return false;
+            diagnosticFirmwareTargets_.try_emplace(id, container);
+            return true;
+        };
+        for (const auto& endpoint : endpoints_) {
+            if (result.size() >= 128) break;
+            if (!seen.insert(endpoint.key).second) continue;
+            // Shared protocol fallback labels are not exact model names.
+            const auto name = utf8(label(endpoint));
+            const bool generic = genericDeviceLabel(name);
+            const bool canReadFirmware = endpoint.transport == Transport::dualsense_bluetooth &&
+                firmwareCandidate(endpoint.key, endpointContainer(endpoint.endpointKey));
+            result.push_back({{"id", utf8(endpoint.key)}, {"target", reportTarget(targets_, endpoint.key)},
+                {"label", name}, {"model", generic ? json(nullptr) : json(name)},
+                {"connection", utf8(transportName(endpoint.transport))}, {"revision", endpoint.revision},
+                {"connected", true}, {"firmwareReadable", canReadFirmware}});
+        }
+        const auto claimed = claimedContainers(endpoints_);
+        for (const auto& device : defaultWindowsDevices(true)) {
+            if (result.size() >= 128) break;
+            if (claimed.contains(device.id) || !seen.insert(device.id).second) continue;
+            const bool canReadFirmware = device.connected && device.knownBluetooth &&
+                firmwareCandidate(device.id, device.id);
+            const auto name = utf8(device.name);
+            result.push_back({{"id", utf8(device.id)}, {"target", reportTarget(targets_, device.id)},
+                {"label", name}, {"model", genericDeviceLabel(name) ? json(nullptr) : json(name)}, {"connection", utf8(device.connection)},
+                {"connected", device.connected}, {"firmwareReadable", canReadFirmware}});
+        }
+        return result;
+    }
+
+    json diagnosticFirmware(const std::wstring& id)
+    {
+        const auto found = diagnosticFirmwareTargets_.find(id);
+        if (found == diagnosticFirmwareTargets_.end()) return {{"status", "unavailable"}};
+        const auto connection = readWindowsDevice(found->second);
+        const auto detail = static_cast<WindowsBatteryDetail>(connection.detail);
+        if (!connection.reading && detail != WindowsBatteryDetail::missingProperty &&
+            detail != WindowsBatteryDetail::invalidPercent) return {{"status", "unavailable"}};
+        const auto result = readBleFirmware(found->second);
+        switch (result.status) {
+        case BleFirmwareStatus::pending: return {{"status", "pending"}};
+        case BleFirmwareStatus::busy: return {{"status", "busy"}};
+        case BleFirmwareStatus::ready: return {{"status", "ready"}, {"firmware", result.revision}};
+        default: return {{"status", "unavailable"}};
+        }
+    }
 
     const std::set<std::wstring>& refreshBleCandidates(bool force = false)
     {
@@ -336,6 +437,16 @@ private:
                 {"unixSeconds", attempt.unixSeconds}, {"identityAvailable", attempt.identityAvailable},
                 {"outcome", sample(attempt.outcome)}});
         }
+        json native = json::array();
+        std::set<std::wstring> seen;
+        for (const auto& device : endpoints_) {
+            if (native.size() >= 128) break;
+            if (!seen.insert(device.key).second) continue;
+            native.push_back({{"target", reportTarget(targets_, device.key)}, {"vid", device.vid}, {"pid", device.pid},
+                {"revision", device.revision}, {"slot", device.slot}, {"provider", utf8(providerName(device.transport))},
+                {"transport", utf8(transportName(device.transport))}});
+        }
+        report["nativeDevices"] = std::move(native);
         report["logitechSlotAttempts"] = std::move(scans);
         report["recentSamples"] = recent_;
         return report;
@@ -363,16 +474,18 @@ private:
         const auto found = findWindowsDevices();
         if (!found) throw std::runtime_error("Windows device enumeration failed");
         const auto& bleCandidates = refreshBleCandidates(true);
+        const auto endpoints = monitor_.enumerate();
+        const auto claimed = claimedContainers(endpoints);
         json result = json::array();
         for (const auto& device : *found) {
-            if (device.automaticallyMonitored) continue;
+            if (claimed.contains(device.id)) continue;
+            const bool bas = device.knownBluetooth && bleCandidates.contains(device.id);
             result.push_back({{"id", utf8(device.id)}, {"name", utf8(device.name)}, {"connection", utf8(device.connection)},
-                {"connected", device.connected}, {"automatic", device.automaticallyMonitored},
+                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false)},
                 {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading},
-                {"batteryCandidate", device.connected && !device.battery && bleCandidates.contains(device.id) ?
+                {"batteryCandidate", device.connected && device.inputOrHeadset && !device.battery && bas ?
                     json("ble_bas") : json(nullptr)}});
         }
-        const auto endpoints = monitor_.enumerate();
         std::map<std::wstring, const Device*> byDevice;
         for (const auto& endpoint : endpoints) {
             if (!byDevice.contains(endpoint.key) || endpoint.transport == Transport::dualsense_usb) {
@@ -440,14 +553,14 @@ private:
             if (disconnected(*source) || shouldRead(id)) {
                 const auto started = std::chrono::steady_clock::now();
                 auto measured = disconnected(*source) ? Sample{Status::offline} : monitor_.sample(*source);
-                record(*source, sample(measured), started);
+                record(*source, sample(measured), started, reportTarget(targets_, key));
                 const auto* preferred = source;
                 for (const auto* endpoint : group) {
                     if (measured.reading) break;
                     if (endpoint == preferred || disconnected(*endpoint)) continue;
                     const auto attempt = std::chrono::steady_clock::now();
                     const auto alternate = monitor_.sample(*endpoint);
-                    record(*endpoint, sample(alternate), attempt);
+                    record(*endpoint, sample(alternate), attempt, reportTarget(targets_, key));
                     if (alternate.reading || (measured.status == Status::offline && alternate.status != Status::offline)) {
                         source = endpoint;
                         measured = alternate;
@@ -472,15 +585,34 @@ private:
                 {"sample", value}, {"art", art(*source)}, {"automatic", true}, {"voltage", voltage}});
         }
 
-        // Never let many BLE watches multiply the synchronous wait in one poll.
-        // Deferred devices stay due, so they get a turn on the next ordinary pass.
-        unsigned basBudget = 2;
+        const auto claimed = claimedContainers(endpoints);
+        const bool force = request.value("force", false);
+        const auto& basCandidates = refreshBleCandidates(force);
+        const auto& windows = defaultWindowsDevices(force);
+        struct GenericTarget { std::string id, name, connection; bool automatic; };
+        std::map<std::wstring, GenericTarget> targets;
         for (const auto& device : request.at("watched")) {
             const auto id = device.at("id").get<std::string>();
+            const auto key = wide(id);
+            if (claimed.contains(key)) continue;
+            targets.try_emplace(key, GenericTarget{id, device.at("name").get<std::string>(),
+                device.at("connection").get<std::string>(), false});
+        }
+        unsigned automaticCount = 0;
+        for (const auto& device : windows) {
+            if (automaticCount >= 32) break;
+            if (!defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
+            targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
+            ++automaticCount;
+        }
+        // Deferred endpoints remain due. A bounded batch protects the collector
+        // from many connected BLE devices multiplying latency.
+        unsigned basBudget = 2;
+        for (const auto& [container, device] : targets) {
+            const auto& id = device.id;
             json value = nullptr;
             if (shouldRead(id)) {
                 const auto started = std::chrono::steady_clock::now();
-                const auto container = wide(id);
                 auto measured = readWindowsDevice(container);
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
@@ -490,7 +622,7 @@ private:
                 // Connected. A failed property query is not connection evidence.
                 const bool useBas = (windowsDetail == WindowsBatteryDetail::missingProperty ||
                     windowsDetail == WindowsBatteryDetail::invalidPercent) &&
-                    refreshBleCandidates().contains(container);
+                    basCandidates.contains(container);
                 if (useBas && basBudget > 0) {
                     --basBudget;
                     const auto attempt = std::chrono::steady_clock::now();
@@ -504,8 +636,8 @@ private:
                     value = sample(measured);
                 }
             }
-            rows.push_back({{"id", id}, {"name", device.at("name")}, {"connection", device.at("connection")},
-                {"aliases", json::array()}, {"sample", value},
+            rows.push_back({{"id", id}, {"name", device.name}, {"connection", device.connection},
+                {"aliases", json::array()}, {"sample", value}, {"automatic", device.automatic},
                 {"art", "unknown"}, {"voltage", nullptr}});
         }
         return rows;

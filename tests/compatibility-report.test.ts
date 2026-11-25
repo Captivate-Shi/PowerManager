@@ -74,11 +74,23 @@ test('只可保存已预览的有效快照，不重放、不允许用错误令�
 });
 test('实机采集模拟：预览不落盘，明确确认后文件与屏幕内容一致', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'power-compat-report-'));
-  t.mock.method(Collector.prototype, 'request', async (action: string) => action === 'compatibility' ? rawReport : []);
+  t.mock.method(Collector.prototype, 'request', async (action: string) => action === 'compatibility' ? rawReport :
+    action === 'diagnostic_devices' ? [{ id: 'sensitive-interface', target: 'W1', model: 'MX Keys', firmwareReadable: true,
+      label: '蓝牙键盘', connection: '蓝牙', connected: true }] :
+    action === 'diagnostic_firmware' ? { status: 'ready', firmware: '2.0' } : []);
   const monitor = new Monitor(dir, join(dir, 'not-running.exe'), () => {}, () => {});
   try {
     await monitor.poll(true);
-    const first = await monitor.previewCompatibility(metadata.context, '0.0.5');
+    const [device] = await monitor.listDiagnosticDevices();
+    assert.ok(device.key && device.key !== 'sensitive-interface');
+    assert.deepEqual(await monitor.readDiagnosticFirmware(device.key), { status: 'ready', firmware: '2.0' });
+    const first = await monitor.previewCompatibility({ kind: 'device', deviceKey: device.key, model: 'override', firmware: 'overridden' }, '0.0.5');
+    const firstReport = JSON.parse(first.json);
+    assert.deepEqual(firstReport.selectedDevice, { model: 'MX Keys', modelSource: 'device', firmware: '2.0', firmwareSource: 'device',
+      connection: '蓝牙', connected: true, evidence: 'matched' });
+    assert.ok(!first.json.includes('sensitive-interface') && !first.json.includes(device.key) && !first.json.includes('W1'));
+    assert.equal(firstReport.gamepads.xinput.length, 0);
+    assert.equal(firstReport.windowsDevices.length, 1);
     const file = join(dir, 'compatibility-report.json');
     assert.equal(existsSync(file), false);
     assert.throws(() => monitor.exportCompatibility('bad token'), /预览已失效/);
@@ -86,6 +98,12 @@ test('实机采集模拟：预览不落盘，明确确认后文件与屏幕内�
     monitor.exportCompatibility(first.token);
     assert.equal(readFileSync(file, 'utf8'), first.json);
     assert.ok(readdirSync(dir).every(name => !name.endsWith('.tmp')));
+    await assert.rejects(monitor.previewCompatibility({ kind: 'device', deviceKey: 'unknown' }, '0.0.5'), /设备列表已失效/);
+    const manual = JSON.parse((await monitor.previewCompatibility({ kind: 'manual', model: '未知设备 C:\\Users\\Alice', firmware: '0.7' }, '0.0.5')).json);
+    assert.equal(manual.selectedDevice.model, '未知设备 [路径已遮盖]');
+    assert.equal(manual.selectedDevice.evidence, 'not_correlated');
+    assert.equal(manual.windowsDevices.length, 0);
+    assert.equal(manual.recentSamples.length, 0);
   } finally { monitor.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 test('只允许关联已连接的 BAS 候选；有效的新采样前不触发提醒', async t => {

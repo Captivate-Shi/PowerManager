@@ -78,4 +78,50 @@ std::set<std::wstring> bleBatteryContainers();
 // responsive. A completed live read may be returned once on a later poll.
 Sample readBleBattery(const std::wstring& containerId);
 
+enum class BleFirmwareStatus { pending, unsupported, busy, ready };
+struct BleFirmwareResult {
+    BleFirmwareStatus status;
+    std::string revision{};
+    unsigned detail{};
+    unsigned error{};
+};
+
+// Conservative ASCII subset of the Bluetooth SIG UTF-8 string; do not
+// export controls, paths, identifiers with ':'/@, or malformed/truncated values.
+inline std::optional<std::string> parseBleFirmwareRevision(std::span<const std::uint8_t> bytes)
+{
+    if (bytes.empty() || bytes.size() > 64) return {};
+    bool alphanumeric = false;
+    for (auto c : bytes) {
+        const bool alphaNum = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        if (!alphaNum && c != ' ' && c != '.' && c != '_' && c != '-' && c != '+' &&
+            c != '(' && c != ')') return {};
+        alphanumeric = alphanumeric || alphaNum;
+    }
+    if (!alphanumeric) return {};
+    while (bytes.front() == ' ') bytes = bytes.subspan(1);
+    while (bytes.back() == ' ') bytes = bytes.first(bytes.size() - 1);
+    return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+
+inline const char* bleFirmwareReason(unsigned detail)
+{
+    switch (static_cast<BleBatteryDetail>(detail)) {
+    case BleBatteryDetail::no_service: return "no_device_information_service";
+    case BleBatteryDetail::multiple_services: return "multiple_device_information_services";
+    case BleBatteryDetail::no_battery_level: return "no_firmware_revision_characteristic";
+    case BleBatteryDetail::multiple_battery_levels: return "multiple_firmware_revision_characteristics";
+    case BleBatteryDetail::battery_level_not_readable: return "firmware_revision_not_readable";
+    case BleBatteryDetail::invalid_value: return "invalid_firmware_revision";
+    default: return bleBatteryReason(detail);
+    }
+}
+
+// Explicit live DIS read for one user-selected, connected device only. Calling
+// again while pending retrieves the single in-flight result; inventory does
+// not call this function. Does not read or infer firmware from USB revisions.
+BleFirmwareResult readBleFirmware(const std::wstring& containerId);
+// SetupAPI-only indication of unique DIS candidate; not proof of 0x2A26.
+std::set<std::wstring> bleFirmwareContainers();
+
 } // namespace pm

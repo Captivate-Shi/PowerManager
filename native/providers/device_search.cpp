@@ -267,11 +267,15 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
             ? keyboard.mapped().connection : std::wstring(windowsConnection(bus));
         devices.push_back({id, std::move(name), connection, sample.status != Status::offline,
                            razer || sony || (!keyboard.empty() && keyboard.mapped().automaticallyMonitored), sample.reading,
-                           false, static_cast<WindowsBatteryDetail>(sample.detail)});
+                           false, static_cast<WindowsBatteryDetail>(sample.detail), peripheral || !keyboard.empty(),
+                           bus == WindowsBus::bluetooth || (bus == WindowsBus::unknown && !keyboard.empty() &&
+                               keyboard.mapped().connection == windowsConnection(WindowsBus::bluetooth))});
     }
     cleanup();
     for (auto& [id, keyboard] : keyboards) {
         keyboard.batteryDetail = WindowsBatteryDetail::missingProperty;
+        keyboard.inputOrHeadset = true;
+        keyboard.knownBluetooth = keyboard.connection == windowsConnection(WindowsBus::bluetooth);
         devices.push_back(std::move(keyboard));
     }
     std::ranges::stable_sort(devices, {}, [](const FoundDevice& candidate) {

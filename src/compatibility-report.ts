@@ -78,7 +78,21 @@ type Metadata = {
   capture: 'live' | 'inventory'; collectorStatus: 'ready' | 'occupied' | 'retrying' | 'starting';
   context: string;
 };
-export function compatibilityJson(metadata: Metadata, snapshot: unknown, generated = new Date()) {
+export const diagnosticModelLimit = 80;
+export const diagnosticFirmwareLimit = 48;
+export function diagnosticText(value: unknown, limit: number): string | undefined {
+  if (typeof value !== 'string' || value.length > limit) return undefined;
+  const result = contextForExport(value).trim();
+  return result || undefined;
+}
+export function diagnosticConnection(value: unknown) { return from(value, connections); }
+export function diagnosticTag(value: unknown) { return target(value); }
+export type DiagnosticSubject = {
+  model: string; modelSource: 'device' | 'manual';
+  firmware?: string; firmwareSource?: 'device' | 'manual';
+  connection?: string; connected?: boolean; target?: string;
+};
+export function compatibilityJson(metadata: Metadata, snapshot: unknown, generated = new Date(), subject?: DiagnosticSubject) {
   const raw = own(snapshot);
   const timings = (a: Bag) => selectInts(a, ['unixMs', 'unixSeconds'], 0, Number.MAX_SAFE_INTEGER);
   const hardware = (a: Bag) => selectInts(a, ['vid', 'pid', 'revision', 'slot'], 0, 0xffff);
@@ -96,8 +110,22 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     status: from(a.status, gamepadStates), level: from(a.level, gamepadLevels), power: from(a.power, power),
   });
   const gamepads = own(raw.gamepads);
+  // Never guess correlation after an inventory-only fallback: its W/H numbering
+  // is allocated by a new process. The renderer never receives these handles.
+  const subjectTag = metadata.capture === 'live' && subject ? target(subject.target) : undefined;
+  let matchingRows = 0;
+  const scoped = (value: unknown, max: number, format: (entry: Bag) => Bag): Bag[] => {
+    if (!subject) return limited(value, max, format);
+    if (!subjectTag || !Array.isArray(value)) return [];
+    return limited(value.filter(item => own(item).target === subjectTag), max, entry => {
+      matchingRows++;
+      const result = format(entry);
+      delete result.target;
+      return result;
+    });
+  };
   const schema = selectInts(raw, ['schemaVersion'], 1, 0xffff);
-  const report = {
+  const details = {
     schemaVersion: 2,
     collectorSchemaVersion: schema.schemaVersion,
     generatedAt: generated.toISOString(),
@@ -105,28 +133,35 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     windowsRelease: /^\d+(?:\.\d+){1,3}$/.test(metadata.windowsRelease) ? metadata.windowsRelease : undefined,
     capture: metadata.capture,
     collectorStatus: metadata.collectorStatus,
-    context: contextForExport(metadata.context),
+    context: !subject ? contextForExport(metadata.context) : undefined,
     ...selectInts(raw, ['bleEnumerationError']),
     ...selectFlags(raw, ['windowsQuerySucceeded', 'bleQuerySucceeded', 'xinputAvailable', 'wgiAvailable']),
-    hidInterfaces: limited(raw.hidInterfaces, 256, a => ({
+    hidInterfaces: scoped(raw.hidInterfaces, 256, a => ({
       ...hardware(a), ...selectInts(a, ['usagePage', 'usage', 'inputBytes', 'outputBytes', 'featureBytes'], 0, 0xffff),
       ...selectInts(a, ['interfaceNumber'], -1, 0xffff),
       ...selectFlags(a, ['descriptorAvailable']), candidateProvider: provider(a.candidateProvider) ?? null,
     })),
-    windowsDevices: limited(raw.windowsDevices, 256, a => ({
+    nativeDevices: scoped(raw.nativeDevices, 256, sample),
+    windowsDevices: scoped(raw.windowsDevices, 256, a => ({
       ...hardware(a), ...selectFlags(a, ['connected', 'bleBasListed']), connection: from(a.connection, connections),
       battery: reading(a.battery), status: from(a.status, statuses), code: from(a.code, results),
       provider: provider(a.provider), transport: from(a.transport, connections), target: target(a.target), reasonCode: reasonCode(a.reasonCode), bleReasonCode: reasonCode(a.bleReasonCode),
     })),
-    logitechSlotAttempts: limited(raw.logitechSlotAttempts, 160, sample),
-    recentSamples: limited(raw.recentSamples, 160, sample),
-    providerAttempts: limited(raw.providerAttempts ?? raw.attempts, 160, sample),
+    logitechSlotAttempts: scoped(raw.logitechSlotAttempts, 160, sample),
+    recentSamples: scoped(raw.recentSamples, 160, sample),
+    providerAttempts: scoped(raw.providerAttempts ?? raw.attempts, 160, sample),
     gamepads: {
       wgiStatus: from(gamepads.wgiStatus, gamepadStates), xinputStatus: from(gamepads.xinputStatus, gamepadStates),
-      windowsGamingInput: limited(gamepads.windowsGamingInput, 32, pad), xinput: limited(gamepads.xinput, 4, pad),
+      windowsGamingInput: scoped(gamepads.windowsGamingInput, 32, pad), xinput: scoped(gamepads.xinput, 4, pad),
     },
   };
-  return JSON.stringify(report, null, 2) + '\n';
+  const selectedDevice = subject && {
+    model: diagnosticText(subject.model, diagnosticModelLimit), modelSource: subject.modelSource,
+    firmware: diagnosticText(subject.firmware, diagnosticFirmwareLimit), firmwareSource: subject.firmwareSource,
+    connection: from(subject.connection, connections), connected: subject.connected,
+    evidence: matchingRows ? 'matched' : 'not_correlated',
+  };
+  return JSON.stringify({ ...details, selectedDevice }, null, 2) + '\n';
 }
 
 export type CompatibilityPreview = { token: string; json: string };

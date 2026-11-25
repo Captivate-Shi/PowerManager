@@ -24,6 +24,13 @@ try {
     & $compiler @flags -Inative/providers -I.tools native/collector.cpp native/providers/battery.cpp native/providers/hid.cpp native/providers/device_search.cpp native/providers/ble_battery.cpp native/providers/gamepad_battery.cpp -o .native/collector.exe -lhid -lsetupapi -lcfgmgr32 -lole32 -lshell32 -ldwmapi -lwtsapi32 -lruntimeobject -lbthprops -lpsapi
     if ($LASTEXITCODE -ne 0) { throw "Collector compilation failed ($LASTEXITCODE)" }
     if ($Test) {
+        $inventoryText = (& .native/collector.exe --inventory) -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw 'The native read-only inventory failed to start.' }
+        $inventory = $inventoryText | ConvertFrom-Json
+        if ($inventory.schemaVersion -lt 2 -or !$inventory.gamepads.wgiStatus -or !$inventory.gamepads.xinputStatus) {
+            throw 'The native inventory did not emit its diagnostic contract.'
+        }
+
         & $compiler @flags -I.tools tests/collector-fixture.cpp -o .native/collector-fixture.exe
         if ($LASTEXITCODE -ne 0) { throw 'Collector fixture compilation failed' }
         & $compiler @flags -Inative/providers tests/discovery_test.cpp native/providers/battery.cpp native/providers/device_search.cpp -o .native/discovery-test.exe -lsetupapi -lcfgmgr32 -lole32
@@ -34,7 +41,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test compilation failed' }
         & .native/peripheral-test.exe
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test failed' }
-        foreach ($suite in @('ble_battery', 'gamepad_battery')) {
+        foreach ($suite in @('ble_battery', 'gamepad_battery', 'default_peripheral')) {
             & $compiler @flags -Inative/providers "tests/${suite}_test.cpp" -o ".native/${suite}_test.exe"
             if ($LASTEXITCODE -ne 0) { throw "$suite test compilation failed" }
             & ".native/${suite}_test.exe"

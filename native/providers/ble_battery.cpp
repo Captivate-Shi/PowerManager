@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <condition_variable>
@@ -25,14 +26,19 @@ namespace {
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-// Bluetooth SIG Battery Service and Battery Level (16-bit aliases).
-constexpr GUID batteryService{0x180f, 0, 0x1000, {0x80, 0, 0, 0x80, 0x5f, 0x9b, 0x34, 0xfb}};
-constexpr GUID batteryLevel{0x2a19, 0, 0x1000, {0x80, 0, 0, 0x80, 0x5f, 0x9b, 0x34, 0xfb}};
+// Bluetooth SIG service/characteristic UUIDs in the standard base UUID.
+constexpr GUID bluetoothUuid(unsigned shortId)
+{
+    return {shortId, 0, 0x1000, {0x80, 0, 0, 0x80, 0x5f, 0x9b, 0x34, 0xfb}};
+}
+constexpr GUID batteryService = bluetoothUuid(0x180f);
+constexpr GUID deviceInformationService = bluetoothUuid(0x180a);
 constexpr DEVPROPKEY containerIdKey{{0x8c7ed206, 0x3f8a, 0x4827, {0xb3, 0xab, 0xae, 0x9e, 0x1f, 0xae, 0xfc, 0x6c}}, 2};
 
 struct InterfaceList {
-    HDEVINFO handle = SetupDiGetClassDevsW(&batteryService, nullptr, nullptr,
-        DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+    HDEVINFO handle;
+    explicit InterfaceList(const GUID& service) : handle(SetupDiGetClassDevsW(&service,
+        nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE)) {}
     ~InterfaceList() { if (handle != INVALID_HANDLE_VALUE) SetupDiDestroyDeviceInfoList(handle); }
 };
 
@@ -62,9 +68,9 @@ struct Enumeration {
     unsigned error{};
 };
 
-Enumeration enumerate()
+Enumeration enumerate(const GUID& service)
 {
-    InterfaceList list;
+    InterfaceList list(service);
     Enumeration candidates;
     if (list.handle == INVALID_HANDLE_VALUE) {
         candidates.error = GetLastError();
@@ -74,7 +80,7 @@ Enumeration enumerate()
     for (DWORD i = 0; i < limit; ++i) {
         SP_DEVICE_INTERFACE_DATA interfaceData{};
         interfaceData.cbSize = sizeof(interfaceData);
-        if (!SetupDiEnumDeviceInterfaces(list.handle, nullptr, &batteryService, i, &interfaceData)) {
+        if (!SetupDiEnumDeviceInterfaces(list.handle, nullptr, &service, i, &interfaceData)) {
             const auto error = GetLastError();
             if (error != ERROR_NO_MORE_ITEMS) candidates.error = error;
             return candidates;
@@ -135,11 +141,12 @@ Sample hresultFailure(BleBatteryDetail stage, HRESULT hr)
     return bleFailure(stage, status, code);
 }
 
-Sample readNow(const std::wstring& id)
+Sample readCharacteristic(const std::wstring& id, const GUID& serviceUuid,
+    unsigned shortUuid, std::span<std::uint8_t> output, size_t& size)
 {
     const GattApi api;
     if (!api.characteristics || !api.value) return bleFailure(BleBatteryDetail::platform_unavailable);
-    const auto interfaces = enumerate();
+    const auto interfaces = enumerate(serviceUuid);
     if (interfaces.error) {
         return bleFailure(BleBatteryDetail::interface_enumeration_failed,
             osStatus(interfaces.error), interfaces.error);
@@ -164,54 +171,134 @@ Sample readNow(const std::wstring& id)
     BTH_LE_GATT_CHARACTERISTIC* characteristic = nullptr;
     for (auto& value : std::span(values).first(count)) {
         const auto& uuid = value.CharacteristicUuid;
-        const bool battery = uuid.IsShortUuid ? uuid.Value.ShortUuid == 0x2a19 :
-            IsEqualGUID(uuid.Value.LongUuid, batteryLevel);
-        if (!battery) continue;
+        const bool matches = uuid.IsShortUuid ? uuid.Value.ShortUuid == shortUuid :
+            IsEqualGUID(uuid.Value.LongUuid, bluetoothUuid(shortUuid));
+        if (!matches) continue;
         if (characteristic) return bleFailure(BleBatteryDetail::multiple_battery_levels);
         characteristic = &value;
     }
     if (!characteristic) return bleFailure(BleBatteryDetail::no_battery_level);
     if (!characteristic->IsReadable) return bleFailure(BleBatteryDetail::battery_level_not_readable);
-    // One GATT read, no query+read two-step. Battery Level has exactly one byte.
-    struct LevelBuffer {
+    struct ValueBuffer {
         ULONG size;
-        UCHAR payload[8];
+        UCHAR payload[64];
     };
-    static_assert(alignof(LevelBuffer) == alignof(BTH_LE_GATT_CHARACTERISTIC_VALUE));
-    static_assert(offsetof(LevelBuffer, payload) == offsetof(BTH_LE_GATT_CHARACTERISTIC_VALUE, Data));
-    LevelBuffer value{};
+    static_assert(alignof(ValueBuffer) == alignof(BTH_LE_GATT_CHARACTERISTIC_VALUE));
+    static_assert(offsetof(ValueBuffer, payload) == offsetof(BTH_LE_GATT_CHARACTERISTIC_VALUE, Data));
+    ValueBuffer value{};
     const auto read = api.value(service.handle, characteristic, sizeof(value),
         reinterpret_cast<PBTH_LE_GATT_CHARACTERISTIC_VALUE>(&value), nullptr,
         BLUETOOTH_GATT_FLAG_FORCE_READ_FROM_DEVICE);
     if (FAILED(read)) return hresultFailure(BleBatteryDetail::read_failed, read);
-    if (value.size != 1) return bleFailure(BleBatteryDetail::invalid_value, Status::bad_report);
-    return parseBleBatteryLevel(std::span<const std::uint8_t>(value.payload, 1));
+    if (value.size == 0 || value.size > output.size()) {
+        return bleFailure(BleBatteryDetail::invalid_value, Status::bad_report);
+    }
+    size = value.size;
+    std::copy_n(value.payload, size, output.begin());
+    return {Status::current};
 }
 
-struct Completed {
-    Sample sample;
-    Clock::time_point finished;
-};
+Sample readBatteryNow(const std::wstring& id)
+{
+    std::array<std::uint8_t, 1> bytes{};
+    size_t count{};
+    const auto outcome = readCharacteristic(id, batteryService, 0x2a19, bytes, count);
+    if (outcome.status != Status::current) return outcome;
+    return parseBleBatteryLevel(std::span(bytes).first(count));
+}
+
+BleFirmwareResult firmwareFailure(Sample sample)
+{
+    return {sample.status == Status::busy || sample.status == Status::timeout ?
+        BleFirmwareStatus::busy : BleFirmwareStatus::unsupported, {}, sample.detail, sample.report};
+}
+
+BleFirmwareResult readFirmwareNow(const std::wstring& id)
+{
+    std::array<std::uint8_t, 64> bytes{};
+    size_t count{};
+    const auto outcome = readCharacteristic(id, deviceInformationService, 0x2a26, bytes, count);
+    if (outcome.status != Status::current) return firmwareFailure(outcome);
+    auto revision = parseBleFirmwareRevision(std::span(bytes).first(count));
+    if (!revision) return firmwareFailure(bleFailure(BleBatteryDetail::invalid_value));
+    return {BleFirmwareStatus::ready, std::move(*revision)};
+}
+
+bool validId(const std::wstring& containerId)
+{
+    GUID guid{};
+    return containerId.size() == 38 && containerId.front() == L'{' && containerId.back() == L'}' &&
+        SUCCEEDED(CLSIDFromString(containerId.c_str(), &guid)) && !IsEqualGUID(guid, GUID{});
+}
+
+template <class Value>
 struct Work {
+    struct Completed {
+        Value value;
+        Clock::time_point finished;
+    };
     std::mutex mutex;
     std::condition_variable finished;
     std::wstring active;
     std::map<std::wstring, Completed> completed;
 };
-constexpr auto waitBudget = 100ms;
-constexpr auto sampleLifetime = 8s;
 
-std::optional<Sample> take(Work& work, const std::wstring& id)
+// Both operations share one process-wide native radio slot. Blocking Windows
+// IO never runs on the collector thread or outlives the worker-owned state.
+std::atomic_flag radioInUse = ATOMIC_FLAG_INIT;
+constexpr auto waitBudget = 100ms;
+
+template <class Value>
+Value runWorker(const std::wstring& id, Clock::duration lifetime,
+    Value (*read)(const std::wstring&), const Value& pending, const Value& busy, const Value& failure)
 {
-    auto result = work.completed.extract(id);
-    return result.empty() ? std::nullopt : std::optional{result.mapped().sample};
+    static const auto shared = std::make_shared<Work<Value>>();
+    auto work = shared;
+    std::unique_lock lock(work->mutex);
+    const auto cutoff = Clock::now() - lifetime;
+    std::erase_if(work->completed, [cutoff](const auto& pair) { return pair.second.finished < cutoff; });
+    auto ready = work->completed.extract(id);
+    if (!ready.empty()) return std::move(ready.mapped().value);
+    if (!work->active.empty()) return work->active == id ? pending : busy;
+    work->active = id;
+    if (radioInUse.test_and_set()) {
+        work->active.clear();
+        return busy;
+    }
+    try {
+        std::thread([work, id, read, failure] {
+            Value result = failure;
+            try { result = read(id); } catch (...) { /* Never unwind a native worker. */ }
+            {
+                std::scoped_lock lock(work->mutex);
+                try {
+                    if (work->completed.size() >= 16) {
+                        const auto oldest = std::ranges::min_element(work->completed, {},
+                            [](const auto& pair) { return pair.second.finished; });
+                        work->completed.erase(oldest);
+                    }
+                    work->completed.emplace(id, typename Work<Value>::Completed{std::move(result), Clock::now()});
+                } catch (...) { /* Release the slot even on allocation failure. */ }
+                work->active.clear();
+                radioInUse.clear();
+            }
+            work->finished.notify_one();
+        }).detach();
+    } catch (...) {
+        work->active.clear();
+        radioInUse.clear();
+        return failure;
+    }
+    work->finished.wait_for(lock, waitBudget, [&] { return work->active != id; });
+    ready = work->completed.extract(id);
+    return ready.empty() ? pending : std::move(ready.mapped().value);
 }
 
 } // namespace
 
 BleServiceInventory inspectBleBatteryServices()
 {
-    const auto interfaces = enumerate();
+    const auto interfaces = enumerate(batteryService);
     BleServiceInventory result{interfaces.error == 0, interfaces.error, {}};
     if (result.complete) for (const auto& [container, paths] : interfaces.paths)
         result.counts.emplace(container, static_cast<unsigned>(paths.size()));
@@ -227,53 +314,33 @@ std::set<std::wstring> bleBatteryContainers()
     return result;
 }
 
+std::set<std::wstring> bleFirmwareContainers()
+{
+    std::set<std::wstring> result;
+    const auto interfaces = enumerate(deviceInformationService);
+    if (interfaces.error != 0) return result;
+    for (const auto& [id, paths] : interfaces.paths) {
+        if (paths.size() == 1) result.insert(id);
+    }
+    return result;
+}
+
 Sample readBleBattery(const std::wstring& containerId)
 {
-    GUID guid{};
-    if (containerId.size() != 38 || containerId.front() != L'{' ||
-        containerId.back() != L'}' || FAILED(CLSIDFromString(containerId.c_str(), &guid)) ||
-        IsEqualGUID(guid, GUID{})) {
-        return bleFailure(BleBatteryDetail::invalid_container);
-    }
-    const auto id = normalized(containerId);
-    // The worker owns its state until synchronous Windows IO returns. Shutdown
-    // of the collector does not wait on a stalled adapter or use destroyed state.
-    static const auto shared = std::make_shared<Work>();
-    auto work = shared;
-    std::unique_lock lock(work->mutex);
-    const auto cutoff = Clock::now() - sampleLifetime;
-    std::erase_if(work->completed, [cutoff](const auto& pair) { return pair.second.finished < cutoff; });
-    if (const auto sample = take(*work, id)) return *sample;
-    if (!work->active.empty()) {
-        return bleFailure(work->active == id ? BleBatteryDetail::read_pending :
-            BleBatteryDetail::worker_busy, Status::busy);
-    }
-    work->active = id;
-    try {
-        std::thread([work, id] {
-            Sample result = bleFailure(BleBatteryDetail::read_failed);
-            try { result = readNow(id); } catch (...) { /* No exceptions across the thread boundary. */ }
-            {
-                std::scoped_lock lock(work->mutex);
-                try {
-                    if (work->completed.size() >= 16) {
-                        const auto oldest = std::ranges::min_element(work->completed, {},
-                            [](const auto& pair) { return pair.second.finished; });
-                        work->completed.erase(oldest);
-                    }
-                    work->completed.emplace(id, Completed{result, Clock::now()});
-                } catch (...) { /* Release the worker slot even on an allocation failure. */ }
-                work->active.clear();
-            }
-            work->finished.notify_one();
-        }).detach();
-    } catch (...) {
-        work->active.clear();
-        return bleFailure(BleBatteryDetail::platform_unavailable);
-    }
-    work->finished.wait_for(lock, waitBudget, [&] { return work->active != id; });
-    if (const auto result = take(*work, id)) return *result;
-    return bleFailure(BleBatteryDetail::read_pending, Status::busy);
+    if (!validId(containerId)) return bleFailure(BleBatteryDetail::invalid_container);
+    return runWorker(normalized(containerId), 8s, readBatteryNow,
+        bleFailure(BleBatteryDetail::read_pending, Status::busy),
+        bleFailure(BleBatteryDetail::worker_busy, Status::busy),
+        bleFailure(BleBatteryDetail::read_failed));
+}
+
+BleFirmwareResult readBleFirmware(const std::wstring& containerId)
+{
+    if (!validId(containerId)) return firmwareFailure(bleFailure(BleBatteryDetail::invalid_container));
+    return runWorker(normalized(containerId), 24s, readFirmwareNow,
+        BleFirmwareResult{BleFirmwareStatus::pending, {}, static_cast<unsigned>(BleBatteryDetail::read_pending)},
+        BleFirmwareResult{BleFirmwareStatus::busy, {}, static_cast<unsigned>(BleBatteryDetail::worker_busy)},
+        firmwareFailure(bleFailure(BleBatteryDetail::read_failed)));
 }
 
 } // namespace pm

@@ -838,6 +838,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 if (identity && (child == receiver.children.end() || child->second.unit != identity)) {
                     auto paired = device;
                     paired.key = L"logitech-hidpp:" + std::to_wstring(identity);
+                    paired.parentEndpoint = device.endpointKey;
                     paired.endpointKey.clear();
                     paired.slot = slot;
                     paired.unit = identity;

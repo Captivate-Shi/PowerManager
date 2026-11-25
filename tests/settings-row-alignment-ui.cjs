@@ -33,13 +33,13 @@ const out = process.env.SETTINGS_REVIEW_OUT;
           });
           const palette = settings.querySelector('[aria-label="配色"]');
           const swatches = [...palette.querySelectorAll('label')];
-          const compatibility = settings.querySelector('label[for=compat-context]');
+          const compatibilityButton = settings.querySelector('[data-compat-report]');
           return { rows, zooms, swatch:Math.max(...swatches.map(s => offset(s,swatches[0]))),
             paletteDesktop:offset(palette.querySelector(':scope > span'),swatches[0]),
-            diagnostics: offset(compatibility,settings.querySelector('#compat-context')),
+            diagnostics: offset(compatibilityButton.closest('[data-setting-row]').querySelector('[data-setting-label]'), compatibilityButton),
             overflow:document.documentElement.scrollWidth - innerWidth };
         });
-        expect(geometry.rows).toHaveLength(5);
+        expect(geometry.rows).toHaveLength(6);
         expect(Math.max(...geometry.rows)).toBeLessThan(1);
         expect(geometry.zooms).toHaveLength(2);
         for (const zoom of geometry.zooms) {
