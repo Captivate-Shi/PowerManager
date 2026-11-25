@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include "langtu_t98.hpp"
 #include "headset_battery.hpp"
 #include "verified_mouse.hpp"
 #include "atk_v75x.hpp"
@@ -207,6 +208,8 @@ std::optional<Transport> candidate(const std::wstring& path)
         return Transport::gamesir_super_nova_receiver;
     const auto vid = hexId(path, L"vid_", 4).value_or(0);
     const auto pid = hexId(path, L"pid_", 4).value_or(0);
+    if (vid == 0x2dc8 && pid == 0x6012) return Transport::eightbitdo_ultimate2_candidate;
+    if (vid == 0x1a2c && pid == 0x8fff) return Transport::langtu_t98_receiver;
     if (headset_battery::lane(vid, pid) != headset_battery::Lane::none)
         return Transport::usb_wireless_headset;
     if (const auto mouse = verified_mouse::kind(vid, pid))
@@ -1433,6 +1436,7 @@ const wchar_t* deviceName(Transport transport)
     if (isVgn(transport)) return L"VGN V98 Pro V3";
     if (transport == Transport::atk_v75x_usb || transport == Transport::atk_v75x_receiver_candidate) return L"ATK V75X";
     if (transport == Transport::logitech_receiver || transport == Transport::logitech_usb) return L"Logitech HID++ 外设";
+    if (transport == Transport::langtu_t98_receiver) return L"兼容键盘接收器";
     if (transport == Transport::rapoo_receiver) return L"Rapoo 接收器";
     if (transport == Transport::supported_mouse_receiver) return L"2.4 GHz 鼠标";
     if (transport == Transport::rog_keyboard_receiver) return L"ROG 2.4 GHz 键盘";
@@ -1472,6 +1476,7 @@ const wchar_t* transportName(Transport transport)
     case Transport::verified_mouse_receiver:
     case Transport::logitech_receiver:
     case Transport::rapoo_receiver:
+    case Transport::langtu_t98_receiver:
     case Transport::mchose_g3v2_receiver:
     case Transport::aula_sc580_receiver:
     case Transport::ajazz_mk87pro_receiver:
@@ -1514,6 +1519,8 @@ const wchar_t* providerName(Transport transport)
     case Transport::logitech_receiver:
     case Transport::logitech_usb: return L"logitech-hidpp20";
     case Transport::rapoo_receiver: return L"rapoo-passive-hid";
+    case Transport::langtu_t98_receiver: return L"langtu-t98-passive";
+    case Transport::eightbitdo_ultimate2_candidate: return L"8bitdo-ultimate2-dinput-candidate";
     case Transport::mchose_g3v2_receiver: return L"mchose-g3v2";
     case Transport::aula_sc580_receiver: return L"aula-sc580";
     case Transport::aula_f87v2d_receiver: return L"aula-f87v2d";
@@ -1685,9 +1692,20 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         const auto vendorPad = transport == Transport::gamepad_flydigi || transport == Transport::gamepad_nova2_lite_usb
             ? vendor_pad::match(vid, pid) : std::nullopt;
         const auto exactVendorPad = vendorPad && info.valid() && vendorGamepadDescriptor(info.value, *vendorPad);
+        const bool langtu = transport == Transport::langtu_t98_receiver;
+        const bool langtuReady = langtu && haveCaps && langtuT98Collection(attributes.VendorID, attributes.ProductID,
+            hexId(normalized, L"&mi_", 2).value_or(255), caps.UsagePage, caps.Usage,
+            caps.InputReportByteLength, caps.OutputReportByteLength);
         if (inventory) {
             const auto interfaceNumber = hexId(normalized, L"&mi_", 2);
             auto reportedProvider = transport;
+            if (langtu && !langtuReady) reportedProvider.reset();
+            // Both receiver modes have been reported with this PID. This
+            // is an inventory hint only, never permission to sample battery.
+            if (transport == Transport::eightbitdo_ultimate2_candidate &&
+                (!haveCaps || attributes.VendorID != 0x2dc8 || attributes.ProductID != 0x6012 ||
+                 caps.UsagePage != 1 || caps.Usage != 5 || caps.InputReportByteLength != 34))
+                reportedProvider.reset();
             if (vendorPad && !exactVendorPad) reportedProvider.reset();
             if (rzPro && !rzExactCollection()) reportedProvider.reset();
             if (usbHeadset && !headsetCollection()) reportedProvider.reset();
@@ -1723,6 +1741,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         }
         if ((isVgn(*transport) || *transport == Transport::logitech_receiver || *transport == Transport::logitech_usb) &&
             (peripheralTransport(vid, pid) != transport || !haveCaps)) continue;
+        if (transport == Transport::eightbitdo_ultimate2_candidate) continue;
+        if (langtu && !langtuReady) continue;
         if (*transport == Transport::rapoo_receiver && !isRapooReceiver(vid, pid)) continue;
         if (*transport == Transport::dareu_em901x_inventory || *transport == Transport::ajazz_mk87pro_receiver ||
             *transport == Transport::mchose_g87_candidate || atkCandidate) continue;
@@ -1828,7 +1848,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
         }
         // Report the receiver only when Windows supplied a physical container.
-        if ((cn || superNova || switchPro || enhanced || eightBitDoUsb || rzPro || usbHeadset || vendorPad || verifiedMouse || atkUsb || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
+        if ((langtu || cn || superNova || switchPro || enhanced || eightBitDoUsb || rzPro || usbHeadset || vendorPad || verifiedMouse || atkUsb || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
             !key.ends_with(L'}')) continue;
         auto [it, inserted] = devices.try_emplace(key, Device{key, *transport, attributes.VersionNumber,
                                                                bluetooth ? windowsBattery(devInfo.DevInst)
@@ -1909,6 +1929,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             if (!kind) continue;
             device.label = supportedMouseName(*kind);
         }
+        if (device.transport == Transport::langtu_t98_receiver && device.collections.size() != 1) continue;
         if (device.transport == Transport::rapoo_receiver) {
             const auto vendorCollection = [](const Collection& c) { return c.page == 0xff00 && c.usage == 2; };
             const auto current = std::ranges::find_if(device.collections, vendorCollection);
@@ -2079,9 +2100,9 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
         if (!iface) return {Status::unavailable};
         return readSupportedMouseBattery(*kind, static_cast<int>(*iface), collection.path);
     }
-    if (device.transport == Transport::rapoo_receiver) {
+    if (device.transport == Transport::rapoo_receiver || device.transport == Transport::langtu_t98_receiver) {
         if (device.collections.size() != 1) return {Status::unavailable};
-        return rapoo_.read(device.collections.front().path);
+        return rapoo_.read(device.collections.front().path, device.transport == Transport::langtu_t98_receiver);
     }
     if (isVgn(device.transport)) return readVgn(device);
     if (device.transport == Transport::logitech_receiver || device.transport == Transport::logitech_usb)
@@ -2250,7 +2271,7 @@ void HidMonitor::forgetOffline(const std::vector<Device>& devices)
 {
     std::set<std::wstring> rapooPaths;
     for (const auto& device : devices) {
-        if (device.transport == Transport::rapoo_receiver && device.collections.size() == 1)
+        if ((device.transport == Transport::rapoo_receiver || device.transport == Transport::langtu_t98_receiver) && device.collections.size() == 1)
             rapooPaths.insert(device.collections.front().path);
     }
     rapoo_.retainPaths(rapooPaths);

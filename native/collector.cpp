@@ -363,7 +363,7 @@ const char* art(const Device& device)
         device.transport == Transport::gamesir_super_nova_receiver || device.transport == Transport::gamepad_flydigi ||
         device.transport == Transport::gamepad_nova2_lite_usb) return "controller";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard ||
-        device.transport == Transport::aula_f87v2d_receiver || device.transport == Transport::atk_v75x_usb ||
+        device.transport == Transport::aula_f87v2d_receiver || device.transport == Transport::langtu_t98_receiver || device.transport == Transport::atk_v75x_usb ||
         device.transport == Transport::rog_keyboard_receiver) return "keyboard";
     if (device.transport == Transport::razer_pro_receiver && razerKeyboardReceiver(device.vid, device.pid)) return "keyboard";
     if (device.transport == Transport::usb_wireless_headset) return "headset";

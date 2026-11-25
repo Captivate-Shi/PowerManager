@@ -7,12 +7,12 @@ int main()
     using namespace pm;
     static_assert(isRapooReceiver(0x24ae, 0x1411));
     static_assert(isRapooReceiver(0x24ae, 0x1412) && isRapooReceiver(0x24ae, 0x14a1));
-    static_assert(!isRapooReceiver(0x24ae, 0x4611) && !isRapooReceiver(0x24ae, 0x14a9));
+    static_assert(!isRapooReceiver(0x24ae, 0x4611) && !isRapooReceiver(0x24ae, 0x1a00));
     static_assert(!isRapooReceiver(0x1234, 0x1412));
     static_assert(isRapooReceiver(0x24ae, 0x1b13));
     static_assert(isRapooReceiver(0x24ae, 0x1421));
     static_assert(std::wstring_view(rapooReceiverName(0x24ae, 0x1421)) == L"Rapoo VT3S MAX");
-    static_assert(!isRapooReceiver(0x24ae, 0x4621) && !isRapooReceiver(0x24ae, 0x144b));
+    static_assert(!isRapooReceiver(0x24ae, 0x4621) && !isRapooReceiver(0x24ae, 0x464b));
     static_assert(!isRapooReceiver(0x24ae, 0x4b13) && !isRapooReceiver(0x24ae, 0x4827));
     static_assert(isRapooBatteryCollection(0xff00, 2, 19));
     static_assert(!isRapooBatteryCollection(0xff00, 0xe, 19) && !isRapooBatteryCollection(0xff00, 2, 20));
@@ -73,4 +73,28 @@ int main()
     report[18] = 0x33; // RF link bit still low, not a fresh sample
     assert(!parseRapooBatteryReport(report, 0x1421).reading);
     assert(ambiguous.status == Status::unavailable && !ambiguous.reading);
+    static_assert(sizeof(rapooFamilyReceivers) / sizeof(rapooFamilyReceivers[0]) == 64);
+    for (const auto& family : rapooFamilyReceivers) {
+        assert(isRapooReceiver(0x24ae, family.receiver));
+        assert(!isRapooReceiver(0x24ae, family.body));
+        assert(!isRapooReceiver(0x0000, family.receiver));
+        report[1] = 0x10; report[7] = 1; report[8] = 68; report[18] = 0xd2;
+        report[13] = static_cast<std::uint8_t>(family.body);
+        report[14] = static_cast<std::uint8_t>(family.body >> 8);
+        assert(parseRapooBatteryReport(report, family.receiver).reading->low == 68);
+        report[13] ^= 1;
+        assert(!parseRapooBatteryReport(report, family.receiver).reading); // swapped body
+        report[13] ^= 1;
+        report[18] = 0x7f;
+        assert(!parseRapooBatteryReport(report, family.receiver).reading); // RF link down
+        report[18] = 0xd2;
+        report[1] = 0x12;
+        assert(!parseRapooBatteryReport(report, family.receiver).reading); // wired frame
+        report[1] = 0x10;
+        report[7] = 0;
+        assert(!parseRapooBatteryReport(report, family.receiver).reading); // unknown power flag
+        report[7] = 2; report[8] = 0;
+        auto current = parseRapooBatteryReport(report, family.receiver);
+        assert(current.reading && current.reading->low == 0 && current.reading->power == Power::charging);
+    }
 }

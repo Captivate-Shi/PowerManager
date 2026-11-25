@@ -92,7 +92,7 @@ export function tone(device: Device, state: Snapshot) {
   return 'normal';
 }
 export const readingLabel = (reading: Reading | null) => !reading ? "—" :
-  reading.low === reading.high ? reading.low + "%" : (reading.source === "hid_voltage" ? "约 " : "") + reading.low + "–" + reading.high + "%";
+  (reading.source === "hid_voltage" ? "约 " : "") + (reading.low === reading.high ? reading.low : reading.low + "–" + reading.high) + "%";
 
 export function BatteryTrack({ reading, className, label }: { reading?: Reading | null; className?: string; label?: string }) {
   const range = !!reading && reading.low !== reading.high;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "battery.hpp"
+#include "rapoo_family_catalog.hpp"
 
 #include <map>
 #include <memory>
@@ -19,7 +20,9 @@ constexpr const wchar_t* rapooReceiverName(unsigned vid, unsigned pid)
     case 0x1421: return L"Rapoo VT3S MAX";
     case 0x14a1: return L"Rapoo VT0 Air MAX";
     case 0x1b13: return L"Rapoo VT2S Air Max";
-    default: return nullptr;
+    default:
+        if (const auto* family = rapooFamilyReceiver(pid)) return family->label;
+        return nullptr;
     }
 }
 
@@ -39,6 +42,13 @@ constexpr Sample parseRapooBatteryReport(std::span<const std::uint8_t> report, u
 {
     if (report.size() != 19 || report[0] != 0x07) {
         return {Status::bad_report};
+    }
+    if (const auto* family = rapooFamilyReceiver(pid)) {
+        const auto body = static_cast<unsigned>(report[13]) | (static_cast<unsigned>(report[14]) << 8);
+        // Stock receiver, currently paired body, wireless mode and live RF.
+        // The receiver PID alone does not authorize publishing a child sample.
+        if (body != family->body || (report[1] & 0x0f) != 0 || (report[18] & 0x80) == 0 ||
+            (report[7] != 1 && report[7] != 2)) return {Status::unavailable, {}, 0x07};
     }
     // On 1412 the RF-disconnect marker is witnessed on air, not on cable.
     // Silence and invalid frames do not imply a disconnect.
@@ -66,7 +76,7 @@ public:
     RapooBatteryReader();
     ~RapooBatteryReader();
     // Caller proves unique FF00:0002 across all interfaces of the physical USB receiver.
-    Sample read(const std::wstring& path);
+    Sample read(const std::wstring& path, bool langtu = false);
     void retainPaths(const std::set<std::wstring>& active);
 private:
     struct Endpoint;

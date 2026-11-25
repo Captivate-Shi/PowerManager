@@ -1,4 +1,5 @@
 #include "rapoo_battery.hpp"
+#include "langtu_t98.hpp"
 
 #include <windows.h>
 extern "C" {
@@ -16,17 +17,21 @@ Sample rapooStatus(Status status, RapooDetail detail, unsigned error = 0)
     return {status, {}, 0x07, static_cast<unsigned>(detail), error};
 }
 
-unsigned rapooDescriptor(HANDLE file)
+unsigned rapooDescriptor(HANDLE file, bool langtu)
 {
     HIDD_ATTRIBUTES attributes{sizeof(HIDD_ATTRIBUTES)};
     if (!HidD_GetAttributes(file, &attributes) ||
-        !isRapooReceiver(attributes.VendorID, attributes.ProductID)) return 0;
+        (!langtu && !isRapooReceiver(attributes.VendorID, attributes.ProductID))) return 0;
 
     PHIDP_PREPARSED_DATA data{};
     if (!HidD_GetPreparsedData(file, &data)) return 0;
     HIDP_CAPS caps{};
     bool proven = false;
-    if (HidP_GetCaps(data, &caps) == HIDP_STATUS_SUCCESS &&
+    if (langtu) {
+        proven = HidP_GetCaps(data, &caps) == HIDP_STATUS_SUCCESS &&
+            langtuT98Collection(attributes.VendorID, attributes.ProductID, 0, caps.UsagePage, caps.Usage,
+                                caps.InputReportByteLength, caps.OutputReportByteLength);
+    } else if (HidP_GetCaps(data, &caps) == HIDP_STATUS_SUCCESS &&
         isRapooBatteryCollection(caps.UsagePage, caps.Usage, caps.InputReportByteLength)) {
         // The captured 1411 descriptor has exactly one fixed-usage Data/Array
         // input field and no value caps. With this sole ID, the 19-byte
@@ -50,7 +55,8 @@ struct RapooBatteryReader::Endpoint {
     HANDLE file{INVALID_HANDLE_VALUE};
     HANDLE event{};
     OVERLAPPED io{};
-    std::array<std::uint8_t, 19> report{};
+    std::array<std::uint8_t, 65> report{};
+    unsigned length{};
     unsigned pid{};
     bool pending{};
 
@@ -69,7 +75,7 @@ struct RapooBatteryReader::Endpoint {
 RapooBatteryReader::RapooBatteryReader() = default;
 RapooBatteryReader::~RapooBatteryReader() = default;
 
-Sample RapooBatteryReader::read(const std::wstring& path)
+Sample RapooBatteryReader::read(const std::wstring& path, bool langtu)
 {
     if (path.empty()) return rapooStatus(Status::unavailable, RapooDetail::descriptorMismatch);
     auto iter = endpoints_.find(path);
@@ -79,8 +85,9 @@ Sample RapooBatteryReader::read(const std::wstring& path)
                                     nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
         if (endpoint->file == INVALID_HANDLE_VALUE)
             return rapooStatus(Status::unavailable, RapooDetail::openFailed, GetLastError());
-        if (!(endpoint->pid = rapooDescriptor(endpoint->file)))
+        if (!(endpoint->pid = rapooDescriptor(endpoint->file, langtu)))
             return rapooStatus(Status::unavailable, RapooDetail::descriptorMismatch);
+        endpoint->length = langtu ? 65 : 19;
         endpoint->event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!endpoint->event)
             return rapooStatus(Status::unavailable, RapooDetail::openFailed, GetLastError());
@@ -106,7 +113,7 @@ Sample RapooBatteryReader::read(const std::wstring& path)
             ResetEvent(endpoint.event);
             endpoint.io = {};
             endpoint.io.hEvent = endpoint.event;
-            if (!ReadFile(endpoint.file, endpoint.report.data(), static_cast<DWORD>(endpoint.report.size()),
+            if (!ReadFile(endpoint.file, endpoint.report.data(), static_cast<DWORD>(endpoint.length),
                           &bytes, &endpoint.io)) {
                 const auto error = GetLastError();
                 if (error == ERROR_IO_PENDING) {
@@ -117,11 +124,12 @@ Sample RapooBatteryReader::read(const std::wstring& path)
                 return rapooStatus(Status::unavailable, RapooDetail::readFailed, error);
             }
         }
-        const auto parsed = bytes == endpoint.report.size()
-            ? parseRapooBatteryReport(endpoint.report, endpoint.pid)
+        const auto frame = std::span(endpoint.report).first(endpoint.length);
+        const auto parsed = bytes == endpoint.length
+            ? (langtu ? parseLangtuT98(frame) : parseRapooBatteryReport(frame, endpoint.pid))
             : Sample{Status::bad_report};
         if (parsed.reading || parsed.status == Status::offline) newest = parsed;
-        else if (endpoint.pid == 0x1421 && parsed.status == Status::unavailable)
+        else if ((langtu && parsed.status == Status::unavailable) || rapooFamilyReceiver(endpoint.pid) || (endpoint.pid == 0x1421 && parsed.status == Status::unavailable))
             newest = rapooStatus(Status::unavailable, RapooDetail::noFreshReport);
         else if (!newest.reading && newest.status != Status::offline) newest = rapooStatus(Status::bad_report, RapooDetail::invalidReport, bytes);
     }

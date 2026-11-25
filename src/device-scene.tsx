@@ -39,7 +39,7 @@ export function SceneBattery({ device, state, phase }: { device?: Device; state:
   const full = isLiveDualSenseFull(device);
   const hasRange = !!reading && reading.low !== reading.high;
   return <div className={view.meter} data-phase={phase} data-tone={color} data-charge-complete={full || undefined}>
-    {!initial && <strong>{full ? '已充满' : reading ? <>{reading.low}{hasRange && <><span className={view.rangeDash}>–</span>{reading.high}</>}
+    {!initial && <strong>{full ? '已充满' : reading ? <>{reading.source === 'hid_voltage' && !hasRange && <small className={view.rangeDash}>约 </small>}{reading.low}{hasRange && <><span className={view.rangeDash}>–</span>{reading.high}</>}
       <small className={view.percentUnit}>%</small></> : '—'}</strong>}
     {initial ? <div role="progressbar" className={view.progress} aria-label="正在读取电量"><i aria-hidden="true" /></div> :
       !full && <BatteryTrack className={view.track} reading={reading} label={device?.status === 'current' ? '电量' : '上次电量'} />}
