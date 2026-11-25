@@ -114,12 +114,12 @@ async function run() {
     await page.mouse.move(1300, 100);
     await screenshot(page, '06-记录-双设备实际曲线');
     await page.waitForTimeout(450);
-    await graph.locator('[data-event="invalid"] rect').hover();
+    await graph.locator('[data-event="invalid"]').hover();
     await expect(graph.getByText('无线鼠标 · 无有效读数')).toBeVisible();
     await screenshot(page, '07-记录-缺口悬停');
     await page.waitForTimeout(600);
     await graph.locator('[data-event="charging"]').hover();
-    await expect(graph.getByText('无线鼠标 · 采样显示正在充电')).toBeVisible();
+    await expect(graph.getByText('无线鼠标 · 检测到充电')).toBeVisible();
     await screenshot(page, '08-记录-充电悬停');
     await page.waitForTimeout(600);
     const picker = page.getByRole('group', { name: '选择对比设备' });

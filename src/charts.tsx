@@ -1,4 +1,4 @@
-import { exactCurve, intervalPaths, intervalRibbon, trendCurve } from './history-curve';
+import { exactCurve, trendCurve } from './history-curve';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { RefreshCw, Zap } from 'lucide-react';
 import type { Device, HistoryDay, HistoryPoint, HistoryRange } from './model';
@@ -120,8 +120,9 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', s
       count: hasData(device.id) ? count.toLocaleString('zh-CN') + ' 次' : undefined };
   })} />;
   return <ChartFrame large={large} pending={pending} threshold={threshold} notice={notice} summary={summary} reserveRows={reserveRows} range={range}
-    view={view} onView={activeSeries.some(item => item.plot.runs.length) ? setView : undefined}>
-    {activeSeries.length ? <Graph key={range} series={activeSeries} start={start} end={end} threshold={threshold} range={range} view={view} /> : pending ?
+    view={view} hasIntervals={activeSeries.some(({ plot }) => plot.runs.some(run => run.kind === 'range'))} onView={activeSeries.some(item => item.plot.runs.length) ? setView : undefined}>
+    {activeSeries.length ? <Graph key={range} series={activeSeries} start={start} end={end} threshold={threshold} range={range} view={view}
+      lanes={devices.map((device, i) => ({ device, index: seriesSlots?.get(device.id) ?? i, color: historyColors[seriesSlots?.get(device.id) ?? i], plot: plotById.get(device.id) }))} /> : pending ?
       <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large}>
         {allFailed ? <div><span role="status">电量记录读取失败</span>{retryButton}</div> :
           <span role="status">{errors.length ? '没有可显示的电量读数' : '近 ' + historyRangeLabels[range] + '暂无设备读数'}</span>}
@@ -129,35 +130,38 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', s
   </ChartFrame>;
 }
 
-type HoverEvent = { name: string; kind: 'invalid' | 'unrecorded' | 'charging'; at: number; end?: number; reading?: HistoryPoint['reading'] };
-function Graph({ series, start, end, threshold, range, view }: {
-  series: Series[]; start: number; end: number; threshold?: number; range: HistoryRange; view: ChartView;
+type HoverEvent = { device: string; name: string; kind: 'invalid' | 'unrecorded' | 'charging'; at: number; end?: number };
+type Lane = Omit<Series, 'plot'> & { plot?: PlotSeries };
+const eventLabel = (kind: HoverEvent['kind']) => kind === 'charging' ? '检测到充电' : kind === 'invalid' ? '无有效读数' : '无数据';
+function Graph({ series, start, end, threshold, range, view, lanes }: {
+  series: Series[]; start: number; end: number; threshold?: number; range: HistoryRange; view: ChartView; lanes: Lane[];
 }) {
-  const gradientId = useId();
+  const hint = useId();
   const outer = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 900, height: 420 });
   const [pointer, setPointer] = useState<number | null>(null);
   const [over, setOver] = useState<HoverEvent | null>(null);
   const [keyboard, setKeyboard] = useState(false);
   useLayoutEffect(() => {
-    if (!outer.current) return;
-    const { width, height } = outer.current.getBoundingClientRect();
+    if (!canvas.current) return;
+    const { width, height } = canvas.current.getBoundingClientRect();
     if (width > 0 && height > 0) setSize({ width, height });
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width > 0 && height > 0) setSize({ width, height });
     });
-    ro.observe(outer.current);
+    ro.observe(canvas.current);
     return () => ro.disconnect();
   }, []);
   const { width, height } = size;
-  const left = width < 560 ? 39 : 65;
+  const left = width < 560 ? 72 : width < 980 ? 91 : 108;
   const right = width - (width < 560 ? 10 : 24);
   const compact = height < 145;
   const bucketSlot = (right - left) * 86_400_000 / Math.max(1, end - start);
   const cap = Math.min(6, Math.max(0, bucketSlot * .6));
   const top = compact ? 11 : 14;
-  const bottom = Math.max(33, height - (range === 'day' ? compact ? 34 : 59 : 30));
+  const bottom = Math.max(33, height - (range === 'day' ? compact ? 25 : 42 : 30));
   const x = (time: number) => left + (time - start) / (end - start) * (right - left);
   const y = (value: number) => bottom - value / 100 * (bottom - top);
   const time = pointer === null ? null : start + pointer * (end - start);
@@ -182,9 +186,7 @@ function Graph({ series, start, end, threshold, range, view }: {
   const paths = useMemo(() => series.map(({ plot, index, color }) => {
     const line: string[] = [];
     const dots: string[] = [];
-    const bands: string[] = [];
-    const upperEdges: string[] = [];
-    const lowerEdges: string[] = [];
+    const midlines: string[] = [];
     const brackets: string[] = [];
     const xy = (t: number, v: number) => x(t).toFixed(1) + ',' + y(v).toFixed(1);
     for (const run of plot.runs) {
@@ -198,43 +200,62 @@ function Graph({ series, start, end, threshold, range, view }: {
         }
         continue;
       }
-      const first = run.points[0];
-      if (run.points.length === 1) {
-        const pos = x(first.time).toFixed(1);
-        const low = y(first.reading.low).toFixed(1);
-        const high = y(first.reading.high).toFixed(1);
-        brackets.push(range === 'day' ? `M${pos},${low}V${high}` :
-          `M${Number(pos) - cap / 2},${low}h${cap}M${pos},${low}V${high}M${Number(pos) - cap / 2},${high}h${cap}`);
-        continue;
+      if (range === 'day' && view === 'trend' && run.points.length > 1) {
+        const mid = run.points.map(({ time, reading }) => [x(time), y((reading.low + reading.high) / 2)] as const);
+        midlines.push(exactCurve(mid));
       }
-      const points = run.points.map(({ time, reading }) => [x(time), y(reading.high), y(reading.low)] as const);
-      if (view === 'trend') {
-        bands.push(intervalRibbon(points));
-        const last = points.at(-1)!;
-        const previous = points[points.length - 2];
-        if (previous[1] !== last[1] || previous[2] !== last[2]) brackets.push(`M${last[0]},${last[1]}V${last[2]}`);
-      } else {
-        const interval = intervalPaths(points);
-        bands.push(interval.fill);
-        upperEdges.push(interval.upper);
-        lowerEdges.push(interval.lower);
+      const spacing = view === 'trend' ? Math.max(34, (right - left) / 16) : Math.max(9, (right - left) / 100);
+      let previous = -Infinity;
+      for (let i = 0; i < run.points.length; i++) {
+        const { time, reading } = run.points[i];
+        const pos = x(time), high = y(reading.high), low = y(reading.low);
+        const last = i === run.points.length - 1;
+        if (range === 'day' && pos - previous < spacing && !(last && pos - previous >= spacing / 2)) continue;
+        const half = range === 'day' ? view === 'trend' ? 3 : 0 : cap / 2;
+        brackets.push(half ? `M${pos - half},${high}h${2 * half}M${pos},${high}V${low}M${pos - half},${low}h${2 * half}` :
+          `M${pos},${high}V${low}`);
+        previous = pos;
       }
     }
-    return { index, color, line: line.join(''), dots, bands: bands.join(''), brackets: brackets.join(''),
-      upper: upperEdges.join(''), lower: lowerEdges.join('') };
+    return { index, color, line: line.join(''), dots, midline: midlines.join(''), brackets: brackets.join(''),
+      endpoint: plot.runs.at(-1)?.points.at(-1) };
   }), [series, start, end, width, height, view, range]);
-  const eventPositions = useMemo(() => series.map(({ plot, index, color, device }) => {
-    const valid = plot.runs.flatMap(run => run.points);
-    const gaps = [...plot.gaps].sort((a, b) => Number(a.kind === 'invalid') - Number(b.kind === 'invalid')).map(gap => {
-      const l = Math.max(left, x(gap.start));
-      const r = Math.min(right, x(gap.end));
-      return { ...gap, l, r, top: bottom + 6 + index * 6 };
-    });
-    return { device, plot, index, color, gaps, valid };
-  }), [series, start, end, width, height]);
+  const plotLanes = useMemo(() => range === 'day' ? lanes.map(lane => {
+    const events: HoverEvent[] = [];
+    const base = { device: lane.device.id, name: lane.device.name };
+    for (const gap of lane.plot?.gaps ?? []) {
+      const at = Math.max(start, gap.start);
+      const through = Math.min(end, gap.end);
+      if (at <= through) events.push({ ...base, kind: gap.kind, at, end: through > at ? through : undefined });
+    }
+    for (const { time: at } of lane.plot?.charging ?? []) {
+      if (at >= start && at <= end) events.push({ ...base, kind: 'charging', at });
+    }
+    events.sort((a, b) => a.at - b.at);
+    const chargeTimes = events.filter(event => event.kind === 'charging');
+    const collisionWindow = 14 * (end - start) / Math.max(1, right - left);
+    const stagger = new Set<HoverEvent>();
+    let nextCharge = 0;
+    for (const gap of events) {
+      if (gap.kind === 'charging') continue;
+      const gapEnd = gap.end ?? gap.at;
+      while (chargeTimes[nextCharge]?.at < gap.at - collisionWindow) nextCharge++;
+      for (let i = nextCharge; chargeTimes[i]?.at <= gapEnd + collisionWindow; i++) {
+        stagger.add(gap);
+        stagger.add(chargeTimes[i]);
+      }
+    }
+    return { ...lane, events, stagger };
+  }) : [], [lanes, start, end, range, left, right]);
+  const fraction = (at: number) => Math.max(0, Math.min(1, (at - start) / (end - start)));
+  const focusEvent = (event: HoverEvent) => {
+    setOver(event); setKeyboard(true); setPointer(fraction(event.at));
+  };
+
 
   function moveKey(event: KeyboardEvent) {
     const value = pointer ?? 1;
+    if (event.target !== event.currentTarget && event.key !== 'Escape') return;
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return;
     event.preventDefault();
     setKeyboard(true);
@@ -248,26 +269,31 @@ function Graph({ series, start, end, threshold, range, view }: {
     target.setHours(0, 0, 0, 0);
     const sample = days ? days.find(bucket => bucket.day === target.getTime())?.lowest : sampleAt(plot, time, end);
     const read = sample?.reading;
-    return { device, color, sample, read, value: read ? readingLabel(read) : sample ? '无有效读数' : '未记录采样' };
+    return { device, color, sample, read, value: read ? readingLabel(read) : sample ? '无有效读数' : '无数据' };
   });
-  const hoverSide = over ? ((over.end ?? over.at) + over.at) / 2 > start + (end - start) * .53 : (pointer ?? 0) > .53;
-  const eventName = over?.kind === 'charging' ? '采样显示正在充电' : over?.kind === 'invalid' ? '无有效读数' : '无采样';
-  return <div className={s.graph} ref={outer} tabIndex={0} data-chart-view={view} onKeyDown={moveKey}
+  const formatCursor = range === 'day' ? tick : dayTick;
+  const cursorLabel = time === null ? '' : formatCursor.format(time);
+  const eventTime = over ? tick.format(over.at) + (over.end === undefined ? '' : '–' + tick.format(over.end)) : '';
+  const style = { '--plot-left': left + 'px', '--plot-right': width - right + 'px',
+    '--plot-top': top + 'px', '--plot-bottom': height - bottom + 'px', '--lane-count': plotLanes.length,
+    '--cursor-x': (xCursor ?? left) + 'px',
+    '--tip-x': ((xCursor ?? left) > width * .67 ? (xCursor ?? left) - 240 : (xCursor ?? left) + 14) + 'px',
+  } as CSSProperties;
+  return <div className={s.graph} ref={outer} style={style} tabIndex={0} data-chart-view={view} onKeyDown={moveKey}
     aria-label={`近 ${historyRangeLabels[range]}${range === 'day' ? '电量曲线' : '每日最低读数'}。用左右方向键查看时间点，Escape 退出。`}
     onPointerMove={event => {
       setKeyboard(false);
       const bounds = event.currentTarget.getBoundingClientRect();
       const localX = event.clientX - bounds.left;
       const localY = event.clientY - bounds.top;
-      setPointer(localX < left || localX > right || localY < top || localY > bottom ? null : (localX - left) / (right - left));
-    }} onPointerLeave={() => { setOver(null); if (!keyboard) setPointer(null); }}
-    onBlur={() => { setKeyboard(false); setPointer(null); setOver(null); }}>
+      const inCanvas = localY >= top && localY <= bottom;
+      const inLanes = !!(event.target as Element).closest('[data-event-lanes]');
+      setPointer((inCanvas || inLanes) && (inLanes || localX >= left && localX <= right) ?
+        Math.max(0, Math.min(1, (localX - left) / (right - left))) : null);
+    }} onPointerLeave={() => { if (!keyboard) { setOver(null); setPointer(null); } }}
+    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setKeyboard(false); setPointer(null); setOver(null); } }}>
+    <div className={s.graphCanvas} ref={canvas} data-history-plot="">
     <svg className={s.graphSvg} width="100%" height="100%" aria-hidden="true" data-chart-range={range}>
-      <defs>{paths.filter(item => item.bands).map(item => <linearGradient key={item.index}
-        id={gradientId + '-range-' + item.index} x2="0%" y2="100%">
-        <stop offset="0%" stopColor={item.color} stopOpacity={view === 'trend' ? '.46' : '.25'} />
-        <stop offset="100%" stopColor={item.color} stopOpacity={view === 'trend' ? '.17' : '.09'} />
-      </linearGradient>)}</defs>
       {(compact ? [0, 50, 100] : [0, 25, 50, 75, 100]).map(value => <g key={value}>
         <line className={value === 0 ? s.graphAxis : s.graphGrid} x1={left - 6} x2={right} y1={y(value)} y2={y(value)} />
         <text className={s.graphLabel} x={left - 11} y={y(value) + 4.5} textAnchor="end">{value}%</text>
@@ -279,77 +305,88 @@ function Graph({ series, start, end, threshold, range, view }: {
         const px = x(instant);
         return <g key={instant} data-time-tick="">
           <line className={s.graphAxis} x1={px} x2={px} y1={bottom} y2={bottom + 7}/>
-          <text className={s.graphLabel} x={px} y={bottom + (range === 'day' ? compact ? 30 : 34 : 22)} textAnchor={anchor}>
+          <text className={s.graphLabel} x={px} y={bottom + (range === 'day' ? compact ? 19 : 24 : 22)} textAnchor={anchor}>
             {last ? '现在' : (range === 'day' ? tick : dayTick).format(instant)}</text>
-          {range === 'day' && !compact && <text className={s.graphDate} x={px} y={bottom + 49} textAnchor={anchor}>{dayTick.format(instant)}</text>}
+          {range === 'day' && !compact && <text className={s.graphDate} x={px} y={bottom + 38} textAnchor={anchor}>{dayTick.format(instant)}</text>}
         </g>;
       })}
       {threshold !== undefined && series.length === 1 && <line x1={left} x2={right} y1={y(threshold)} y2={y(threshold)}
         className={s.graphThreshold} strokeDasharray="4 5"><title>提醒阈值 {threshold}%</title></line>}
       {paths.map(item => <g key={item.index} stroke={item.color} fill={item.color} data-series={item.index}>
-        <path data-trace="range" d={item.bands} fill={`url(#${gradientId}-range-${item.index})`} stroke="none" />
-        <path className={s.graphBandUpper} d={item.upper} />
-        <path className={s.graphBandLower} d={item.lower} />
-        <path className={range === 'day' ? s.graphBandUpper : s.graphDailyRange} data-daily-range={range !== 'day' || undefined}
+        <path className={s.rangeMidline} data-range-mid="" d={item.midline} />
+        <path className={range === 'day' ? view === 'trend' ? s.rangeWhisker : s.rangeSample : s.graphDailyRange}
+          data-trace="range" data-daily-range={range !== 'day' || undefined}
           style={range === 'year' ? { strokeWidth: Math.min(1.65, bucketSlot * .76) } : undefined} d={item.brackets} />
         <path data-trace="exact" className={s.graphTrace} d={item.line} />
         {item.dots.map((value, index) => { const [cx, cy] = value.split(','); return <circle key={index} cx={cx} cy={cy} data-daily-point={range !== 'day' || undefined}
           r={range === 'day' ? 2 : range === 'year' && item.dots.length > (right - left) / 6 ?
             Math.min(2, bucketSlot * .46) : 3.2} />; })}
       </g>)}
-      {eventPositions.map(({ device, color, index, gaps, valid, plot }) => <g key={device.id} data-event-series={index}>
-        {range === 'day' && !compact && index === series[0]?.index && valid.length > 1 && [valid.at(-1)!].map(point => point.reading.low === point.reading.high &&
-          <g key={point.time} fill={color} pointerEvents="none">
-            <circle cx={x(point.time)} cy={y(point.reading.high)} r="2.7" />
-            <text x={x(point.time) - 7} y={y(point.reading.high) + (point.reading.high > 92 ? 17 : -10)}
-              textAnchor="end" className={s.endpointValue}>{readingLabel(point.reading)}</text>
-          </g>)}
-        {gaps.map(gap => {
-          const label = gap.kind === 'invalid' ? '无有效读数' : '无采样';
-          const event: HoverEvent = { name: device.name, kind: gap.kind, at: gap.start, end: gap.start < gap.end ? gap.end : undefined };
-          return <g key={gap.start + ':' + gap.kind} data-event={gap.kind} data-event-label={label}
-            className={s.chartEvent} onPointerEnter={() => setOver(event)} onPointerLeave={() => setOver(null)}>
-            <rect fill="transparent" x={gap.l - 3} y={gap.top - 3} width={gap.r - gap.l + 6} height="6"/>
-            {gap.start === gap.end
-              ? <circle cx={gap.l} cy={gap.top} r="1.75" fill={color} pointerEvents="none" />
-              : <path d={`M${gap.l},${gap.top}H${gap.r}`} stroke={color} strokeOpacity=".58" strokeWidth="2" fill="none"
-                strokeDasharray={gap.kind === 'unrecorded' ? '2 3' : undefined} pointerEvents="none" />}
-          </g>;
-        })}
-        {plot.charging.map(({ time: at, reading }) => {
-          // For an interval, pin to its upper bound and explain the full
-          // interval in the tooltip; do not synthesize an exact reading.
-          const event: HoverEvent = { name: device.name, kind: 'charging', at, reading };
-          return <g key={at} data-event="charging" className={s.chartEvent}
-            transform={'translate(' + x(at) + ' ' + y(reading.high) + ')'}
-            onPointerEnter={() => setOver(event)} onPointerLeave={() => setOver(null)}>
-            <circle r="13" fill="transparent" />
-            <circle r="7" fill={color} stroke="var(--window)" strokeWidth="1.5" pointerEvents="none" />
-            <path d="M1.5 -5L-3 1H0L-1 5L3.8 -1.2H.5Z" fill="var(--window)" pointerEvents="none" />
-          </g>;
-        })}
-      </g>)}
-      {xCursor !== null && !over && <line className={s.graphCursor} x1={xCursor} x2={xCursor} y1={top} y2={bottom} />}
-      {!over && cursorValues.map(({ device, color, sample, read }) => sample && read &&
+      {range === 'day' && !compact && paths.map(item => {
+        const p = item.endpoint;
+        if (!p) return null;
+        // Skip labels whose last observation ended well before the displayed edge.
+        if (right - x(p.time) > 60) return null;
+        const mid = y((p.reading.low + p.reading.high) / 2);
+        const collides = paths.some(other => other.index < item.index && other.endpoint &&
+          right - x(other.endpoint.time) <= 60 &&
+          Math.abs(y((other.endpoint.reading.low + other.endpoint.reading.high) / 2) - mid) < 17);
+        return !collides && <text key={item.index} fill={item.color} x={x(p.time) - 6}
+          y={mid + (mid - top < 19 ? 15 : -8)} textAnchor="end" className={s.endpointValue}>{readingLabel(p.reading)}</text>;
+      })}
+      {cursorValues.map(({ device, color, sample, read }) => sample && read &&
         <g className={s.graphReadMarker} key={device.id} transform={`translate(${x(sample.time)},0)`}>
           {read.low === read.high ? <circle cy={y(read.low)} r="3.5" fill={color} /> :
             <path d={`M-3,${y(read.high)}h6M0,${y(read.high)}V${y(read.low)}M-3,${y(read.low)}h6`} stroke={color} />}
         </g>)}
     </svg>
-    {over ? <div className={s.graphTooltip} data-side={hoverSide ? 'start' : 'end'} data-kind={over.kind}>
-      <b>{over.name} · {eventName}</b>
-      <span>{stamp.format(over.at)}{over.end !== undefined ? ' – ' + stamp.format(over.end) : ''}</span>
-      {over.reading && <span>{readingLabel(over.reading)}</span>}
-    </div> : time !== null && <div className={s.graphTooltip} data-side={hoverSide ? 'start' : 'end'}>
+    {xCursor !== null && <div className={s.sharedPlotCursor} data-plot-cursor="" aria-hidden="true">
+      <small>{cursorLabel}</small>
+    </div>}
+    </div>
+    {plotLanes.length > 0 && <div className={s.eventLanes} data-event-lanes="" role="group" aria-label="设备事件">
+      {plotLanes.map(({ device, index, color, events, stagger }) => <div className={s.eventLane} key={device.id}
+        data-event-series={index} style={{ '--series': color } as CSSProperties}>
+        <span className={s.eventLaneLabel} title={device.name}><i />{device.name}</span>
+        <div className={s.eventLaneTrack} data-event-track="">
+          {events.map(event => {
+            const label = eventLabel(event.kind);
+            const change = `${label} · ${tick.format(event.at)}${event.end === undefined ? '' : '–' + tick.format(event.end)}`;
+            const from = fraction(event.at), to = fraction(event.end ?? event.at);
+            return <button type="button" key={event.kind + ':' + event.at}
+              className={s.laneEvent} data-event={event.kind} data-event-label={label}
+              data-event-wide={(to - from) * (right - left) > 64 || undefined}
+              data-staggered={stagger.has(event) || undefined}
+              style={{ left: from * 100 + '%', '--event-width': Math.max(0, to - from) * 100 + '%' } as CSSProperties}
+              aria-label={device.name + ' · ' + change}
+              aria-describedby={over === event ? hint : undefined}
+              onPointerEnter={() => setOver(event)}
+              onPointerLeave={ev => { if (!ev.currentTarget.matches(':focus-visible')) setOver(null); }}
+              onFocus={() => focusEvent(event)}
+              onBlur={() => setOver(null)}
+              onClick={() => focusEvent(event)}>
+              {event.kind === 'charging' ? <Zap size={12} aria-hidden="true" /> : <><i aria-hidden="true" /><span aria-hidden="true">{label}</span></>}
+            </button>;
+          })}
+        </div>
+      </div>)}
+      <div className={s.eventGuides} aria-hidden="true">
+        {ticks.map(t => <i key={t} style={{ left: fraction(t) * 100 + '%' }} />)}
+      </div>
+      {xCursor !== null && <div className={s.sharedLaneCursor} data-lane-cursor="" aria-hidden="true" />}
+    </div>}
+    {over && xCursor !== null ? <div id={hint} className={s.graphTooltip} data-kind={over.kind} role="tooltip">
+      <span>{over.name}</span><div><b>{eventLabel(over.kind)}</b><span>{eventTime}</span></div>
+    </div> : time !== null && <div className={s.graphTooltip} data-compare-tooltip="" role="tooltip">
       <span>{stamp.format(time)}</span>
-      {cursorValues.map(({ device, color, sample, read, value }) => <div key={device.id} style={{ '--series': color } as CSSProperties}>
-        <i /><b>{device.name}</b><span>{value}</span>
-        {read?.power === 'charging' && <Zap size={12} aria-label="充电记录" />}
-        {read && sample && <small>{range === 'day' ? '读于' : '当日最低 ·'} {stamp.format(sample.time)}</small>}
+      {cursorValues.map(({ device, color, read, value }) => <div key={device.id} style={{ '--series': color } as CSSProperties}>
+        <i /><b>{device.name}</b><span data-no-reading={!read || undefined}>{value}</span>
+        {read?.power === 'charging' && <Zap size={12} aria-label="充电中" />}
       </div>)}
     </div>}
     <span className={s.chartSrOnly} role="status">{keyboard && time !== null ?
-      stamp.format(time) + ' ' + cursorValues.map(({ device, value, sample, read }) => device.name + ' ' + value +
+      over ? over.name + ' ' + eventLabel(over.kind) + ' ' + eventTime :
+        stamp.format(time) + ' ' + cursorValues.map(({ device, value, sample, read }) => device.name + ' ' + value +
         (read && sample ? '，读于 ' + stamp.format(sample.time) : '') + (read?.power === 'charging' ? '，充电中' : '')).join('；') : ''}</span>
   </div>;
 }
