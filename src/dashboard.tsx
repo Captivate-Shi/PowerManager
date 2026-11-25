@@ -19,6 +19,7 @@ import preferences from './preferences.module.css';
 import { previewDevice as makePreviewDevice } from './demo';
 import { compareLimit, historyRangeLabels, historyStart, toggleHistorySlots } from './history-plot';
 import { historyStorageEstimate } from './history-storage';
+import { applyMainPalette, palettes, readPalette, savePalette, type Palette } from './theme';
 import { DetentSlider } from './detent-slider';
 import { paintStage, shifted, stageLanding, stagePose, stageRest, stageTravel, stageVelocity, type StagePose, type StageSample } from './stage-gesture';
 import { animateDetailPhoto, detailPhoto, fadeReflection, freezeReflection, stageReflection } from './device-art-motion';
@@ -29,15 +30,6 @@ const pages = [
 type Page = typeof pages[number][0];
 type Filter = 'all' | 'online' | 'low' | 'offline' | 'recent';
 type Run = (command: Command) => Promise<CommandResult>;
-const palettes = [['graphite', '石墨白'], ['ice', '冰蓝灰'], ['warm', '暖钛灰']] as const;
-type Palette = typeof palettes[number][0];
-const paletteKey = 'yudian.appearance.palette';
-function readPalette(): Palette {
-  try {
-    const value = localStorage.getItem(paletteKey);
-    return palettes.find(([id]) => id === value)?.[0] ?? 'graphite';
-  } catch { return 'graphite'; }
-}
 
 
 const level = (device: Device, state: Snapshot) => severity(device, state.settings, state.deviceSettings[device.id]);
@@ -54,8 +46,9 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   const [palette, setPalette] = useState(readPalette);
   const choosePalette = (value: Palette) => {
     setPalette(value);
-    try { localStorage.setItem(paletteKey, value); } catch { /* Keep the selection for this window. */ }
+    savePalette(value);
   };
+  useLayoutEffect(() => applyMainPalette(palette), [palette]);
   const [selected, select] = useState<string | undefined>(remembered?.selected);
   const [detailId, setDetailId] = useState<string | undefined>(remembered?.detailId);
   const [featured, chooseFeatured] = useState<string | undefined>(remembered?.featured);

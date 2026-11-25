@@ -4,10 +4,13 @@ import type { MainView, Snapshot, Toast } from './model';
 import { api, Brand } from './ui';
 import { Dashboard } from './dashboard';
 import { QuickPanel, ToastPanel } from './surfaces';
+import './theme.css';
+import { applyMainPalette, readPalette } from './theme';
 import startup from './startup.module.css';
 
 const surface = new URLSearchParams(location.search).get('surface') ?? 'main';
 document.body.dataset.surface = surface;
+if (surface === 'main') applyMainPalette(readPalette());
 
 function App() {
   const [state, setState] = useState<Snapshot>();
