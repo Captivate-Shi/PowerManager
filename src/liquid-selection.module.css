@@ -25,10 +25,15 @@
   box-shadow: inset 0 1px 1px color-mix(in srgb, var(--ink) 52%, transparent),
     inset 0 -1px 1px color-mix(in srgb, var(--blue) 22%, transparent), 0 2px 8px #06091055;
 }
-.glass[data-liquid-selection="card"] {
-  background:
-    linear-gradient(154deg, color-mix(in srgb, var(--blue) 8%, transparent), transparent 58%),
-    color-mix(in srgb, var(--selected-surface) 42%, transparent);
+/* The surface settles; device art, text and the row's hit box stay still. */
+@media (prefers-reduced-motion: no-preference) {
+  .glass[data-liquid-selection="row"] { animation: selection-settle 260ms ease-out; }
+  @keyframes selection-settle {
+    0% { opacity: .28; transform: scale(.976, .90); }
+    53% { opacity: 1; transform: scale(1.006, 1.045); }
+    78% { transform: scale(.998, .99); }
+    100% { transform: none; }
+  }
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   .glass[data-liquid-selection], .glass[data-refracting] {

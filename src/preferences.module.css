@@ -247,6 +247,3 @@
   .settingsSections .compatibility button, .settingsSections .appearance form > [role="alert"] { grid-column: 1; }
 }
 
-.chargeDevice[data-preview-device] { position: relative; border-radius: 11px; border-bottom-color: transparent; }
-.chargeDevice[data-preview-device] > div { position: relative; z-index: 1; }
-.chargeDevice[data-preview-device] > [data-liquid-selection] { inset: 3px 0; }

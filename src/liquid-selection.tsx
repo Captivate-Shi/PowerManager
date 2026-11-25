@@ -42,11 +42,11 @@ function displacement(w: number, h: number, radius: number) {
   return url;
 }
 
-export function LiquidSelection({ kind = 'row' }: { kind?: 'tab' | 'row' | 'card' }) {
+export function LiquidSelection({ kind = 'row' }: { kind?: 'tab' | 'row' }) {
   const id = 'selection-lens-' + useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const layer = useRef<HTMLSpanElement>(null);
   const [map, setMap] = useState<MapImage>();
-  const refractionScale = kind === 'tab' ? 17 : kind === 'card' ? 25 : 22;
+  const refractionScale = kind === 'tab' ? 17 : 22;
   useLayoutEffect(() => {
     const el = layer.current;
     if (!el || !CSS.supports('backdrop-filter', 'url(#test)')) return;

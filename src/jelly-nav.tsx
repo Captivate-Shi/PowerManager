@@ -39,16 +39,29 @@ export function JellyNav({ current, children }: { current: string; children: Rea
       indicator.dataset.ready = '';
       resting.current = next;
       if (!previous || !animate || reduced.matches || typeof indicator.animate !== 'function') return;
-      const shift = next.x - startX;
-      const direction = Math.sign(shift);
-      const stretch = Math.min(.21, Math.abs(shift) / next.width * .15);
+      // Retarget from the actual painted pill on rapid reversals, not the old tab.
+      const fromCenter = startX + live.width / 2;
+      const toCenter = next.x + next.width / 2;
+      const distance = toCenter - fromCenter;
+      const sign = Math.sign(distance);
+      const stretch = Math.min(.43, Math.abs(distance) / next.width * .31);
+      const overshoot = Math.min(10, Math.abs(distance) * .12);
+      const centerY = next.y + next.height / 2;
+      const at = (center: number, sx: number, sy: number) =>
+        pose(center - next.width * sx / 2, centerY - next.height * sy / 2, sx, sy);
+      // Leading edge pulls ahead, then the trailing edge catches up on landing.
+      // Transform only: do not resize the displacement map or animate the label.
       motion.current = indicator.animate([
-        { offset: 0, transform: pose(startX, startY, live.width / next.width, live.height / next.height) },
-        { offset: .42, transform: pose(startX + shift * .75 - next.width * stretch / 2, next.y + 1, 1 + stretch, .94), easing: 'cubic-bezier(.2,.55,.26,1)' },
-        { offset: .7, transform: pose(next.x + direction * Math.min(4, Math.abs(shift) * .09), next.y - .4, .98, 1.025) },
-        { offset: .88, transform: pose(next.x - direction * 1.3, next.y, 1.008, 1) },
+        { offset: 0, transform: pose(startX, startY, live.width / next.width, live.height / next.height),
+          easing: 'cubic-bezier(.28,.15,.35,1)' },
+        { offset: .31, transform: at(fromCenter + distance * .57, 1 + stretch, .77),
+          easing: 'cubic-bezier(.21,.7,.27,1)' },
+        { offset: .59, transform: at(toCenter + sign * overshoot, .87, 1.15),
+          easing: 'cubic-bezier(.3,.05,.55,1)' },
+        { offset: .79, transform: at(toCenter - sign * overshoot * .37, 1.065, .94), easing: 'ease-out' },
+        { offset: .92, transform: at(toCenter + sign * overshoot * .12, .99, 1.02), easing: 'ease-out' },
         { offset: 1, transform: pose(next.x, next.y) },
-      ], { duration: 345, easing: 'cubic-bezier(.22,.61,.34,1)' });
+      ], { duration: 420 });
     }
     fit(true);
     const observer = new ResizeObserver(() => fit(false));

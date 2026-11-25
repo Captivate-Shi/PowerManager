@@ -928,9 +928,7 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
       {devices.map(device => {
         const severityValue = level(device, state);
         const status = state.alerts[device.id];
-        return <article className={preferences.chargeDevice} key={device.id} data-level={severityValue}
-          data-preview-device={previewTarget?.id === device.id || undefined}>
-          {previewTarget?.id === device.id && <LiquidSelection kind="card" />}
+        return <article className={preferences.chargeDevice} key={device.id} data-level={severityValue}>
           <div className={preferences.deviceImage}><Art device={device} variant="hero" /></div>
           <div className={preferences.deviceInfo}><button className={s.linkTitle} aria-label={'查看详情 · ' + device.name}
             onClick={event => open(device.id, event.currentTarget.closest('article') ?? undefined)}>{device.name}<ChevronRight size={14} aria-hidden="true" /></button>
