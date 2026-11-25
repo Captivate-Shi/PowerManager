@@ -340,13 +340,14 @@ const char* art(const Device& device)
     if (isDualSense(device.transport)) return "dualsense";
     if (device.transport == Transport::sony_gamepad_usb || device.transport == Transport::sony_gamepad_bluetooth)
         return device.pid == 0x0df2 ? "dualsense" : "controller";
-    if (device.transport == Transport::eightbitdo_pro3_bluetooth ||
-        device.transport == Transport::switch_pro_bluetooth ||
-        device.transport == Transport::gamesir_super_nova_receiver) return "controller";
+    if (isEightBitDoHid(device.transport) || isSwitchHid(device.transport) ||
+        device.transport == Transport::gamesir_super_nova_receiver || device.transport == Transport::gamepad_flydigi ||
+        device.transport == Transport::gamepad_nova2_lite_usb) return "controller";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard ||
         device.transport == Transport::aula_f87v2d_receiver || device.transport == Transport::atk_v75x_usb ||
         device.transport == Transport::rog_keyboard_receiver) return "keyboard";
     if (device.transport == Transport::razer_pro_receiver && razerKeyboardReceiver(device.vid, device.pid)) return "keyboard";
+    if (device.transport == Transport::usb_wireless_headset) return "headset";
     if (device.transport == Transport::razer_receiver || device.transport == Transport::razer_pro_receiver ||
         device.transport == Transport::rapoo_receiver ||
         device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver ||

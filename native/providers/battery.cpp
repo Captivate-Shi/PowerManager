@@ -185,18 +185,23 @@ Sample parseSwitchProBluetoothReport(std::span<const std::uint8_t> report)
         0x30, state};
 }
 
-Sample parse8BitDoPro3BluetoothReport(std::span<const std::uint8_t> report)
+Sample parse8BitDoBatteryReport(std::span<const std::uint8_t> report, unsigned reportId)
 {
-    if (report.size() < 15 || report[0] != 4) {
+    if ((reportId != 1 && reportId != 4) || report.size() < 15 || report[0] != reportId) {
         return {Status::bad_report, {}, report.empty() ? 0u : unsigned(report[0]), unsigned(report.size())};
     }
     // Verified by HaloBattery on real Pro 3 DInput Bluetooth with Steam closed.
     // Refuse zero to avoid turning a padded/incomplete packet into a low alert.
     const int encoded = report[14];
     const int percent = encoded & 0x7f;
-    if (percent == 0 || percent > 100) return {Status::bad_report, {}, 4, unsigned(encoded)};
+    if (percent == 0 || percent > 100) return {Status::bad_report, {}, reportId, unsigned(encoded)};
     return {Status::current, Reading{percent, percent, encoded & 0x80 ? Power::charging : Power::discharging,
-                                    percent}, 4, unsigned(encoded)};
+                                    percent}, reportId, unsigned(encoded)};
+}
+
+Sample parse8BitDoPro3BluetoothReport(std::span<const std::uint8_t> report)
+{
+    return parse8BitDoBatteryReport(report, 4);
 }
 
 Sample parseDualShock4Report(std::span<const std::uint8_t> report, bool bluetooth)

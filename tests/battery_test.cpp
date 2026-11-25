@@ -25,6 +25,15 @@ Sample level(int low, int high, Power power = Power::discharging)
 
 int main()
 {
+    std::array<std::uint8_t, 64> enhanced{};
+    enhanced[0] = 1;
+    assert(!pm::parse8BitDoBatteryReport(enhanced, 1).reading);
+    enhanced[14] = 0xa5;
+    auto enhancedReading = pm::parse8BitDoBatteryReport(enhanced, 1);
+    assert(enhancedReading.reading && enhancedReading.reading->low == 37 &&
+           enhancedReading.reading->power == pm::Power::charging);
+    assert(!pm::parse8BitDoBatteryReport(enhanced, 4).reading);
+    assert(!pm::parse8BitDoBatteryReport(std::span(enhanced).first(14), 1).reading);
     static_assert(razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 91));
     static_assert(razerProBatteryCollection(0x1532, 0x00b7, 0, 1, 2, 91));
     static_assert(razerProBatteryCollection(0x1532, 0x00ab, 0, 1, 2, 91));

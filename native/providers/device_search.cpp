@@ -1,5 +1,6 @@
 #include "device_search.hpp"
 #include "device_transport.hpp"
+#include "windows_bt_peripherals.hpp"
 
 #include <windows.h>
 #include <wtypes.h>
@@ -246,6 +247,7 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
         const auto folded = lower(name);
         const auto hardware = props.strings(PKEY_Devices_HardwareIds);
         const auto bus = windowsBus(methods, hardware);
+        const bool namedBluetooth = bus == WindowsBus::bluetooth && knownBluetoothPeripheral(folded);
         const auto hasHardware = [&](std::wstring_view fragment) {
             return std::ranges::any_of(hardware, [&](std::wstring_view id) {
                 return lower(std::wstring(id)).find(fragment) != std::wstring::npos;
@@ -267,7 +269,7 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
             ? keyboard.mapped().connection : std::wstring(windowsConnection(bus));
         devices.push_back({id, std::move(name), connection, sample.status != Status::offline,
                            razer || sony || (!keyboard.empty() && keyboard.mapped().automaticallyMonitored), sample.reading,
-                           false, static_cast<WindowsBatteryDetail>(sample.detail), peripheral || !keyboard.empty(),
+                           false, static_cast<WindowsBatteryDetail>(sample.detail), peripheral || namedBluetooth || !keyboard.empty(),
                            bus == WindowsBus::bluetooth || (bus == WindowsBus::unknown && !keyboard.empty() &&
                                keyboard.mapped().connection == windowsConnection(WindowsBus::bluetooth))});
     }

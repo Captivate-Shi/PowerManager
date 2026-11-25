@@ -12,7 +12,17 @@
 namespace pm {
 
 enum class Transport { razer_receiver, dualsense_usb, dualsense_bluetooth, windows_battery, razer_shared_keyboard,
-    vgn_usb, vgn_receiver, vgn_v3_usb, vgn_v3_receiver, logitech_receiver, rapoo_receiver, logitech_usb, sony_gamepad_usb, sony_gamepad_bluetooth, supported_mouse_receiver, eightbitdo_pro3_bluetooth, switch_pro_bluetooth, gamesir_super_nova_receiver, mchose_g3v2_receiver, aula_sc580_receiver, aula_f87v2d_receiver, dareu_em901x_inventory, razer_pro_receiver, mchose_a7v2pro_usb, ajazz_mk87pro_receiver, atk_v75x_usb, atk_v75x_receiver_candidate, rog_keyboard_receiver, mchose_g87_candidate };
+    vgn_usb, vgn_receiver, vgn_v3_usb, vgn_v3_receiver, logitech_receiver, rapoo_receiver, logitech_usb, sony_gamepad_usb, sony_gamepad_bluetooth, supported_mouse_receiver, eightbitdo_pro3_bluetooth, switch_pro_bluetooth, gamesir_super_nova_receiver, mchose_g3v2_receiver, aula_sc580_receiver, aula_f87v2d_receiver, dareu_em901x_inventory, razer_pro_receiver, mchose_a7v2pro_usb, ajazz_mk87pro_receiver, atk_v75x_usb, atk_v75x_receiver_candidate, rog_keyboard_receiver, mchose_g87_candidate, usb_wireless_headset, gamepad_flydigi, gamepad_nova2_lite_usb, joycon_left_bluetooth, joycon_right_bluetooth, eightbitdo_enhanced_bluetooth, eightbitdo_pro3_usb };
+constexpr bool isSwitchHid(Transport t)
+{
+    return t == Transport::switch_pro_bluetooth || t == Transport::joycon_left_bluetooth ||
+        t == Transport::joycon_right_bluetooth;
+}
+constexpr bool isEightBitDoHid(Transport t)
+{
+    return t == Transport::eightbitdo_pro3_bluetooth || t == Transport::eightbitdo_pro3_usb ||
+        t == Transport::eightbitdo_enhanced_bluetooth;
+}
 constexpr bool isDualSense(Transport transport)
 {
     return transport == Transport::dualsense_usb || transport == Transport::dualsense_bluetooth;

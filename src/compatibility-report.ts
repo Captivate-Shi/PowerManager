@@ -26,12 +26,12 @@ const gamepadStates = new Set(['ok', 'current', 'ready', 'unknown', 'not_availab
 const gamepadLevels = new Set(['empty', 'low', 'medium', 'full', 'unknown']);
 const firmwareKind = new Set(['number', 'exact', 'range', 'coarse', 'unknown']);
 const connections = new Set(['USB', 'USB（直连或接收器）', 'USB（直连）', '蓝牙', 'Windows 外设', 'Windows 电量',
-  '2.4 GHz', '2.4 GHz 共享接收器', 'Bluetooth LE', '蓝牙 LE', 'XInput', 'Windows 游戏手柄', 'Windows 手柄']);
+  '2.4 GHz', 'USB / 2.4 GHz', '2.4 GHz 共享接收器', 'Bluetooth LE', '蓝牙 LE', 'XInput', 'Windows 游戏手柄', 'Windows 手柄']);
 function from(value: unknown, values: Set<string>) {
   return typeof value === 'string' && values.has(value) ? value : undefined;
 }
 const provider = (value: unknown) =>
-  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo|mouse|sony|oppo|huawei|nintendo|gamesir|mchose|aula|atk|ajazz|dareu|rog|8bitdo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
+  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo|mouse|sony|oppo|huawei|nintendo|gamesir|flydigi|mchose|aula|headset|atk|ajazz|dareu|rog|8bitdo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
 // A diagnostic target is a short ephemeral label, never an enumerator ID.
 const target = (value: unknown) => typeof value === 'string' && /^[A-Z]{1,3}[1-9][0-9]{0,3}$/.test(value) ? value : undefined;
 const bleReasons = new Set(['candidate', 'not_bluetooth', 'invalid_container', 'platform_unavailable', 'interface_enumeration_failed',

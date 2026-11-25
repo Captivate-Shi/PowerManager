@@ -1,9 +1,18 @@
 #include "device_search.hpp"
+#include "windows_bt_peripherals.hpp"
 #include <cassert>
 
 int main()
 {
     using namespace pm;
+    static_assert(knownBluetoothPeripheral(L"keychron k2 pro"));
+    static_assert(knownBluetoothPeripheral(L"gamesir cyclone pro"));
+    static_assert(knownBluetoothPeripheral(L"dell kb7221w"));
+    static_assert(!knownBluetoothPeripheral(L"keychron k2"));
+    static_assert(!knownBluetoothPeripheral(L"iphone"));
+    static_assert(!knownBluetoothPeripheral(L"jbl tour pro 3 case"));
+    static_assert(!knownBluetoothPeripheral(L"g915"));
+
     FoundDevice candidate{L"{container}", L"keyboard", L"蓝牙", true, false, {}};
     assert(!defaultPeripheralMonitoring(candidate, false)); // not a peripheral
     candidate.inputOrHeadset = true;

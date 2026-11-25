@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include "headset_battery.hpp"
 #include "atk_v75x.hpp"
 #include "razer_pro_receiver.hpp"
 #include "battery_fallback.hpp"
@@ -6,6 +7,7 @@
 #include "cn_mouse_codecs.hpp"
 #include "cn_tail_codecs.hpp"
 #include "gamesir_battery.hpp"
+#include "gamepad_vendor_battery.hpp"
 #include "peripheral_protocol.hpp"
 #include "device_identity.hpp"
 #include "device_search.hpp"
@@ -153,6 +155,16 @@ constexpr bool extraSonyGamepad(unsigned pid)
     return pid == 0x05c4 || pid == 0x09cc || pid == 0x0df2;
 }
 
+constexpr const wchar_t* eightBitDoEnhancedName(unsigned pid)
+{
+    switch (pid) {
+    case 0x6000: return L"8BitDo SF30 Pro";
+    case 0x6001: return L"8BitDo SN30 Pro";
+    case 0x6006: return L"8BitDo Pro 2";
+    default: return nullptr;
+    }
+}
+
 std::optional<Transport> candidate(const std::wstring& path)
 {
     if (path.find(L"vid_1532&pid_00b8") != std::wstring::npos &&
@@ -175,14 +187,30 @@ std::optional<Transport> candidate(const std::wstring& path)
     if (hexId(path, L"vid&00022dc8_pid&", 4) == 0x6009) {
         return Transport::eightbitdo_pro3_bluetooth;
     }
-    if (path.find(L"{00001124-0000-1000-8000-00805f9b34fb}_vid&0002057e_pid&") != std::wstring::npos &&
-        hexId(path, L"vid&0002057e_pid&", 4) == 0x2009) return Transport::switch_pro_bluetooth;
+    constexpr std::wstring_view bluetoothHid = L"{00001124-0000-1000-8000-00805f9b34fb}";
+    if (path.find(bluetoothHid) != std::wstring::npos) {
+        if (eightBitDoEnhancedName(hexId(path, L"vid&00022dc8_pid&", 4).value_or(0)))
+            return Transport::eightbitdo_enhanced_bluetooth;
+        switch (hexId(path, L"vid&0002057e_pid&", 4).value_or(0)) {
+        case 0x2009: return Transport::switch_pro_bluetooth;
+        case 0x2006: return Transport::joycon_left_bluetooth;
+        case 0x2007: return Transport::joycon_right_bluetooth;
+        default: break;
+        }
+    }
+    if (hexId(path, L"vid_", 4) == 0x2dc8 && hexId(path, L"pid_", 4) == 0x6009)
+        return Transport::eightbitdo_pro3_usb;
     if (hexId(path, L"vid_", 4) == 0x3537 && hexId(path, L"pid_", 4) == 0x103e)
         return Transport::gamesir_super_nova_receiver;
     const auto vid = hexId(path, L"vid_", 4).value_or(0);
     const auto pid = hexId(path, L"pid_", 4).value_or(0);
+    if (headset_battery::lane(vid, pid) != headset_battery::Lane::none)
+        return Transport::usb_wireless_headset;
     if (razerProReceiverName(vid, pid) && path.find(L"rzvirtual") == std::wstring::npos)
         return Transport::razer_pro_receiver;
+    if (const auto pad = vendor_pad::match(vid, pid))
+        return *pad == vendor_pad::Model::nova2LiteUsb ? Transport::gamepad_nova2_lite_usb
+                                                      : Transport::gamepad_flydigi;
     if (vid == 0x3837 && pid == 0x4245) return Transport::mchose_g3v2_receiver;
     if (vid == 0x089d && pid == 0x062f) return Transport::aula_sc580_receiver;
     if (vid == 0x0c45 && pid == 0xfefe) return Transport::aula_f87v2d_receiver;
@@ -313,6 +341,26 @@ bool cnDescriptor(HANDLE file, Transport t, unsigned iface, const Collection* ex
     return valid;
 }
 
+bool vendorGamepadDescriptor(HANDLE file, vendor_pad::Model model, const Collection* expected = nullptr)
+{
+    HIDD_ATTRIBUTES attributes{};
+    attributes.Size = sizeof(attributes);
+    if (!HidD_GetAttributes(file, &attributes) || vendor_pad::match(attributes.VendorID, attributes.ProductID) != model)
+        return false;
+    PHIDP_PREPARSED_DATA prep{};
+    if (!HidD_GetPreparsedData(file, &prep)) return false;
+    HIDP_CAPS caps{};
+    std::array<char, 65> output{};
+    const auto result = HidP_GetCaps(prep, &caps) == HIDP_STATUS_SUCCESS &&
+        vendor_pad::collection(model, caps.UsagePage, caps.Usage, caps.InputReportByteLength, caps.OutputReportByteLength) &&
+        (!expected || (expected->page == caps.UsagePage && expected->usage == caps.Usage &&
+            expected->inputLength == caps.InputReportByteLength && expected->outputLength == caps.OutputReportByteLength)) &&
+        HidP_InitializeReportForID(HidP_Output, static_cast<UCHAR>(vendor_pad::outputId(model)),
+            prep, output.data(), caps.OutputReportByteLength) == HIDP_STATUS_SUCCESS;
+    HidD_FreePreparsedData(prep);
+    return result;
+}
+
 bool atkDescriptor(HANDLE file, unsigned pid, const Collection* expected = nullptr)
 {
     HIDD_ATTRIBUTES attributes{};
@@ -405,6 +453,33 @@ bool exactSuperNova(HANDLE handle)
         name.back() == 0 && gamesir_battery::superNovaName(lower(name.data()));
 }
 
+bool usbHeadsetDescriptor(HANDLE handle, unsigned vid, unsigned pid, unsigned mi)
+{
+    HIDD_ATTRIBUTES identity{};
+    identity.Size = sizeof(identity);
+    PHIDP_PREPARSED_DATA data{};
+    if (!HidD_GetAttributes(handle, &identity) || identity.VendorID != vid || identity.ProductID != pid ||
+        !HidD_GetPreparsedData(handle, &data)) return false;
+    HIDP_CAPS caps{};
+    const auto model = headset_battery::lane(vid, pid);
+    const auto has = [&](HIDP_REPORT_TYPE direction, unsigned id, unsigned length) {
+        std::array<char,65> buffer{};
+        return length > 0 && length <= buffer.size() &&
+            HidP_InitializeReportForID(direction, id, data, buffer.data(), length) == HIDP_STATUS_SUCCESS;
+    };
+    bool ok = HidP_GetCaps(data, &caps) == HIDP_STATUS_SUCCESS &&
+        headset_battery::collection(model, mi, caps.UsagePage, caps.Usage, caps.InputReportByteLength,
+            caps.OutputReportByteLength, caps.FeatureReportByteLength);
+    if (ok && model == headset_battery::Lane::jbl650)
+        ok = has(HidP_Feature, 0x88, caps.FeatureReportByteLength) && has(HidP_Input, 0x86, caps.InputReportByteLength);
+    if (ok && (model == headset_battery::Lane::jbl350 || model == headset_battery::Lane::jbl610))
+        ok = has(HidP_Feature, 0x49, caps.FeatureReportByteLength) && has(HidP_Feature, 0x68, caps.FeatureReportByteLength);
+    if (ok && model == headset_battery::Lane::nova7)
+        ok = has(HidP_Input, 0, caps.InputReportByteLength) && has(HidP_Output, 0, caps.OutputReportByteLength);
+    HidD_FreePreparsedData(data);
+    return ok;
+}
+
 class HidExchange {
 public:
     explicit HidExchange(const Collection& channel, DWORD access = GENERIC_READ | GENERIC_WRITE)
@@ -427,6 +502,42 @@ public:
     bool matchesRogPort(const Collection& channel, rog::Port role) const
     {
         return file_.valid() && rogPort(file_.value, lower(channel.path)) == role;
+    }
+
+    bool matchesUsbHeadset(unsigned vid, unsigned pid, unsigned mi) const
+    {
+        return file_.valid() && usbHeadsetDescriptor(file_.value, vid, pid, mi);
+    }
+
+    DWORD getNumberedFeature(std::span<std::uint8_t> buffer, Clock::time_point end, DWORD& count)
+    {
+        if (const auto failure = error()) return failure;
+        const auto size = static_cast<DWORD>(buffer.size());
+        return completeIo(file_.value, event_.value, end, count, [&](OVERLAPPED* io) {
+            return DeviceIoControl(file_.value, getFeature, buffer.data(), size, buffer.data(), size, &count, io);
+        });
+    }
+
+    template<class Match>
+    DWORD featureThenInput(std::span<std::uint8_t> query, Clock::time_point end, Match match)
+    {
+        if (const auto failure = error()) return failure;
+        DWORD size = 0;
+        const auto send = completeIo(file_.value, event_.value, end, size, [&](OVERLAPPED* io) {
+            return DeviceIoControl(file_.value, setFeature, query.data(),
+                static_cast<DWORD>(query.size()), nullptr, 0, &size, io);
+        });
+        if (send) return send;
+        while (Clock::now() < end) {
+            const auto result = receive(end, match);
+            if (result != ERROR_NO_DATA) return result;
+        }
+        return ERROR_TIMEOUT;
+    }
+
+    bool matchesVendorGamepad(vendor_pad::Model model, const Collection& channel) const
+    {
+        return file_.valid() && vendorGamepadDescriptor(file_.value, model, &channel);
     }
 
     bool identifiesSuperNova() const
@@ -635,6 +746,89 @@ Sample readCnReceiver(const Device& device)
     }
     default: return {Status::bad_report, {}, 0x30};
     }
+}
+
+Sample readUsbHeadset(const Device& device)
+{
+    using namespace headset_battery;
+    if (device.collections.size() != 1) return {Status::unavailable};
+    const auto& c = device.collections.front();
+    const auto type = lane(device.vid, device.pid);
+    if (type == Lane::none) return {Status::unavailable};
+    const auto iface = hexId(c.description, L"&mi_", 2).value_or(255);
+    const auto linkFeature = type == Lane::jbl350 || type == Lane::jbl610;
+    if (!collection(type, iface, c.page, c.usage, c.inputLength, c.outputLength, c.featureLength))
+        return {Status::unavailable};
+    HidExchange exchange(c, linkFeature ? 0 : GENERIC_READ | GENERIC_WRITE);
+    if (!exchange.matchesUsbHeadset(device.vid, device.pid, iface))
+        return {Status::unavailable};
+    const auto deadline = Clock::now() + 550ms;
+    if (linkFeature) {
+        const auto readByte = [&](std::uint8_t id) {
+            std::array<std::uint8_t, 64> response{};
+            response[0] = id;
+            DWORD size = 0;
+            if (exchange.getNumberedFeature(std::span(response).first(c.featureLength), deadline, size))
+                return -1;
+            return jblByte(std::span(response).first(std::min<std::size_t>(size, response.size())), id);
+        };
+        // Confirm the link on both sides of the battery read, not merely USB presence.
+        if (readByte(0x68) != 1) return {Status::no_radio_reply};
+        const auto n = readByte(0x49);
+        if (n < 0 || n > 100) return {Status::bad_report};
+        if (readByte(0x68) != 1) return {Status::no_radio_reply};
+        return {Status::current, Reading{n,n,Power::unknown,n},0x49};
+    }
+    if (!exchange.flushInput()) return {Status::unavailable};
+    Sample result{Status::no_radio_reply};
+    const auto match = [&](std::span<const std::uint8_t> report) {
+        const auto reading = type == Lane::jbl650 ? jbl650Battery(report) : nova7Battery(report);
+        if (reading.status == Status::bad_report) return false;
+        result = reading;
+        return true;
+    };
+    if (type == Lane::jbl650) {
+        auto frame = jbl650Request();
+        const auto error = exchange.featureThenInput(frame, deadline, match);
+        if (error) return ioFailure(error, 0x88);
+    } else {
+        std::array<std::uint8_t,65> frame{0,0xb0};
+        const auto error = exchange.request(std::span(frame).first(c.outputLength), deadline, match);
+        if (error) return ioFailure(error, 0xb0);
+    }
+    return result;
+}
+
+Sample readVendorGamepad(const Device& device)
+{
+    if (device.collections.size() != 1) return {Status::unavailable};
+    const auto model = vendor_pad::match(device.vid, device.pid);
+    const auto& channel = device.collections.front();
+    if (!model || !vendor_pad::collection(*model, channel.page, channel.usage, channel.inputLength, channel.outputLength))
+        return {Status::unavailable};
+    HidExchange exchange(channel);
+    if (!exchange.matchesVendorGamepad(*model, channel) || !exchange.flushInput()) return {Status::unavailable};
+    bool modern = false;
+    if (*model != vendor_pad::Model::nova2LiteUsb) {
+        auto query = vendor_pad::request(*model, true);
+        const auto error = exchange.request(std::span(query).first(channel.outputLength), Clock::now() + 300ms, [&](auto bytes) {
+            const auto reply = vendor_pad::architecture(bytes);
+            if (!reply) return false;
+            modern = *reply;
+            return true;
+        });
+        if (error) return ioFailure(error, 7);
+        if (!exchange.flushInput()) return {Status::unavailable};
+    }
+    auto query = vendor_pad::request(*model);
+    Sample reading{Status::unavailable};
+    const auto error = exchange.request(std::span(query).first(channel.outputLength), Clock::now() + 500ms, [&](auto bytes) {
+        const auto sample = vendor_pad::parse(*model, bytes, modern);
+        if (!sample) return false; // input reports or other command replies
+        reading = *sample;
+        return true;
+    });
+    return error ? ioFailure(error, 1) : reading;
 }
 
 Sample readGameSirSuperNova(const Device& device)
@@ -942,7 +1136,7 @@ Sample readRazer(const Collection& collection, Clock::time_point deadline, Razer
     return result;
 }
 
-Sample readPassiveGamepad(const Collection& collection, bool bluetooth, bool dualShock4, bool pro3, bool switchPro,
+Sample readPassiveGamepad(const Collection& collection, bool bluetooth, bool dualShock4, unsigned eightBitDoReport, bool switchPro,
                        Clock::time_point pollDeadline)
 {
     Handle file(CreateFileW(collection.path.c_str(), GENERIC_READ, sharing, nullptr,
@@ -955,7 +1149,7 @@ Sample readPassiveGamepad(const Collection& collection, bool bluetooth, bool dua
         return ioFailure(GetLastError());
     }
     std::vector<std::uint8_t> report(collection.inputLength);
-    const auto deadline = std::min(pollDeadline, Clock::now() + (pro3 || switchPro ? 400ms : 1200ms));
+    const auto deadline = std::min(pollDeadline, Clock::now() + (eightBitDoReport || switchPro ? 400ms : 1200ms));
     Sample result{Status::timeout};
     for (int attempt = 0; attempt < 8 && Clock::now() < deadline; ++attempt) {
         DWORD count = 0;
@@ -967,7 +1161,7 @@ Sample readPassiveGamepad(const Collection& collection, bool bluetooth, bool dua
         }
         const auto frame = std::span(report).first(std::min<std::size_t>(count, report.size()));
         result = switchPro ? parseSwitchProBluetoothReport(frame)
-            : pro3 ? parse8BitDoPro3BluetoothReport(frame)
+            : eightBitDoReport ? parse8BitDoBatteryReport(frame, eightBitDoReport)
             : dualShock4 ? parseDualShock4Report(frame, bluetooth) : parseDualSenseReport(frame, bluetooth);
         if (result.status != Status::bad_report && result.status != Status::basic_bluetooth) {
             return result;
@@ -1097,6 +1291,7 @@ const wchar_t* deviceName(Transport transport)
     if (transport == Transport::rapoo_receiver) return L"Rapoo 接收器";
     if (transport == Transport::supported_mouse_receiver) return L"2.4 GHz 鼠标";
     if (transport == Transport::rog_keyboard_receiver) return L"ROG 2.4 GHz 键盘";
+    if (transport == Transport::gamepad_flydigi || transport == Transport::gamepad_nova2_lite_usb) return L"游戏手柄";
     return transport == Transport::windows_battery ? L"Windows 外设" : L"DualSense";
 }
 
@@ -1106,9 +1301,16 @@ const wchar_t* transportName(Transport transport)
     case Transport::razer_pro_receiver:
     case Transport::razer_receiver: return L"2.4 GHz";
     case Transport::razer_shared_keyboard: return L"2.4 GHz 共享接收器";
+    case Transport::usb_wireless_headset: return L"2.4 GHz";
+    case Transport::gamepad_flydigi: return L"USB / 2.4 GHz";
+    case Transport::gamepad_nova2_lite_usb:
     case Transport::sony_gamepad_usb:
     case Transport::dualsense_usb: return L"USB";
+    case Transport::eightbitdo_pro3_usb: return L"USB";
     case Transport::switch_pro_bluetooth:
+    case Transport::joycon_left_bluetooth:
+    case Transport::joycon_right_bluetooth:
+    case Transport::eightbitdo_enhanced_bluetooth:
     case Transport::eightbitdo_pro3_bluetooth:
     case Transport::sony_gamepad_bluetooth:
     case Transport::dualsense_bluetooth: return L"蓝牙";
@@ -1142,10 +1344,15 @@ const wchar_t* providerName(Transport transport)
     case Transport::razer_receiver:
     case Transport::razer_shared_keyboard: return L"razer-1532-00b8";
     case Transport::razer_pro_receiver: return L"razer-pro-receiver";
+    case Transport::usb_wireless_headset: return L"headset-usb-battery";
     case Transport::sony_gamepad_usb: return L"sony-gamepad-usb";
     case Transport::sony_gamepad_bluetooth: return L"sony-gamepad-bluetooth";
     case Transport::switch_pro_bluetooth: return L"nintendo-switch-pro-bluetooth";
     case Transport::eightbitdo_pro3_bluetooth: return L"8bitdo-pro3-dinput-bluetooth";
+    case Transport::eightbitdo_pro3_usb: return L"8bitdo-pro3-dinput-usb";
+    case Transport::eightbitdo_enhanced_bluetooth: return L"8bitdo-dinput-enhanced";
+    case Transport::joycon_left_bluetooth: return L"nintendo-joycon-left-bluetooth";
+    case Transport::joycon_right_bluetooth: return L"nintendo-joycon-right-bluetooth";
     case Transport::dualsense_usb: return L"dualsense-usb";
     case Transport::dualsense_bluetooth: return L"dualsense-bluetooth";
     case Transport::windows_battery: return L"windows-property";
@@ -1166,6 +1373,8 @@ const wchar_t* providerName(Transport transport)
     case Transport::mchose_g87_candidate: return L"mchose-g87-candidate";
     case Transport::dareu_em901x_inventory: return L"dareu-em901x-cache-unverified";
     case Transport::gamesir_super_nova_receiver: return L"gamesir-sapjoy";
+    case Transport::gamepad_flydigi: return L"flydigi-vendor-hid";
+    case Transport::gamepad_nova2_lite_usb: return L"gamesir-nova2-lite-usb";
     case Transport::supported_mouse_receiver: return L"mouse-vendor-hid";
     case Transport::rog_keyboard_receiver: return L"rog-keyboard";
     }
@@ -1289,6 +1498,12 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         const bool atkUsb = transport == Transport::atk_v75x_usb;
         const bool atkCandidate = transport == Transport::atk_v75x_receiver_candidate;
         const bool rzPro = transport == Transport::razer_pro_receiver;
+        const bool usbHeadset = transport == Transport::usb_wireless_headset;
+        const auto headsetCollection = [&] {
+            return usbHeadset && info.valid() && haveCaps &&
+                hexId(normalized, L"vid_", 4) == vid && hexId(normalized, L"pid_", 4) == pid &&
+                usbHeadsetDescriptor(info.value, vid, pid, hexId(normalized, L"&mi_", 2).value_or(255));
+        };
         const bool rogCandidate = transport == Transport::rog_keyboard_receiver;
         const auto rogRole = rogCandidate && info.valid() ? rogPort(info.value, normalized) : rog::Port::none;
         const auto rogParent = rogRole != rog::Port::none ? rogUsbParent(devInfo.DevInst, pid) : std::wstring{};
@@ -1314,10 +1529,15 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             HidD_FreePreparsedData(prep);
             return valid;
         };
+        const auto vendorPad = transport == Transport::gamepad_flydigi || transport == Transport::gamepad_nova2_lite_usb
+            ? vendor_pad::match(vid, pid) : std::nullopt;
+        const auto exactVendorPad = vendorPad && info.valid() && vendorGamepadDescriptor(info.value, *vendorPad);
         if (inventory) {
             const auto interfaceNumber = hexId(normalized, L"&mi_", 2);
             auto reportedProvider = transport;
+            if (vendorPad && !exactVendorPad) reportedProvider.reset();
             if (rzPro && !rzExactCollection()) reportedProvider.reset();
+            if (usbHeadset && !headsetCollection()) reportedProvider.reset();
             if ((atkUsb || atkCandidate) && (!info.valid() || !atkDescriptor(info.value, pid)))
                 reportedProvider.reset();
             if (rogCandidate && rogParent.empty()) reportedProvider.reset();
@@ -1341,7 +1561,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             *transport == Transport::mchose_g87_candidate || atkCandidate) continue;
         const bool cn = cnReceiver(*transport);
         const bool superNova = *transport == Transport::gamesir_super_nova_receiver;
-        if (cn || superNova || atkUsb || *transport == Transport::supported_mouse_receiver) {
+        if ((transport == Transport::gamepad_flydigi || transport == Transport::gamepad_nova2_lite_usb) && !exactVendorPad) continue;
+        if (cn || superNova || atkUsb || vendorPad || *transport == Transport::supported_mouse_receiver) {
             const auto kind = supportedMouse(vid, pid);
             const auto ifaceNumber = hexId(normalized, L"&mi_", 2);
             if (!haveCaps) continue;
@@ -1353,8 +1574,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 if (!gamesir_battery::collection(vid, pid, caps.UsagePage, caps.InputReportByteLength,
                     caps.OutputReportByteLength, caps.FeatureReportByteLength) ||
                     !info.valid() || !exactSuperNova(info.value)) continue;
-            } else if (!kind || !ifaceNumber ||
-                !supportedMouseCollection(*kind, static_cast<int>(*ifaceNumber), caps.UsagePage, caps.Usage)) continue;
+            } else if (!vendorPad && (!kind || !ifaceNumber ||
+                !supportedMouseCollection(*kind, static_cast<int>(*ifaceNumber), caps.UsagePage, caps.Usage))) continue;
             bool usbParent = false;
             DEVINST parent = devInfo.DevInst;
             for (int depth = 0; depth < 9; ++depth) {
@@ -1375,14 +1596,14 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                     name.back() != 0 || std::wstring_view(name.data()) != L"AULA-V9Pro+") continue;
             }
         }
-        if (rzPro) {
-            if (!rzExactCollection()) continue;
+        if (rzPro || usbHeadset) {
+            if (rzPro ? !rzExactCollection() : !headsetCollection()) continue;
             bool physicalReceiver = false;
             DEVINST node = devInfo.DevInst;
             for (int depth = 0; depth < 9; ++depth) {
                 const auto id = nodeId(node);
                 if (id.starts_with(L"usb\\vid_") && id.find(L"&mi_") == std::wstring::npos &&
-                    hexId(id, L"vid_", 4) == 0x1532 && hexId(id, L"pid_", 4) == pid) {
+                    hexId(id, L"vid_", 4) == vid && hexId(id, L"pid_", 4) == pid) {
                     physicalReceiver = true;
                     break;
                 }
@@ -1392,12 +1613,32 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
             if (!physicalReceiver) continue;
         }
-        const bool pro3 = *transport == Transport::eightbitdo_pro3_bluetooth;
-        if (pro3 && (attributes.VendorID != 0x2dc8 || attributes.ProductID != 0x6009 ||
-                     !haveCaps || caps.UsagePage != 1 || (caps.Usage != 4 && caps.Usage != 5) ||
-                     caps.InputReportByteLength < 15 || caps.InputReportByteLength > 64)) continue;
-        const bool switchPro = *transport == Transport::switch_pro_bluetooth;
-        if (switchPro && (vid != 0x057e || pid != 0x2009 || !haveCaps ||
+        const bool eightBitDo = isEightBitDoHid(*transport);
+        const bool enhanced = *transport == Transport::eightbitdo_enhanced_bluetooth;
+        const bool eightBitDoUsb = *transport == Transport::eightbitdo_pro3_usb;
+        if (eightBitDo && (attributes.VendorID != 0x2dc8 || (enhanced ?
+            !eightBitDoEnhancedName(attributes.ProductID) ||
+            attributes.ProductID != hexId(normalized, L"vid&00022dc8_pid&", 4).value_or(0) :
+            attributes.ProductID != 0x6009) ||
+            !haveCaps || caps.UsagePage != 1 || (caps.Usage != 4 && caps.Usage != 5) ||
+            caps.InputReportByteLength < 15 || caps.InputReportByteLength > 64)) continue;
+        if (eightBitDoUsb) {
+            bool physical = false;
+            for (DEVINST node = devInfo.DevInst, parent{}; node;) {
+                const auto id = nodeId(node);
+                if (id.starts_with(L"usb\vid_2dc8&pid_6009") && id.find(L"&mi_") == std::wstring::npos) {
+                    physical = true;
+                    break;
+                }
+                if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS || parent == node) break;
+                node = parent;
+            }
+            if (!physical) continue;
+        }
+        const bool switchPro = isSwitchHid(*transport);
+        const auto switchPid = *transport == Transport::joycon_left_bluetooth ? 0x2006u :
+            *transport == Transport::joycon_right_bluetooth ? 0x2007u : 0x2009u;
+        if (switchPro && (vid != 0x057e || pid != switchPid || !haveCaps ||
             caps.UsagePage != 1 || caps.Usage != 5 ||
             caps.InputReportByteLength < 49 || caps.InputReportByteLength > 512)) continue;
         const bool extraSony = *transport == Transport::sony_gamepad_usb ||
@@ -1418,7 +1659,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
         }
         // Report the receiver only when Windows supplied a physical container.
-        if ((cn || superNova || switchPro || rzPro || atkUsb || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
+        if ((cn || superNova || switchPro || enhanced || eightBitDoUsb || rzPro || usbHeadset || vendorPad || atkUsb || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
             !key.ends_with(L'}')) continue;
         auto [it, inserted] = devices.try_emplace(key, Device{key, *transport, attributes.VersionNumber,
                                                                bluetooth ? windowsBattery(devInfo.DevInst)
@@ -1432,15 +1673,18 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
         }
         if (rzPro && inserted) it->second.label = razerProReceiverName(vid, pid);
+        if (usbHeadset && inserted) it->second.label = headset_battery::name(headset_battery::lane(vid,pid));
         if (atkUsb && inserted) it->second.label = L"ATK V75X";
-        if (pro3 && inserted) it->second.label = L"8BitDo Pro 3";
+        if (eightBitDo && inserted) it->second.label = enhanced ? eightBitDoEnhancedName(pid) : L"8BitDo Pro 3";
         if (superNova && inserted) it->second.label = L"GameSir Super Nova";
+        if (vendorPad && inserted) it->second.label = vendor_pad::name(*vendorPad);
         if (cn && inserted) {
             it->second.label = *transport == Transport::mchose_g3v2_receiver ? L"MCHOSE G3 V2" :
                 *transport == Transport::aula_sc580_receiver ? L"AULA SC580 / SC580X" :
                 *transport == Transport::mchose_a7v2pro_usb ? L"MCHOSE A7 V2 Pro" : L"AULA F87 Pro V2D";
         }
-        if (switchPro && inserted) it->second.label = L"Switch Pro（蓝牙模式）";
+        if (switchPro && inserted) it->second.label = *transport == Transport::joycon_left_bluetooth ? L"Joy-Con (L)" :
+            *transport == Transport::joycon_right_bluetooth ? L"Joy-Con (R)" : L"Switch Pro（蓝牙模式）";
         if (extraSony && inserted) {
             it->second.label = pid == 0x0df2 ? L"DualSense Edge" : L"DUALSHOCK 4";
         }
@@ -1463,8 +1707,10 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
     std::erase_if(receivers_, [&](const auto& item) { return !devices.contains(item.first); });
     std::vector<Device> result;
     for (auto& [key, device] : devices) {
-        if ((device.transport == Transport::switch_pro_bluetooth || device.transport == Transport::gamesir_super_nova_receiver ||
-            device.transport == Transport::atk_v75x_usb || cnReceiver(device.transport)) &&
+        if ((isSwitchHid(device.transport) || device.transport == Transport::eightbitdo_enhanced_bluetooth ||
+            device.transport == Transport::eightbitdo_pro3_usb || device.transport == Transport::gamesir_super_nova_receiver ||
+            device.transport == Transport::atk_v75x_usb || device.transport == Transport::gamepad_flydigi ||
+            device.transport == Transport::gamepad_nova2_lite_usb || cnReceiver(device.transport)) &&
             device.collections.size() != 1) continue;
         if (device.transport == Transport::rog_keyboard_receiver) {
             if (!rogParents.contains(key) || rogParents.at(key).empty()) continue;
@@ -1587,7 +1833,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
             continue;
         }
-        if (device.transport == Transport::razer_pro_receiver && device.collections.size() != 1) continue;
+        if ((device.transport == Transport::razer_pro_receiver || device.transport == Transport::usb_wireless_headset) &&
+            device.collections.size() != 1) continue;
         if (device.transport == Transport::razer_receiver) {
             std::ranges::sort(device.collections, {}, razerRank);
             const auto control = std::ranges::find_if(device.collections, [](const Collection& collection) {
@@ -1632,6 +1879,9 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
 Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
 {
     if (device.transport == Transport::gamesir_super_nova_receiver) return readGameSirSuperNova(device);
+    if (device.transport == Transport::usb_wireless_headset) return readUsbHeadset(device);
+    if (device.transport == Transport::gamepad_flydigi || device.transport == Transport::gamepad_nova2_lite_usb)
+        return readVendorGamepad(device);
     if (cnReceiver(device.transport)) return readCnReceiver(device);
     if (device.transport == Transport::atk_v75x_usb) return readAtkV75XUsb(device, atkV75XSequence_);
     if (device.transport == Transport::rog_keyboard_receiver) return readRogKeyboard(device);
@@ -1670,9 +1920,11 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
     }
     const bool keyboard = device.transport == Transport::razer_shared_keyboard;
     const bool razer = device.transport == Transport::razer_receiver || keyboard;
-    const bool pro3 = device.transport == Transport::eightbitdo_pro3_bluetooth;
-    const bool switchPro = device.transport == Transport::switch_pro_bluetooth;
-    const bool bluetooth = switchPro || pro3 || device.transport == Transport::dualsense_bluetooth ||
+    const unsigned eightBitDoReport = !isEightBitDoHid(device.transport) ? 0u :
+        device.transport == Transport::eightbitdo_enhanced_bluetooth ? 1u : 4u;
+    const bool switchPro = isSwitchHid(device.transport);
+    const bool bluetooth = switchPro || (eightBitDoReport && device.transport != Transport::eightbitdo_pro3_usb) ||
+                           device.transport == Transport::dualsense_bluetooth ||
                            device.transport == Transport::sony_gamepad_bluetooth;
     const auto deadline = Clock::now() + 1800ms;
     const auto cached = razerCollections_.find(device.key);
@@ -1680,7 +1932,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
         auto result = razer ? readRazer(collection, deadline,
                                         keyboard ? RazerQuery::keyboardBattery : RazerQuery::mouseBattery)
                             : readPassiveGamepad(collection, bluetooth, device.vid == 0x054c &&
-                                  (device.pid == 0x05c4 || device.pid == 0x09cc), pro3, switchPro, deadline);
+                                  (device.pid == 0x05c4 || device.pid == 0x09cc), eightBitDoReport, switchPro, deadline);
         if (keyboard && result.reading) {
             const auto charging = readRazer(collection, deadline, RazerQuery::keyboardCharging);
             if (charging.status == Status::current) {

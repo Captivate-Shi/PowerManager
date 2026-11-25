@@ -18,6 +18,10 @@ inline std::optional<LogitechNamedIdentity> office12Identity(unsigned vid, unsig
     const bool keyboard = kind == 0 || kind == 255;
     const bool mouse = kind == 3 || kind == 255;
     if (!logitechUnifying(vid, pid)) return {};
+    // Confirm the live feature 0x0003 model and 0x0005 name/kind; pairing
+    // metadata alone can even report this mouse as a keyboard (Solaar #3156).
+    if (model == 0x4051 && kind == 3 && name == L"wireless mouse m510")
+        return LogitechNamedIdentity{L"M510 v2", 3, model, named_legacy_1000};
     if (model == 0x405e && mouse && name == L"m720 triathlon multi-device mouse")
         return LogitechNamedIdentity{L"M720 Triathlon", 3, model, named_legacy_1000};
     if (model == 0x4069 && mouse && name == L"wireless mouse mx master 2s")

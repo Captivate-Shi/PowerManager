@@ -126,6 +126,7 @@ int main()
     assert(!boltBatch11Identity(0x046d, 0xc548, 0xb038, L"MX Anywhere 3S", 3));
     struct Office12Case { unsigned model; const wchar_t* firmwareName; const wchar_t* label; unsigned kind; };
     constexpr Office12Case unifyingCases[] = {
+        {0x4051, L"Wireless Mouse M510", L"M510 v2", 3},
         {0x405e, L"M720 Triathlon Multi-Device Mouse", L"M720 Triathlon", 3},
         {0x4069, L"Wireless Mouse MX Master 2S", L"MX Master 2S", 3},
         {0x408a, L"MX Keys Wireless Keyboard", L"MX Keys", 0},
@@ -143,6 +144,20 @@ int main()
         assert(!logitechNamedIdentity(0x046d, 0xc52b, row.model, row.firmwareName,
                                       row.kind == 0 ? 3 : 0));
     }
+    // Solaar #3156 observed receiver pairing label K360/4004, but the live
+    // device reports 4051 and Wireless Mouse M510; redact the captured unit.
+    const std::uint8_t m510Info[20]{0x11, 2, 2, 0x09, 1, 0x11, 0x22, 0x33, 0x44, 0, 4, 0x40, 0x51};
+    const auto m510InfoReply = parseLogitechReply(m510Info, 2, 2, 0x09);
+    assert(m510InfoReply && logitechReportedModel(m510InfoReply->params, 4) == 0x4051);
+    assert(!parseLogitechReply(m510Info, 1, 2, 0x09));
+    assert(!logitechNamedIdentity(0x046d, 0xc52b, 0x4008, L"Wireless Mouse M510", 3));
+    assert(!logitechNamedIdentity(0x046d, 0xc52b, 0x1025, L"Wireless Mouse M510", 3));
+    assert(!logitechNamedIdentity(0x046d, 0xc52b, 0x4004, L"Wireless Mouse M510", 3));
+    assert(!logitechNamedIdentity(0x046d, 0xc52b, 0x4051, L"Wireless Keyboard K360", 3));
+    assert(!logitechNamedIdentity(0x046d, 0xc52b, 0x4051, L"Wireless Mouse M510", 255));
+    const std::uint8_t m510Battery[] = {70, 5, 0};
+    const auto m510Bucket = logitechBattery(0x1000, true, m510Battery, true).reading;
+    assert(m510Bucket && m510Bucket->low == 31 && m510Bucket->high == 80 && m510Bucket->raw == 70);
     constexpr std::uint8_t unifyingInfo[] = {3, 0x11, 0x22, 0x33, 0x44, 0, 6, 0xb0, 0x15, 0x40, 0x5e, 0, 0};
     static_assert(logitechReportedModel(unifyingInfo, 4) == 0x405e);
     static_assert(logitechReportedModel(unifyingInfo, 2) == 0xb015);
