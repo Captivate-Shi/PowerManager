@@ -95,3 +95,9 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 | 系统无可靠身份或只报通用型号 | 不编造品牌、型号或固件 | 只补缺失字段；手填条目不附带不相干设备明细 |
 
 灰度用户正常连接使用。发现不一致再从诊断选设备提交；唤醒/休眠、切换连接、两台同型号和与厂商软件共存是测试团队的验收项，不是每位用户提交反馈的前置条件。
+
+## OPPO Enco Clip2（ETEN1）
+
+常规 Windows / BLE 电量没有读数时，可以对已配对、已连接且绑定同一物理容器的 Clip2，查询其专有 ELNK RFCOMM 服务。只发两条查询：先确认耳机返回产品 ID `06E010`，再读电量。没有通用串口回退、不占用通话协议、不改耳机设置。若只收到充电盒或占位 0，保留未知；若读到一只或两只耳机，状态行采用当次有效耳机读数的最低值。本批没有独立左右耳／充电盒 UI。
+
+[OPPO 型号规格](https://www.oppo.com/au/accessories/enco-clip2-open-earbuds/specs/) · [上游 Windows 型号配置](https://github.com/TIANLI0/EncoDeck/blob/main/docs/COMPATIBILITY.md#oppo--一加--realme--dizo) · [上游报文和休眠行为](https://github.com/MageshwarSV/QuickBuds/blob/main/docs/PROTOCOL.md#7-battery--0x8106-and-push-01) 。这些是协议和实现依据，不是 Clip2 的 Windows 真机验收；仍需对照 HeyMelody 读数并验证音乐与通话同时使用。

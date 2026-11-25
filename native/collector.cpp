@@ -333,9 +333,12 @@ const char* art(const Device& device)
     return "unknown";
 }
 
-bool sonyHeadphoneCandidate(const FoundDevice& device)
+std::optional<rfcomm_battery::Model> vendorHeadphone(const FoundDevice& device)
 {
-    return device.connected && device.knownBluetooth && device.name == sony_headphone::model;
+    if (!device.connected || !device.knownBluetooth) return {};
+    if (device.name == sony_headphone::model) return rfcomm_battery::Model::sonyXm4;
+    if (oppo_headphone::isClip2(device.name)) return rfcomm_battery::Model::oppoClip2;
+    return {};
 }
 
 class Collector {
@@ -365,14 +368,15 @@ private:
     std::vector<FoundDevice> windowsDevices_;
     std::map<std::wstring, std::wstring> diagnosticFirmwareTargets_;
     using Time = std::chrono::steady_clock::time_point;
-    struct SonyTask {
+    struct VendorTask {
         std::wstring container;
         Time started;
+        rfcomm_battery::Model model;
         std::future<rfcomm_battery::Result> result;
         bool stillConnected{true};
     };
-    std::optional<SonyTask> sonyTask_;
-    std::map<std::wstring, Time> sonyDue_;
+    std::optional<VendorTask> vendorTask_;
+    std::map<std::wstring, Time> vendorDue_;
 
     const std::vector<FoundDevice>& defaultWindowsDevices(bool force)
     {
@@ -502,7 +506,7 @@ private:
             if (claimed.contains(device.id)) continue;
             const bool bas = device.knownBluetooth && bleCandidates.contains(device.id);
             result.push_back({{"id", utf8(device.id)}, {"name", utf8(device.name)}, {"connection", utf8(device.connection)},
-                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false) || sonyHeadphoneCandidate(device)},
+                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false) || vendorHeadphone(device).has_value()},
                 {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading},
                 {"batteryCandidate", device.connected && device.inputOrHeadset && !device.battery && bas ?
                     json("ble_bas") : json(nullptr)}});
@@ -597,22 +601,25 @@ private:
         const bool force = request.value("force", false);
         const auto& basCandidates = refreshBleCandidates(force);
         const auto& windows = defaultWindowsDevices(force);
-        std::set<std::wstring> sonyDevices;
+        std::map<std::wstring, rfcomm_battery::Model> vendorDevices;
         for (const auto& candidate : windows) {
-            if (sonyHeadphoneCandidate(candidate) && !claimed.contains(candidate.id)) sonyDevices.insert(candidate.id);
+            if (const auto model = vendorHeadphone(candidate); model && !claimed.contains(candidate.id))
+                vendorDevices.try_emplace(candidate.id, *model);
         }
         const auto now = std::chrono::steady_clock::now();
-        std::optional<std::pair<std::wstring, rfcomm_battery::Result>> sonyCompleted;
-        if (sonyTask_) {
-            sonyTask_->stillConnected = sonyTask_->stillConnected && sonyDevices.contains(sonyTask_->container);
-            if (sonyTask_->result.wait_for(0ms) == std::future_status::ready) {
-                auto result = sonyTask_->result.get();
-                if (sonyTask_->stillConnected && now - sonyTask_->started <= 8s)
-                    sonyCompleted.emplace(sonyTask_->container, result);
-                sonyTask_.reset();
+        std::optional<std::pair<std::wstring, rfcomm_battery::Result>> vendorCompleted;
+        if (vendorTask_) {
+            const auto found = vendorDevices.find(vendorTask_->container);
+            vendorTask_->stillConnected = vendorTask_->stillConnected &&
+                found != vendorDevices.end() && found->second == vendorTask_->model;
+            if (vendorTask_->result.wait_for(0ms) == std::future_status::ready) {
+                auto result = vendorTask_->result.get();
+                if (vendorTask_->stillConnected && now - vendorTask_->started <= 8s)
+                    vendorCompleted.emplace(vendorTask_->container, result);
+                vendorTask_.reset();
             }
         }
-        std::erase_if(sonyDue_, [&](const auto& entry) { return !sonyDevices.contains(entry.first); });
+        std::erase_if(vendorDue_, [&](const auto& entry) { return !vendorDevices.contains(entry.first); });
         struct GenericTarget { std::string id, name, connection; bool automatic; };
         std::map<std::wstring, GenericTarget> targets;
         for (const auto& device : request.at("watched")) {
@@ -625,7 +632,7 @@ private:
         unsigned automaticCount = 0;
         for (const auto& device : windows) {
             if (automaticCount >= 32) break;
-            if (!sonyDevices.contains(device.id) &&
+            if (!vendorDevices.contains(device.id) &&
                 !defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
             targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
             ++automaticCount;
@@ -636,8 +643,10 @@ private:
         for (const auto& [container, device] : targets) {
             const auto& id = device.id;
             json value = nullptr;
-            const bool sony = sonyDevices.contains(container);
-            const bool completed = sonyCompleted && sonyCompleted->first == container;
+            const auto vendorModel = vendorDevices.find(container);
+            const bool oppo = vendorModel != vendorDevices.end() &&
+                vendorModel->second == rfcomm_battery::Model::oppoClip2;
+            const bool completed = vendorCompleted && vendorCompleted->first == container;
             if (shouldRead(id) || completed) {
                 const auto started = std::chrono::steady_clock::now();
                 auto measured = readWindowsDevice(container);
@@ -664,9 +673,12 @@ private:
                 }
                 // Never open an audio profile. On this exact, connected model,
                 // only the documented private battery service may be queried.
-                if (sony && !measured.reading && windowsDetail != WindowsBatteryDetail::disconnected) {
+                const bool connectedWithoutWindowsReading = windowsDetail == WindowsBatteryDetail::missingProperty ||
+                    windowsDetail == WindowsBatteryDetail::invalidPercent;
+                if (vendorModel != vendorDevices.end() && !measured.reading &&
+                    (oppo ? connectedWithoutWindowsReading : windowsDetail != WindowsBatteryDetail::disconnected)) {
                     if (completed) {
-                        const auto& fresh = sonyCompleted->second;
+                        const auto& fresh = vendorCompleted->second;
                         Sample vendor{Status::unavailable};
                         if (fresh.battery) {
                             const int level = static_cast<int>(fresh.battery->percent);
@@ -675,16 +687,29 @@ private:
                                 ReadingSource::bluetooth_vendor}};
                         }
                         value = sample(vendor);
-                        record(diagnostic, value, started, target, "sony-mdr-v1",
-                            fresh.battery ? "receiver_current" : "receiver_unavailable");
+                        const auto reason = [&] {
+                            using R = rfcomm_battery::Status;
+                            switch (fresh.status) {
+                            case R::success: return "receiver_current";
+                            case R::unknown_endpoint: return "receiver_unknown_endpoint";
+                            case R::disconnected: return "receiver_disconnected";
+                            case R::ambiguous: return "receiver_ambiguous";
+                            case R::service_unavailable: return "receiver_service_unavailable";
+                            case R::timeout: return "receiver_timeout";
+                            case R::protocol_invalid: return "receiver_protocol_invalid";
+                            default: return "receiver_unavailable";
+                            }
+                        }();
+                        record(diagnostic, value, started, target, oppo ? "oppo-elnk" : "sony-mdr-v1", reason);
                     } else {
                         // Sampling is asynchronous and capped at one private
                         // connection in the process; cached values are never republished.
                         value = nullptr;
-                        if (!sonyTask_ && (!sonyDue_.contains(container) || now >= sonyDue_.at(container))) {
-                            sonyDue_[container] = now + 60s;
-                            sonyTask_.emplace(SonyTask{container, now, std::async(std::launch::async, [container] {
-                                try { return rfcomm_battery::readSonyXm4(container); }
+                        if (!vendorTask_ && (!vendorDue_.contains(container) || now >= vendorDue_.at(container))) {
+                            vendorDue_[container] = now + 60s;
+                            const auto model = vendorModel->second;
+                            vendorTask_.emplace(VendorTask{container, now, model, std::async(std::launch::async, [container, model] {
+                                try { return rfcomm_battery::read(container, model); }
                                 catch (...) { return rfcomm_battery::Result{rfcomm_battery::Status::system_error}; }
                             })});
                         }

@@ -21,12 +21,14 @@ namespace {
 using Clock = std::chrono::steady_clock;
 constexpr GUID sonyMdrV1{0x96cc203e, 0x50f8, 0x4944, {0x9c, 0x22, 0xed, 0xcb, 0x48, 0xf6, 0x21, 0x6f}};
 
+constexpr GUID oppoElnk{0x0000079a, 0xd102, 0x11e1, {0x9b, 0x23, 0x00, 0x02, 0x5b, 0x00, 0xa5, 0xa5}};
+
 struct Endpoint {
     Status status;
     BTH_ADDR address{};
 };
 
-Endpoint resolve(std::wstring_view containerId)
+Endpoint resolve(std::wstring_view containerId, Model model)
 {
     if (containerId.size() != 38 || containerId.front() != L'{' || containerId.back() != L'}') {
         return {Status::unknown_endpoint};
@@ -45,7 +47,9 @@ Endpoint resolve(std::wstring_view containerId)
     if (!search) return {Status::unknown_endpoint};
     Endpoint result{Status::unknown_endpoint};
     do {
-        if (!info.fAuthenticated || std::wstring_view(info.szName) != sony_headphone::model ||
+        const std::wstring_view name(info.szName);
+        const bool exact = model == Model::sonyXm4 ? name == sony_headphone::model : oppo_headphone::isClip2(name);
+        if (!info.fAuthenticated || !exact ||
             info.Address.ullLong == 0 || info.Address.ullLong > 0xffffffffffffull) continue;
         wchar_t devId[32]{};
         if (std::swprintf(devId, std::size(devId), L"BTHENUM\\DEV_%012llX", info.Address.ullLong) < 0) continue;
@@ -116,9 +120,9 @@ Status writeAll(SOCKET socket, std::span<const std::uint8_t> data, Clock::time_p
 }
 } // namespace
 
-Result readSonyXm4(std::wstring_view containerId)
+Result read(std::wstring_view containerId, Model model)
 {
-    const auto endpoint = resolve(containerId);
+    const auto endpoint = resolve(containerId, model);
     if (endpoint.status != Status::success) return {endpoint.status};
     Winsock wsa;
     if (!wsa.initialized) return {Status::system_error};
@@ -131,8 +135,8 @@ Result readSonyXm4(std::wstring_view containerId)
     SOCKADDR_BTH remote{};
     remote.addressFamily = AF_BTH;
     remote.btAddr = endpoint.address;
-    remote.serviceClassId = sonyMdrV1;
-    // Only the proven, private MDR V1 service; never use a generic Serial
+    remote.serviceClassId = model == Model::sonyXm4 ? sonyMdrV1 : oppoElnk;
+    // Only the recorded private service for this model; never use a generic Serial
     // Port / HFP UUID, arbitrary channels, or Bluetooth profile changes.
     remote.port = 0;
     if (connect(socket.handle, reinterpret_cast<const sockaddr*>(&remote), sizeof(remote)) == SOCKET_ERROR) {
@@ -145,6 +149,35 @@ Result readSonyXm4(std::wstring_view containerId)
         if (getsockopt(socket.handle, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&socketError), &size) == SOCKET_ERROR ||
             socketError) return {Status::service_unavailable};
     }
+    if (model == Model::oppoClip2) {
+        using namespace oppo_headphone;
+        const auto query = [&](const auto& request, std::vector<std::uint8_t>& payload) {
+            const auto status = writeAll(socket.handle, request, deadline);
+            if (status != Status::success) return status;
+            ReplyStream replies(request);
+            std::array<std::uint8_t, 128> data{};
+            for (int i = 0; i < 8; ++i) {
+                const int ready = waitSocket(socket.handle, false, deadline);
+                if (!ready) return Status::timeout;
+                if (ready < 0) return Status::system_error;
+                const int n = recv(socket.handle, reinterpret_cast<char*>(data.data()), static_cast<int>(data.size()), 0);
+                if (n <= 0) return Status::service_unavailable;
+                if (auto reply = replies.feed({data.data(), static_cast<std::size_t>(n)})) {
+                    payload = std::move(*reply);
+                    return Status::success;
+                }
+                if (replies.invalid()) return Status::protocol_invalid;
+            }
+            return Status::protocol_invalid;
+        };
+        std::vector<std::uint8_t> payload;
+        if (const auto status = query(productQuery, payload); status != Status::success) return {status};
+        if (!matchesProduct(payload)) return {Status::protocol_invalid};
+        if (const auto status = query(batteryQuery, payload); status != Status::success) return {status};
+        if (const auto battery = parseBattery(payload)) return {Status::success, Battery{battery->percent, battery->charging}};
+        return {Status::protocol_invalid};
+    }
+
     if (auto status = writeAll(socket.handle, sony_headphone::request, deadline); status != Status::success) return {status};
 
     std::array<std::uint8_t, 128> data{};
@@ -158,7 +191,7 @@ Result readSonyXm4(std::wstring_view containerId)
         if (const auto reply = replies.feed({data.data(), static_cast<std::size_t>(count)})) {
             if (const auto ack = writeAll(socket.handle, sony_headphone::responseAck(reply->sequence), deadline);
                 ack != Status::success) return {ack};
-            return {Status::success, reply->reading};
+            return {Status::success, Battery{reply->reading.percent, reply->reading.charging}};
         }
     }
     return {Status::protocol_invalid};
