@@ -583,17 +583,17 @@ private:
         unsigned basBudget = 2;
         // A null result means a standard BLE read is due but deferred by the
         // shared budget, not that all sources have failed.
-        const auto standardBattery = [&](const std::wstring& container) -> std::optional<Sample> {
+        const auto standardBattery = [&](const std::wstring& container, const std::wstring& deviceKey, bool vendorReady = false) -> std::optional<Sample> {
             const auto started = std::chrono::steady_clock::now();
             const auto measured = readWindowsDevice(container);
-            const auto target = reportTarget(targets_, container);
+            const auto target = reportTarget(targets_, deviceKey);
             const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
             record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
             const auto detail = static_cast<WindowsBatteryDetail>(measured.detail);
             const bool useBas = !hasBatteryReading(measured) && basCandidates.contains(container) &&
                 (detail == WindowsBatteryDetail::missingProperty || detail == WindowsBatteryDetail::invalidPercent);
             if (!useBas) return measured;
-            if (basBudget == 0) return std::nullopt;
+            if (basBudget == 0) return vendorReady ? std::optional<Sample>(measured) : std::nullopt;
             --basBudget;
             const auto attempt = std::chrono::steady_clock::now();
             const auto ble = readBleBattery(container);
@@ -640,7 +640,7 @@ private:
                         const auto container = endpointContainer(endpoint->endpointKey);
                         const auto owner = containerOwners.find(container);
                         if (owner == containerOwners.end() || owner->second != key || !tried.insert(container).second) continue;
-                        const auto fallback = standardBattery(container);
+                        const auto fallback = standardBattery(container, key);
                         if (!fallback) { deferred = true; continue; }
                         if (hasBatteryReading(*fallback)) source = endpoint;
                         measured = batteryFallback(measured, *fallback);
@@ -680,8 +680,10 @@ private:
                 found != vendorDevices.end() && found->second == vendorTask_->model;
             if (vendorTask_->result.wait_for(0ms) == std::future_status::ready) {
                 auto result = vendorTask_->result.get();
-                if (vendorTask_->stillConnected && now - vendorTask_->started <= 8s)
+                if (vendorTask_->stillConnected) {
+                    if (now - vendorTask_->started > 8s) result = rfcomm_battery::Result{rfcomm_battery::Status::timeout};
                     vendorCompleted.emplace(vendorTask_->container, result);
+                }
                 vendorTask_.reset();
             }
         }
@@ -718,7 +720,7 @@ private:
                 const auto started = std::chrono::steady_clock::now();
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
-                const auto measured = standardBattery(container);
+                const auto measured = standardBattery(container, container, completed);
                 if (measured) value = sample(batteryFallback(*measured, {Status::offline}));
                 const auto windowsDetail = measured
                     ? static_cast<WindowsBatteryDetail>(measured->detail) : WindowsBatteryDetail::none;
@@ -763,7 +765,10 @@ private:
                                 catch (...) { return rfcomm_battery::Result{rfcomm_battery::Status::system_error}; }
                             })});
                         }
-                        if (vendorTask_ && vendorTask_->container == container) value = nullptr;
+                        // In flight or deliberately rate-limited is not a
+                        // failed read. The completed attempt publishes either
+                        // a new value or no data, never a cached sample.
+                        value = nullptr;
                     }
                 }
             }
