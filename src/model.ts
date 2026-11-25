@@ -1,6 +1,6 @@
 import type { CompatibilityPreview } from './compatibility-report';
 export type Power = 'discharging' | 'charging' | 'full' | 'unknown';
-export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' | 'ble' | 'hid_voltage' };
+export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' | 'ble' | 'hid_voltage' | 'bluetooth_vendor' };
 export type Status = 'current' | 'offline' | 'no_radio_reply' | 'busy' | 'timeout' | 'bad_report' |
   'unavailable' | 'basic_bluetooth' | 'charging_error' | 'stale' | 'unreachable';
 export type Sample = { status: Status; reason: string; reading: Reading | null };

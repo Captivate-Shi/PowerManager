@@ -3,6 +3,7 @@
 #include "device_search.hpp"
 #include "ble_battery.hpp"
 #include "gamepad_battery.hpp"
+#include "rfcomm_battery_transport.hpp"
 #include "json.hpp"
 
 #include <windows.h>
@@ -17,6 +18,7 @@
 #include <chrono>
 #include <iostream>
 #include <deque>
+#include <future>
 #include <stdexcept>
 #include <set>
 #include <cwctype>
@@ -68,7 +70,8 @@ json reading(const std::optional<Reading>& value)
     return {{"low", value->low}, {"high", value->high}, {"raw", value->raw},
             {"power", power[static_cast<int>(value->power)]},
             {"source", value->source == ReadingSource::hid ? "hid" : value->source == ReadingSource::ble ? "ble" :
-                value->source == ReadingSource::hid_voltage ? "hid_voltage" : "windows"}};
+                value->source == ReadingSource::hid_voltage ? "hid_voltage" :
+                value->source == ReadingSource::bluetooth_vendor ? "bluetooth_vendor" : "windows"}};
 }
 
 json sample(const Sample& value)
@@ -317,13 +320,22 @@ const wchar_t* label(const Device& device)
 const char* art(const Device& device)
 {
     if (isDualSense(device.transport)) return "dualsense";
+    if (device.transport == Transport::sony_gamepad_usb || device.transport == Transport::sony_gamepad_bluetooth)
+        return device.pid == 0x0df2 ? "dualsense" : "controller";
+    if (device.transport == Transport::eightbitdo_pro3_bluetooth) return "controller";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard) return "keyboard";
-    if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver) return "mouse";
+    if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver ||
+        device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {
         if (device.kind == 0 || device.kind == 2) return "keyboard";
         if (device.kind >= 3 && device.kind <= 5) return "mouse";
     }
     return "unknown";
+}
+
+bool sonyHeadphoneCandidate(const FoundDevice& device)
+{
+    return device.connected && device.knownBluetooth && device.name == sony_headphone::model;
 }
 
 class Collector {
@@ -352,6 +364,15 @@ private:
     std::chrono::steady_clock::time_point windowsRefresh_{};
     std::vector<FoundDevice> windowsDevices_;
     std::map<std::wstring, std::wstring> diagnosticFirmwareTargets_;
+    using Time = std::chrono::steady_clock::time_point;
+    struct SonyTask {
+        std::wstring container;
+        Time started;
+        std::future<rfcomm_battery::Result> result;
+        bool stillConnected{true};
+    };
+    std::optional<SonyTask> sonyTask_;
+    std::map<std::wstring, Time> sonyDue_;
 
     const std::vector<FoundDevice>& defaultWindowsDevices(bool force)
     {
@@ -481,7 +502,7 @@ private:
             if (claimed.contains(device.id)) continue;
             const bool bas = device.knownBluetooth && bleCandidates.contains(device.id);
             result.push_back({{"id", utf8(device.id)}, {"name", utf8(device.name)}, {"connection", utf8(device.connection)},
-                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false)},
+                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false) || sonyHeadphoneCandidate(device)},
                 {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading},
                 {"batteryCandidate", device.connected && device.inputOrHeadset && !device.battery && bas ?
                     json("ble_bas") : json(nullptr)}});
@@ -528,7 +549,7 @@ private:
             const auto id = utf8(key);
             auto* source = group.front();
             const auto usb = std::ranges::find_if(group, [](const auto* item) {
-                return item->transport == Transport::dualsense_usb;
+                return item->transport == Transport::dualsense_usb || item->transport == Transport::logitech_usb;
             });
             if (usb != group.end()) source = *usb;
             json aliases = json::array();
@@ -576,6 +597,22 @@ private:
         const bool force = request.value("force", false);
         const auto& basCandidates = refreshBleCandidates(force);
         const auto& windows = defaultWindowsDevices(force);
+        std::set<std::wstring> sonyDevices;
+        for (const auto& candidate : windows) {
+            if (sonyHeadphoneCandidate(candidate) && !claimed.contains(candidate.id)) sonyDevices.insert(candidate.id);
+        }
+        const auto now = std::chrono::steady_clock::now();
+        std::optional<std::pair<std::wstring, rfcomm_battery::Result>> sonyCompleted;
+        if (sonyTask_) {
+            sonyTask_->stillConnected = sonyTask_->stillConnected && sonyDevices.contains(sonyTask_->container);
+            if (sonyTask_->result.wait_for(0ms) == std::future_status::ready) {
+                auto result = sonyTask_->result.get();
+                if (sonyTask_->stillConnected && now - sonyTask_->started <= 8s)
+                    sonyCompleted.emplace(sonyTask_->container, result);
+                sonyTask_.reset();
+            }
+        }
+        std::erase_if(sonyDue_, [&](const auto& entry) { return !sonyDevices.contains(entry.first); });
         struct GenericTarget { std::string id, name, connection; bool automatic; };
         std::map<std::wstring, GenericTarget> targets;
         for (const auto& device : request.at("watched")) {
@@ -588,7 +625,8 @@ private:
         unsigned automaticCount = 0;
         for (const auto& device : windows) {
             if (automaticCount >= 32) break;
-            if (!defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
+            if (!sonyDevices.contains(device.id) &&
+                !defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
             targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
             ++automaticCount;
         }
@@ -598,7 +636,9 @@ private:
         for (const auto& [container, device] : targets) {
             const auto& id = device.id;
             json value = nullptr;
-            if (shouldRead(id)) {
+            const bool sony = sonyDevices.contains(container);
+            const bool completed = sonyCompleted && sonyCompleted->first == container;
+            if (shouldRead(id) || completed) {
                 const auto started = std::chrono::steady_clock::now();
                 auto measured = readWindowsDevice(container);
                 const auto target = reportTarget(targets_, container);
@@ -621,6 +661,34 @@ private:
                     value = sample(measured);
                 } else if (!useBas) {
                     value = sample(measured);
+                }
+                // Never open an audio profile. On this exact, connected model,
+                // only the documented private battery service may be queried.
+                if (sony && !measured.reading && windowsDetail != WindowsBatteryDetail::disconnected) {
+                    if (completed) {
+                        const auto& fresh = sonyCompleted->second;
+                        Sample vendor{Status::unavailable};
+                        if (fresh.battery) {
+                            const int level = static_cast<int>(fresh.battery->percent);
+                            vendor = {Status::current, Reading{level, level,
+                                fresh.battery->charging ? Power::charging : Power::discharging, level,
+                                ReadingSource::bluetooth_vendor}};
+                        }
+                        value = sample(vendor);
+                        record(diagnostic, value, started, target, "sony-mdr-v1",
+                            fresh.battery ? "receiver_current" : "receiver_unavailable");
+                    } else {
+                        // Sampling is asynchronous and capped at one private
+                        // connection in the process; cached values are never republished.
+                        value = nullptr;
+                        if (!sonyTask_ && (!sonyDue_.contains(container) || now >= sonyDue_.at(container))) {
+                            sonyDue_[container] = now + 60s;
+                            sonyTask_.emplace(SonyTask{container, now, std::async(std::launch::async, [container] {
+                                try { return rfcomm_battery::readSonyXm4(container); }
+                                catch (...) { return rfcomm_battery::Result{rfcomm_battery::Status::system_error}; }
+                            })});
+                        }
+                    }
                 }
             }
             rows.push_back({{"id", id}, {"name", device.name}, {"connection", device.connection},

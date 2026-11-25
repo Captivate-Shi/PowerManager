@@ -21,7 +21,7 @@ try {
     }
     $flags = @('-std=c++20','-O2','-Wall','-Wextra','-Wpedantic','-static','-DUNICODE','-D_UNICODE',
         '-DNOMINMAX','-DWIN32_LEAN_AND_MEAN','-D_WIN32_WINNT=0x0A00')
-    & $compiler @flags -Inative/providers -I.tools native/collector.cpp native/providers/battery.cpp native/providers/hid.cpp native/providers/device_search.cpp native/providers/ble_battery.cpp native/providers/gamepad_battery.cpp native/providers/rapoo_battery.cpp -o .native/collector.exe -lhid -lsetupapi -lcfgmgr32 -lole32 -lshell32 -ldwmapi -lwtsapi32 -lruntimeobject -lbthprops -lpsapi
+    & $compiler @flags -Inative/providers -I.tools native/collector.cpp native/providers/battery.cpp native/providers/hid.cpp native/providers/device_search.cpp native/providers/ble_battery.cpp native/providers/gamepad_battery.cpp native/providers/rapoo_battery.cpp native/providers/supported_mouse_battery.cpp native/providers/rfcomm_battery_transport.cpp -o .native/collector.exe -lhid -lsetupapi -lcfgmgr32 -lole32 -lshell32 -ldwmapi -lwtsapi32 -lruntimeobject -lbthprops -lpsapi -lws2_32
     if ($LASTEXITCODE -ne 0) { throw "Collector compilation failed ($LASTEXITCODE)" }
     if ($Test) {
         $inventoryText = (& .native/collector.exe --inventory) -join "`n"
@@ -41,7 +41,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test compilation failed' }
         & .native/peripheral-test.exe
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test failed' }
-        foreach ($suite in @('ble_battery', 'gamepad_battery', 'default_peripheral', 'rapoo_battery')) {
+        foreach ($suite in @('ble_battery', 'gamepad_battery', 'default_peripheral', 'rapoo_battery', 'supported_mouse_battery', 'sony_headphone_battery')) {
             & $compiler @flags -Inative/providers "tests/${suite}_test.cpp" -o ".native/${suite}_test.exe"
             if ($LASTEXITCODE -ne 0) { throw "$suite test compilation failed" }
             & ".native/${suite}_test.exe"

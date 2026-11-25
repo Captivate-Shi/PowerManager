@@ -8,7 +8,7 @@
 namespace pm {
 
 enum class Power { discharging, charging, full, unknown };
-enum class ReadingSource { hid, windows, ble, hid_voltage };
+enum class ReadingSource { hid, windows, ble, hid_voltage, bluetooth_vendor };
 enum class Status {
     current, offline, no_radio_reply, busy, timeout, bad_report, unavailable,
     basic_bluetooth, charging_error
@@ -66,6 +66,8 @@ using RazerReport = std::array<std::uint8_t, 91>;
 enum class RazerQuery { mouseBattery, pairedDevices, keyboardBattery, keyboardCharging };
 RazerReport makeRazerQuery(RazerQuery query = RazerQuery::mouseBattery);
 Sample parseRazerReport(std::span<const std::uint8_t> report, RazerQuery query = RazerQuery::mouseBattery);
+Sample parse8BitDoPro3BluetoothReport(std::span<const std::uint8_t> report);
+Sample parseDualShock4Report(std::span<const std::uint8_t> report, bool bluetooth);
 Sample parseDualSenseReport(std::span<const std::uint8_t> report, bool bluetooth);
 std::optional<Reading> windowsReading(std::optional<int> percent, std::optional<int> charging);
 

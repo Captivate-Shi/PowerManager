@@ -29,14 +29,25 @@ Windows 发现阶段已根据总线和硬件 ID 区分蓝牙、USB 与连接方�
 | VGN V98 Pro V3 2.4 GHz `258A:024F` | 匹配已报道的厂商通道 `FF02:0002`，按描述符处理 19 字节和带校验的 20 字节格式。无线应答需确认当前模式，0% 占位暂视为未知。19 字节路径有独立上游实测。USB 和接收器线路分开记录，缺少可验证的跨线路设备身份时可出现两条记录。 |
 | VGN V98 Pro V4 与其他 VGN 协议 | 先导出报告核对实际 VID/PID、版本与报文接口。V4 的 VIA 路径单独评估。蓝牙继续以 Windows 可用的电量为准。 |
 | Logitech LIGHTSPEED、Bolt、Unifying、部分 Nano | 已接入限定接收器表和 HID++ 2.0 的只读槽位轮询。匹配槽位和设备实体后才绑定读数。能够取得稳定的单元标识后进入自动监测。百分比支持声明明确时使用 `0x1004`，有 `0x1000` 时区分低分辨率档位、充满状态和未知值。HID++ 1.0 与 Centurion 另行适配。 |
-| Logitech G502 LIGHTSPEED | 匹配接收器中实际配对的鼠标型号后，`0x1001` 放电电压按 [Linux HID++ 参考曲线](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-logitech-hidpp.c)显示估算区间。保留毫伏值，充电中不套用放电曲线。G502 X PLUS 等仍走原生百分比路径。 |
-| 雷柏 VT3S 接收器 | 仅接入 `24AE:1411` 的已知 HID 报告，在唯一物理容器与匹配描述符上被动读取，不发送命令。依据[上游真机报告](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md#120-windows-report-length-proof-not-missed-notifications)，本应用仍需真机验收。不适用于其他雷柏键鼠。 |
+| Logitech 电压型设备，例如部分 G502 LIGHTSPEED | `0x1001` 可记下毫伏值供比对。G502 X PLUS 等上报原生百分比的型号走数字读数路径。不同厂商、电池或充电状态不共用一条电压曲线。 |
 
 型号和协议依据：[VGNKeyboardBattery](https://github.com/MuyuDada/VGNKeyboardBattery) · [wdbattery 的 V3 实测](https://github.com/RIVERCROFT111/wdbattery) · [Logitech 公共协议](https://github.com/Logitech/cpg-docs) · [Solaar 接收器表](https://github.com/pwr-Solaar/Solaar/blob/master/lib/logitech_receiver/base_usb.py) · [HaloBattery 协议与型号记录](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md)
 
 评估读数精度时，先核对设备声明的粒度，并与同一时刻厂商工具或原始报告对照。能获取剩余容量和当前充满容量时，可在确认是同一电池、单位相同、容量字段有效的前提下做比值。只有开路电压时需要型号和电池化学专用曲线，还要分离充电、负载和温度条件，并用多个实测容量点标定。把一次满电电压或厂商工具显示的满电数字定为 100% 只能移动显示刻度。当前 H5 保留原始百分比、档位或毫伏字段，避免跨型号误换算。
 
 用户反馈时建议分别采集唤醒、休眠和插拔充电线各一次。切换 USB、2.4 GHz 或蓝牙分别导出并另存一份，对照机身硬件版本及厂商读数。优先核对报告中的通道、固件修订号、报文长度、槽位、状态、错误码和电量来源。Windows 修订字段是系统能取得的描述符版本，有些设备不会暴露完整固件版本。
+
+## 兼容分支第二批
+
+| 设备 / 链路 | 当前读取方式 |
+| --- | --- |
+| G PRO Wireless、PRO X SUPERLIGHT、G502 LIGHTSPEED、G502 X PLUS 的指定有线 USB ID | 通过直连 HID++ 读取声明过的电量功能；只在有相同 Unit ID 时归并接收器与有线设备。不同代际不沿用 G502 LIGHTSPEED 电压估算。见 [Solaar 型号表](https://github.com/pwr-Solaar/Solaar/blob/master/lib/logitech_receiver/descriptors.py) 与 [libratbag G PRO Wireless](https://github.com/libratbag/libratbag/blob/master/data/devices/logitech-g-pro-wireless.device)。 |
+| DualShock 4 v1/v2、DualSense Edge | USB 和蓝牙分别识别，读取有效的原生 HID 报告，无需开启增强模式。DualShock 4 蓝牙完整包校验 CRC；设备只上报档位时保留区间。 |
+| 8BitDo Pro 3 | 只接 DInput 蓝牙的指定 ID，绑定游戏手柄 HID 集合被动读数，不推广到 USB、2.4 GHz 或其他代际。见 [HaloBattery 硬件证据](https://github.com/HeyOkay/HaloBattery/blob/15a73ac4d88435a771b0060b28171733a43dab06/providers/eightbitdo.py)。 |
+| SteelSeries Aerox 9 Wireless、狼蛛 AULA V9Pro+ | 只接匹配 USB 接收器、接口与报文的只读查询；百分比能用时进入正常监测。见 [Aerox 9 硬件报告](https://github.com/HeyOkay/HaloBattery/issues/79) 与 [AULA 上游报文](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md#aula-v9pro-320f22ba-24-ghz-receiver)。 |
+| 索尼 WH-1000XM4 | 已连接、已配对、物理容器唯一匹配时，Windows/BAS 无有效读数才尝试 [Sony V1 私有电量服务](https://github.com/marconvcm/sony-device-center#device-support)。单一工作任务、每设备至少间隔 60 秒。不使用通话音频配置、不向其他型号试发命令，不把延迟结果当实时数据。 |
+
+这些是接入路径与回归样本，不是本应用的真机验收声明。仍需核对连接方式、睡眠唤醒、充电状态和同型号并用，耳机还需检查播放、通话及多点连接。此批不包括 Switch/北通、OPPO Enco Clip2 或华为耳机。
 
 ## 可参考的开源实现
 

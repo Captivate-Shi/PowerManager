@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hid.hpp"
+#include "supported_mouse_battery.hpp"
 
 #include <algorithm>
 #include <cwctype>
@@ -9,8 +10,23 @@
 
 namespace pm {
 
+// Wired identities only. Never infer a mouse model from a receiver PID.
+constexpr const wchar_t* logitechUsbName(unsigned vid, unsigned pid)
+{
+    if (vid != 0x046d) return nullptr;
+    switch (pid) {
+    case 0xc088: return L"Logitech G PRO Wireless";
+    case 0xc08d: return L"G502 LIGHTSPEED Wireless Gaming Mouse";
+    case 0xc094: return L"Logitech PRO X SUPERLIGHT";
+    case 0xc095: return L"Logitech G502 X PLUS";
+    default: return nullptr;
+    }
+}
+
 inline std::optional<Transport> peripheralTransport(unsigned vid, unsigned pid)
 {
+    if (logitechUsbName(vid, pid)) return Transport::logitech_usb;
+    if (supportedMouse(vid, pid)) return Transport::supported_mouse_receiver;
     if (isRapooReceiver(vid, pid)) return Transport::rapoo_receiver;
     if (vid == 0x320f && pid == 0x5055) return Transport::vgn_usb;
     if (vid == 0x320f && pid == 0x5088) return Transport::vgn_receiver;

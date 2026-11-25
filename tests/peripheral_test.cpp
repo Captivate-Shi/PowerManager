@@ -11,6 +11,14 @@ int main()
     assert(peripheralTransport(0x258a, 0x024e) == Transport::vgn_v3_usb);
     assert(peripheralTransport(0x258a, 0x024f) == Transport::vgn_v3_receiver);
     assert(peripheralTransport(0x046d, 0xc547) == Transport::logitech_receiver);
+    for (const auto pid : {0xc088u, 0xc08du, 0xc094u, 0xc095u}) {
+        assert(peripheralTransport(0x046d, pid) == Transport::logitech_usb);
+        assert(!logitechUsbName(0x1234, pid));
+    }
+    assert(!logitechUsbName(0x046d, 0xc539));
+    assert(!logitechUsbName(0x046d, 0xc08b)); // Wired G502 HERO, not a battery device.
+    assert(logitechVoltageProfile(logitechUsbName(0x046d, 0xc08d)));
+    assert(!logitechVoltageProfile(logitechUsbName(0x046d, 0xc095)));
     assert(!peripheralTransport(0x1234, 0xc547));
     assert(!peripheralTransport(0x258a, 0x0250));
     assert(!peripheralTransport(0x046d, 0xc00e));

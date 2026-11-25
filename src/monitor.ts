@@ -19,7 +19,7 @@ function validReading(reading: Reading | null | undefined): reading is Reading {
   return !!reading && Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
     reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
     ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
-    ['hid', 'windows', 'ble', 'hid_voltage'].includes(reading.source);
+    ['hid', 'windows', 'ble', 'hid_voltage', 'bluetooth_vendor'].includes(reading.source);
 }
 
 // A local reading is only a last-known value. Never restore a live status from disk.

@@ -19,7 +19,7 @@ function selectFlags(value: Bag, keys: readonly string[]): Record<string, boolea
 }
 const statuses = new Set(['current', 'offline', 'no_radio_reply', 'busy', 'timeout', 'bad_report',
   'unavailable', 'basic_bluetooth', 'charging_error', 'stale', 'unreachable']);
-const batterySources = new Set(['hid', 'hid_voltage', 'windows', 'ble', 'ble-bas', 'xinput', 'wgi', 'gameinput']);
+const batterySources = new Set(['hid', 'hid_voltage', 'bluetooth_vendor', 'windows', 'ble', 'ble-bas', 'xinput', 'wgi', 'gameinput']);
 const power = new Set(['charging', 'discharging', 'full', 'unknown']);
 const gamepadStates = new Set(['ok', 'current', 'ready', 'unknown', 'not_available', 'unsupported', 'unavailable', 'no_battery', 'no_controller', 'not_connected', 'disconnected', 'wired', 'failed', 'error', 'access_denied', 'timeout', 'not_supported', 'not_attempted', 'api_unavailable', 'runtime_unavailable', 'invalid_report', 'no_report', 'sdk_headers_unavailable', 'enumeration_failed', 'activation_failed', 'string_error',
   'truncated', 'not_reported', 'api_error']);
@@ -31,7 +31,7 @@ function from(value: unknown, values: Set<string>) {
   return typeof value === 'string' && values.has(value) ? value : undefined;
 }
 const provider = (value: unknown) =>
-  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
+  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo|mouse|sony|8bitdo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
 // A diagnostic target is a short ephemeral label, never an enumerator ID.
 const target = (value: unknown) => typeof value === 'string' && /^[A-Z]{1,3}[1-9][0-9]{0,3}$/.test(value) ? value : undefined;
 const bleReasons = new Set(['candidate', 'not_bluetooth', 'invalid_container', 'platform_unavailable', 'interface_enumeration_failed',

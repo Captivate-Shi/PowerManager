@@ -52,6 +52,47 @@ int main()
     require(parseDualSenseVoltageReply(voltageReply).status == VoltageStatus::invalid_reply,
             "Invalid millivolt reading rejected");
 
+    std::array<std::uint8_t, 64> ds4usb{};
+    ds4usb[0] = 1;
+    ds4usb[30] = 0x05;
+    require(parseDualShock4Report(ds4usb, false).reading == Reading{50, 59, Power::discharging, 5},
+            "DS4 USB uses its own battery field and range");
+    ds4usb[30] = 0x1b;
+    require(parseDualShock4Report(ds4usb, false).reading == Reading{100, 100, Power::full, 11},
+            "DS4 USB full flag");
+    ds4usb[30] = 0x1e;
+    require(parseDualShock4Report(ds4usb, false).status == Status::charging_error, "DS4 charge error");
+    ds4usb[30] = 0x0c;
+    require(parseDualShock4Report(ds4usb, false).status == Status::bad_report, "DS4 reserved level rejected");
+    require(parseDualShock4Report(std::span(ds4usb).first(63), false).status == Status::bad_report,
+            "DS4 truncated USB rejected");
+    std::array<std::uint8_t, 80> ds4bt{};
+    ds4bt[0] = 1;
+    require(parseDualShock4Report(ds4bt, true).status == Status::basic_bluetooth,
+            "DS4 padded basic Bluetooth never becomes a reading");
+    ds4bt[0] = 0x11;
+    ds4bt[32] = 0x26;
+    ds4bt[74] = 0x96;
+    ds4bt[75] = 0xdc;
+    ds4bt[76] = 0x1a;
+    ds4bt[77] = 0xcf;
+    require(parseDualShock4Report(ds4bt, true).reading == Reading{60, 69, Power::discharging, 6},
+            "DS4 full Bluetooth uses shifted field and CRC; permit Windows padding");
+    ds4bt[32] ^= 1;
+    require(parseDualShock4Report(ds4bt, true).status == Status::bad_report, "DS4 Bluetooth CRC required");
+
+    std::array<std::uint8_t, 15> pro3{4, 15, 128, 127, 127, 128, 0, 0, 0, 0, 0, 0, 9, 96, 20};
+    require(parse8BitDoPro3BluetoothReport(pro3).reading == Reading{20, 20, Power::discharging, 20},
+            "Pro 3 captured DInput Bluetooth snapshot");
+    pro3[14] = 0x80 | 100;
+    require(parse8BitDoPro3BluetoothReport(pro3).reading == Reading{100, 100, Power::charging, 100},
+            "Pro 3 preserves the charge flag independently of percent");
+    pro3[14] = 0;
+    require(!parse8BitDoPro3BluetoothReport(pro3).reading, "Pro 3 padded zero ignored");
+    pro3[14] = 101;
+    require(!parse8BitDoPro3BluetoothReport(pro3).reading, "Pro 3 impossible percent rejected");
+    require(!parse8BitDoPro3BluetoothReport(std::span(pro3).first(14)).reading, "Pro 3 truncated report rejected");
+
     auto razer = makeRazerQuery();
     require(razer[2] == 0x1f && razer[7] == 0x07 && razer[8] == 0x80 && razer[89] == 0x85,
             "Razer request framing");
