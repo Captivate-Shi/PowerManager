@@ -338,6 +338,7 @@ std::optional<rfcomm_battery::Model> vendorHeadphone(const FoundDevice& device)
     if (!device.connected || !device.knownBluetooth) return {};
     if (device.name == sony_headphone::model) return rfcomm_battery::Model::sonyXm4;
     if (oppo_headphone::isClip2(device.name)) return rfcomm_battery::Model::oppoClip2;
+    if (huawei_headphone::isFreeClip2(device.name)) return rfcomm_battery::Model::huaweiFreeClip2;
     return {};
 }
 
@@ -644,8 +645,10 @@ private:
             const auto& id = device.id;
             json value = nullptr;
             const auto vendorModel = vendorDevices.find(container);
-            const bool oppo = vendorModel != vendorDevices.end() &&
-                vendorModel->second == rfcomm_battery::Model::oppoClip2;
+            const bool sony = vendorModel != vendorDevices.end() &&
+                vendorModel->second == rfcomm_battery::Model::sonyXm4;
+            const bool huawei = vendorModel != vendorDevices.end() &&
+                vendorModel->second == rfcomm_battery::Model::huaweiFreeClip2;
             const bool completed = vendorCompleted && vendorCompleted->first == container;
             if (shouldRead(id) || completed) {
                 const auto started = std::chrono::steady_clock::now();
@@ -676,14 +679,15 @@ private:
                 const bool connectedWithoutWindowsReading = windowsDetail == WindowsBatteryDetail::missingProperty ||
                     windowsDetail == WindowsBatteryDetail::invalidPercent;
                 if (vendorModel != vendorDevices.end() && !measured.reading &&
-                    (oppo ? connectedWithoutWindowsReading : windowsDetail != WindowsBatteryDetail::disconnected)) {
+                    (sony ? windowsDetail != WindowsBatteryDetail::disconnected : connectedWithoutWindowsReading)) {
                     if (completed) {
                         const auto& fresh = vendorCompleted->second;
                         Sample vendor{Status::unavailable};
                         if (fresh.battery) {
                             const int level = static_cast<int>(fresh.battery->percent);
                             vendor = {Status::current, Reading{level, level,
-                                fresh.battery->charging ? Power::charging : Power::discharging, level,
+                                fresh.battery->charging.has_value()
+                                    ? (*fresh.battery->charging ? Power::charging : Power::discharging) : Power::unknown, level,
                                 ReadingSource::bluetooth_vendor}};
                         }
                         value = sample(vendor);
@@ -695,12 +699,13 @@ private:
                             case R::disconnected: return "receiver_disconnected";
                             case R::ambiguous: return "receiver_ambiguous";
                             case R::service_unavailable: return "receiver_service_unavailable";
+                            case R::busy: return "receiver_busy";
                             case R::timeout: return "receiver_timeout";
                             case R::protocol_invalid: return "receiver_protocol_invalid";
                             default: return "receiver_unavailable";
                             }
                         }();
-                        record(diagnostic, value, started, target, oppo ? "oppo-elnk" : "sony-mdr-v1", reason);
+                        record(diagnostic, value, started, target, huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : "oppo-elnk", reason);
                     } else {
                         // Sampling is asynchronous and capped at one private
                         // connection in the process; cached values are never republished.

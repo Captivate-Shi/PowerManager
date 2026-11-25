@@ -101,3 +101,9 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 常规 Windows / BLE 电量没有读数时，可以对已配对、已连接且绑定同一物理容器的 Clip2，查询其专有 ELNK RFCOMM 服务。只发两条查询：先确认耳机返回产品 ID `06E010`，再读电量。没有通用串口回退、不占用通话协议、不改耳机设置。若只收到充电盒或占位 0，保留未知；若读到一只或两只耳机，状态行采用当次有效耳机读数的最低值。本批没有独立左右耳／充电盒 UI。
 
 [OPPO 型号规格](https://www.oppo.com/au/accessories/enco-clip2-open-earbuds/specs/) · [上游 Windows 型号配置](https://github.com/TIANLI0/EncoDeck/blob/main/docs/COMPATIBILITY.md#oppo--一加--realme--dizo) · [上游报文和休眠行为](https://github.com/MageshwarSV/QuickBuds/blob/main/docs/PROTOCOL.md#7-battery--0x8106-and-push-01) 。这些是协议和实现依据，不是 Clip2 的 Windows 真机验收；仍需对照 HeyMelody 读数并验证音乐与通话同时使用。
+
+## 华为 FreeClip 2
+
+当 Windows 与标准蓝牙电量都无读数时，仅对已经配对并连接、同一 Windows 设备容器、型号名匹配且蓝牙 SIG 身份为 `027D:4113` 的设备，按 SDP 公布的 SPP 服务发一次电量查询。通道忙、无响应或格式无效时关闭连接，不抢占，不修改音频或耳机设置。双耳都有效时采用较低值，不用充电盒代替耳机；暂不推断充电状态。
+
+协议依据：[FreeClip 2 同型号 Windows 真机记录](https://github.com/whisperers26/BatteryInfo/blob/main/docs/protocols/huawei.md)。余电仍需用真机对照电量，并验证与音乐、通话及其他管理软件的共存。

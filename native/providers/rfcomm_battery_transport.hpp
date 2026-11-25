@@ -1,5 +1,6 @@
 #pragma once
 
+#include "huawei_headphone_battery.hpp"
 #include "oppo_headphone_battery.hpp"
 #include "sony_headphone_battery.hpp"
 
@@ -7,11 +8,11 @@
 
 namespace pm::rfcomm_battery {
 
-enum class Status { success, unknown_endpoint, disconnected, ambiguous, service_unavailable, timeout, protocol_invalid, system_error };
+enum class Status { success, unknown_endpoint, disconnected, ambiguous, service_unavailable, busy, timeout, protocol_invalid, system_error };
 
-enum class Model { sonyXm4, oppoClip2 };
+enum class Model { sonyXm4, oppoClip2, huaweiFreeClip2 };
 
-struct Battery { unsigned percent; bool charging; };
+struct Battery { unsigned percent; std::optional<bool> charging; };
 
 struct Result {
     Status status;

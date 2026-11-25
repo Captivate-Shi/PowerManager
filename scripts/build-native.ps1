@@ -41,7 +41,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test compilation failed' }
         & .native/peripheral-test.exe
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test failed' }
-        foreach ($suite in @('ble_battery', 'gamepad_battery', 'default_peripheral', 'rapoo_battery', 'supported_mouse_battery', 'sony_headphone_battery', 'oppo_headphone_battery')) {
+        foreach ($suite in @('ble_battery', 'gamepad_battery', 'default_peripheral', 'rapoo_battery', 'supported_mouse_battery', 'sony_headphone_battery', 'oppo_headphone_battery', 'huawei_headphone_battery')) {
             & $compiler @flags -Inative/providers "tests/${suite}_test.cpp" -o ".native/${suite}_test.exe"
             if ($LASTEXITCODE -ne 0) { throw "$suite test compilation failed" }
             & ".native/${suite}_test.exe"
