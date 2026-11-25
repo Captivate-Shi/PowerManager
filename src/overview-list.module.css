@@ -45,6 +45,16 @@
 }
 .entry:has(> [data-liquid-selection]) { position: relative; }
 .entry:has(> [data-liquid-selection]) > button { position: relative; z-index: 1; }
+/* Selection spans the row, including its separate detail action. Keep the
+   primary keyboard focus on that same perimeter instead of outlining its cell. */
+.entry > .selectRow:focus-visible { outline: none; }
+.entry:has(> .selectRow:focus-visible):not(:has(> [data-liquid-selection])),
+.entry:has(> .selectRow:focus-visible) > [data-liquid-selection] {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.entry > .details:focus-visible { outline-offset: -2px; }
+
 .entry .selectRow, .entry .selectRow[aria-pressed="true"] {
   background: transparent;
   box-shadow: none;

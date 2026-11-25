@@ -1124,15 +1124,16 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
   return <div className={preferences.settings} data-page="settings">
     <nav className={preferences.settingsNav} aria-label="设置分类">{[['appearance', '外观'], ['runtime', '运行与托盘'], ['history', '记录'], ['diagnostics', '诊断']].map(([id, title]) =>
       <button type="button" key={id} aria-controls={'settings-' + id} aria-current={active === id ? 'location' : undefined} onClick={() => {
-        const heading = document.querySelector<HTMLElement>('#settings-' + id + ' h2');
-        if (!heading) return;
+        const pane = sections.current;
+        const heading = pane?.querySelector<HTMLElement>('#settings-' + id + ' h2');
+        if (!pane || !heading) return;
         requested.current = id;
         position.current.category = id;
         setActive(id);
         heading.focus({ preventScroll: true });
-        heading.scrollIntoView({
-          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start', inline: 'nearest',
-        });
+        const top = pane.scrollTop + heading.getBoundingClientRect().top -
+          pane.getBoundingClientRect().top - pane.clientTop - (parseFloat(getComputedStyle(pane).scrollPaddingTop) || 0);
+        pane.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
       }}>{title}</button>)}</nav>
     <div className={preferences.settingsSections} ref={sections} data-scroll-pane="" role="region" aria-label="设置内容" tabIndex={0}>
       <section id="settings-appearance" className={preferences.appearance} aria-labelledby="appearance-heading">

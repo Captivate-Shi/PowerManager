@@ -635,6 +635,12 @@
   display: flex;
   flex-direction: column;
 }
+/* The settings pane scrolls inside the first track; the app footer owns
+   its own viewport-sized track and never becomes part of the scroll content. */
+.shell[data-view="settings"] > .content {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
 .pageBody > :is(.heading, .notice, .deviceToolbar, .fullHeader) { flex: none; }
 .shell[data-view]:not([data-view="settings"]) .heading { margin-bottom: clamp(5px, 2vh, 22px); }
 .shell[data-view] :is(.heading[data-page-heading="devices"], .heading[data-page-heading="alerts"], .heading[data-page-heading="history"]) h1 {
