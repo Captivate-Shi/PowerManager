@@ -10,6 +10,7 @@ import s from './panel.module.css';
 import look from './scene.module.css';
 import listLook from './overview-list.module.css';
 import { allowOverviewMotion, OverviewModeMotion } from './overview-mode-motion';
+import { LiquidSelection } from './liquid-selection';
 import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
 import { DeviceThreshold } from './device-threshold';
@@ -717,6 +718,7 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
           const facts = overviewListFacts(device, state, inventory === 'ready');
           return <div key={device.id} className={listLook.entry} data-mode-row=""
           data-list-selected={mode === 'list' && device.id === featured?.id ? '' : undefined}>
+          {device.id === featured?.id && <LiquidSelection />}
           <button className={look.railRow + ' ' + listLook.selectRow} aria-label={device.name}
             aria-description={mode === 'list' ? facts.description : undefined}
             aria-pressed={device.id === featured?.id} disabled={initial}
@@ -792,7 +794,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, sort, setSor
             const alert = level(device, state);
             return <tr key={device.id} data-selected={device.id === detail?.id}
             onClick={() => pick(device.id)} onDoubleClick={() => openPreview(device)}>
-            <td><button className={s.deviceName} type="button" aria-pressed={device.id === detail?.id} title={device.name}
+            <td>{device.id === detail?.id && <LiquidSelection />}<button className={s.deviceName} type="button" aria-pressed={device.id === detail?.id} title={device.name}
               aria-description="选择后在右侧预览，可用查看详情按钮打开完整页面"
               onClick={event => { event.stopPropagation(); pick(device.id); }}>
               <Art device={device} /><b>{device.name}</b>
@@ -926,7 +928,9 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
       {devices.map(device => {
         const severityValue = level(device, state);
         const status = state.alerts[device.id];
-        return <article className={preferences.chargeDevice} key={device.id} data-level={severityValue}>
+        return <article className={preferences.chargeDevice} key={device.id} data-level={severityValue}
+          data-preview-device={previewTarget?.id === device.id || undefined}>
+          {previewTarget?.id === device.id && <LiquidSelection kind="card" />}
           <div className={preferences.deviceImage}><Art device={device} variant="hero" /></div>
           <div className={preferences.deviceInfo}><button className={s.linkTitle} aria-label={'查看详情 · ' + device.name}
             onClick={event => open(device.id, event.currentTarget.closest('article') ?? undefined)}>{device.name}<ChevronRight size={14} aria-hidden="true" /></button>

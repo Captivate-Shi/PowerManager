@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { LiquidSelection } from './liquid-selection';
 import scene from './scene.module.css';
 
 type Target = { x: number; y: number; width: number; height: number };
@@ -62,7 +63,7 @@ export function JellyNav({ current, children }: { current: string; children: Rea
   }, [current]);
 
   return <nav ref={nav} className={scene.jellyNav} aria-label="主导航">
-    <span className={scene.jellyGlass} ref={pill} data-nav-indicator="" aria-hidden="true" />
+    <span className={scene.jellyGlass} ref={pill} data-nav-indicator="" aria-hidden="true"><LiquidSelection kind="tab" /></span>
     {children}
   </nav>;
 }
