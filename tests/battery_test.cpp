@@ -33,6 +33,17 @@ int main()
     static_assert(!razerProBatteryCollection(0x1532, 0x0296, 2, 1, 6, 91));
     static_assert(!razerProBatteryCollection(0x1532, 0x0296, 1, 1, 2, 91));
     static_assert(!razerProBatteryCollection(0x1532, 0x0094, 1, 1, 2, 91));
+    static_assert(razerKeyboardDescriptorCandidate(0x1532, 0x0290, 2, 91));
+    static_assert(razerKeyboardDescriptorCandidate(0x1532, 0x02d5, 2, 91));
+    static_assert(razerKeyboardDescriptorCandidate(0x1532, 0x0271, 3, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x0271, 2, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x0290, 255, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x02d5, 2, 90));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1533, 0x02d5, 2, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x0292, 2, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x0258, 3, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x02d7, 2, 91));
+    static_assert(!razerKeyboardDescriptorCandidate(0x1532, 0x0296, 2, 91));
     static_assert(!razerProBatteryCollection(0x1532, 0x0290, 2, 1, 2, 91));
     static_assert(!razerProBatteryCollection(0x1532, 0x0271, 3, 1, 2, 91));
     static_assert(!razerProBatteryCollection(0x1532, 0x02d5, 2, 1, 2, 91));

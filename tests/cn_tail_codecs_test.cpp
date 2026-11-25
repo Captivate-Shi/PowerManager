@@ -5,6 +5,11 @@
 int main()
 {
     using namespace pm;
+    static_assert(mchoseG87CandidateCollection(0x41e4, 0x2001, 1, 0xff02, 2, 20, 20));
+    static_assert(!mchoseG87CandidateCollection(0x41e4, 0x2001, 1, 0xff04, 2, 20, 20));
+    static_assert(!mchoseG87CandidateCollection(0x41e4, 0x2001, 0, 0xff02, 2, 20, 20));
+    static_assert(!mchoseG87CandidateCollection(0x41e4, 0x2001, 1, 0xff02, 2, 20, 0));
+    static_assert(!mchoseG87CandidateCollection(0x3837, 0x3033, 1, 0xff02, 2, 20, 20));
     constexpr auto product = L"AULA F87ProV2D Dongle";
     static_assert(aulaF87ProV2DCollection(0xc45, 0xfefe, 3, 0xff60, 0x61, 33, 33, product, true));
     static_assert(!aulaF87ProV2DCollection(0xc46, 0xfefe, 3, 0xff60, 0x61, 33, 33, product, true));

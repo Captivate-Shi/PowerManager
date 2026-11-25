@@ -187,6 +187,7 @@ std::optional<Transport> candidate(const std::wstring& path)
     if (vid == 0x0c45 && pid == 0xfefe) return Transport::aula_f87v2d_receiver;
     if (vid == 0x3837 && pid == 0x4018) return Transport::mchose_a7v2pro_usb;
     if (vid == 0x0c45 && pid == 0xfefc) return Transport::ajazz_mk87pro_receiver;
+    if (vid == 0x41e4 && pid == 0x2001) return Transport::mchose_g87_candidate;
     if (vid == 0x260d && pid == 0x1074) return Transport::dareu_em901x_inventory;
     if (vid == rog_keyboard::vendor && (pid == rog_keyboard::azothReceiver || pid == rog_keyboard::omniReceiver))
         return Transport::rog_keyboard_receiver;
@@ -244,13 +245,13 @@ bool cnReceiver(Transport t)
 }
 
 template<class Caps, class GetCaps>
-bool onlyReportZero(USHORT count, PHIDP_PREPARSED_DATA prep, HIDP_REPORT_TYPE type, GetCaps get)
+bool onlyReportId(USHORT count, PHIDP_PREPARSED_DATA prep, HIDP_REPORT_TYPE type, GetCaps get, unsigned id = 0)
 {
     if (!count) return true;
     std::array<Caps,64> caps{};
     const auto n = count;
     if (n > caps.size() || get(type, caps.data(), &count, prep) != HIDP_STATUS_SUCCESS || count != n) return false;
-    return std::ranges::all_of(std::span(caps).first(count), [](const auto& cap) { return cap.ReportID == 0; });
+    return std::ranges::all_of(std::span(caps).first(count), [id](const auto& cap) { return cap.ReportID == id; });
 }
 
 bool cnDescriptor(HANDLE file, Transport t, unsigned iface, const Collection* expected = nullptr)
@@ -281,6 +282,17 @@ bool cnDescriptor(HANDLE file, Transport t, unsigned iface, const Collection* ex
             HidD_FreePreparsedData(prep);
             return valid;
         }
+        if (t == Transport::mchose_g87_candidate) {
+            valid = mchoseG87CandidateCollection(a.VendorID, a.ProductID, iface, caps.UsagePage, caps.Usage, in, out)
+                && (caps.NumberInputValueCaps || caps.NumberInputButtonCaps)
+                && (caps.NumberOutputValueCaps || caps.NumberOutputButtonCaps)
+                && onlyReportId<HIDP_BUTTON_CAPS>(caps.NumberInputButtonCaps, prep, HidP_Input, HidP_GetButtonCaps, 0x13)
+                && onlyReportId<HIDP_VALUE_CAPS>(caps.NumberInputValueCaps, prep, HidP_Input, HidP_GetValueCaps, 0x13)
+                && onlyReportId<HIDP_BUTTON_CAPS>(caps.NumberOutputButtonCaps, prep, HidP_Output, HidP_GetButtonCaps, 0x13)
+                && onlyReportId<HIDP_VALUE_CAPS>(caps.NumberOutputValueCaps, prep, HidP_Output, HidP_GetValueCaps, 0x13);
+            HidD_FreePreparsedData(prep);
+            return valid;
+        }
         if (t == Transport::ajazz_mk87pro_receiver)
             valid = ajazzMk87ProCollection(a.VendorID, a.ProductID, caps.UsagePage, caps.Usage, in, out, name);
         else if (t == Transport::mchose_g3v2_receiver)
@@ -291,10 +303,10 @@ bool cnDescriptor(HANDLE file, Transport t, unsigned iface, const Collection* ex
             valid = aulaF87ProV2DCollection(a.VendorID, a.ProductID, static_cast<int>(iface), caps.UsagePage, caps.Usage, in, out, name, true);
         valid = valid && (caps.NumberInputValueCaps || caps.NumberInputButtonCaps) &&
             (caps.NumberOutputValueCaps || caps.NumberOutputButtonCaps) &&
-            onlyReportZero<HIDP_BUTTON_CAPS>(caps.NumberInputButtonCaps, prep, HidP_Input, HidP_GetButtonCaps) &&
-            onlyReportZero<HIDP_VALUE_CAPS>(caps.NumberInputValueCaps, prep, HidP_Input, HidP_GetValueCaps) &&
-            onlyReportZero<HIDP_BUTTON_CAPS>(caps.NumberOutputButtonCaps, prep, HidP_Output, HidP_GetButtonCaps) &&
-            onlyReportZero<HIDP_VALUE_CAPS>(caps.NumberOutputValueCaps, prep, HidP_Output, HidP_GetValueCaps);
+            onlyReportId<HIDP_BUTTON_CAPS>(caps.NumberInputButtonCaps, prep, HidP_Input, HidP_GetButtonCaps) &&
+            onlyReportId<HIDP_VALUE_CAPS>(caps.NumberInputValueCaps, prep, HidP_Input, HidP_GetValueCaps) &&
+            onlyReportId<HIDP_BUTTON_CAPS>(caps.NumberOutputButtonCaps, prep, HidP_Output, HidP_GetButtonCaps) &&
+            onlyReportId<HIDP_VALUE_CAPS>(caps.NumberOutputValueCaps, prep, HidP_Output, HidP_GetValueCaps);
     }
     HidD_FreePreparsedData(prep);
     return valid;
@@ -1079,6 +1091,7 @@ const wchar_t* transportName(Transport transport)
     case Transport::razer_pro_receiver:
     case Transport::razer_receiver: return L"2.4 GHz";
     case Transport::razer_shared_keyboard: return L"2.4 GHz 共享接收器";
+    case Transport::razer_keyboard_inventory_candidate: return L"2.4 GHz";
     case Transport::sony_gamepad_usb:
     case Transport::dualsense_usb: return L"USB";
     case Transport::switch_pro_bluetooth:
@@ -1099,6 +1112,7 @@ const wchar_t* transportName(Transport transport)
     case Transport::mchose_g3v2_receiver:
     case Transport::aula_sc580_receiver:
     case Transport::ajazz_mk87pro_receiver:
+    case Transport::mchose_g87_candidate:
     case Transport::aula_f87v2d_receiver:
     case Transport::dareu_em901x_inventory:
     case Transport::gamesir_super_nova_receiver:
@@ -1114,6 +1128,7 @@ const wchar_t* providerName(Transport transport)
     case Transport::razer_receiver:
     case Transport::razer_shared_keyboard: return L"razer-1532-00b8";
     case Transport::razer_pro_receiver: return L"razer-pro-receiver";
+    case Transport::razer_keyboard_inventory_candidate: return L"razer-keyboard-candidate";
     case Transport::sony_gamepad_usb: return L"sony-gamepad-usb";
     case Transport::sony_gamepad_bluetooth: return L"sony-gamepad-bluetooth";
     case Transport::switch_pro_bluetooth: return L"nintendo-switch-pro-bluetooth";
@@ -1135,6 +1150,7 @@ const wchar_t* providerName(Transport transport)
     case Transport::aula_f87v2d_receiver: return L"aula-f87v2d";
     case Transport::mchose_a7v2pro_usb: return L"mchose-a7v2pro-usb";
     case Transport::ajazz_mk87pro_receiver: return L"ajazz-mk87pro-candidate";
+    case Transport::mchose_g87_candidate: return L"mchose-g87-candidate";
     case Transport::dareu_em901x_inventory: return L"dareu-em901x-cache-unverified";
     case Transport::gamesir_super_nova_receiver: return L"gamesir-sapjoy";
     case Transport::supported_mouse_receiver: return L"mouse-vendor-hid";
@@ -1285,6 +1301,34 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if (inventory) {
             const auto interfaceNumber = hexId(normalized, L"&mi_", 2);
             auto reportedProvider = transport;
+            // Inventory-only: absent from candidate(), so these descriptors
+            // never introduce a device row, polling or feature I/O.
+            if (!transport && info.valid() && haveCaps && attributes.VendorID == vid &&
+                attributes.ProductID == pid && hexId(normalized, L"vid_", 4) == vid &&
+                hexId(normalized, L"pid_", 4) == pid &&
+                razerKeyboardDescriptorCandidate(vid, pid, interfaceNumber.value_or(255), caps.FeatureReportByteLength)) {
+                bool physical = false;
+                DEVINST node = devInfo.DevInst;
+                for (int depth = 0; depth < 9; ++depth) {
+                    const auto id = nodeId(node);
+                    if (id.starts_with(L"usb\\vid_") && id.find(L"&mi_") == std::wstring::npos &&
+                        hexId(id, L"vid_", 4) == vid && hexId(id, L"pid_", 4) == pid) {
+                        physical = true;
+                        break;
+                    }
+                    DEVINST parent{};
+                    if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS) break;
+                    node = parent;
+                }
+                PHIDP_PREPARSED_DATA prep{};
+                if (physical && HidD_GetPreparsedData(info.value, &prep)) {
+                    std::array<char, 91> feature{};
+                    if (HidP_InitializeReportForID(HidP_Feature, 0, prep, feature.data(),
+                        static_cast<ULONG>(feature.size())) == HIDP_STATUS_SUCCESS)
+                        reportedProvider = Transport::razer_keyboard_inventory_candidate;
+                    HidD_FreePreparsedData(prep);
+                }
+            }
             if (rzPro && !rzExactCollection()) reportedProvider.reset();
             if ((atkUsb || atkCandidate) && (!info.valid() || !atkDescriptor(info.value, pid)))
                 reportedProvider.reset();
@@ -1294,7 +1338,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                   (caps.UsagePage == 0xff02 && caps.Usage == 2 && caps.FeatureReportByteLength == 17))))
                 reportedProvider.reset();
             if ((transport == Transport::aula_f87v2d_receiver || transport == Transport::mchose_a7v2pro_usb ||
-                 transport == Transport::ajazz_mk87pro_receiver) &&
+                 transport == Transport::ajazz_mk87pro_receiver || transport == Transport::mchose_g87_candidate) &&
                 (!info.valid() || !cnDescriptor(info.value, *transport, interfaceNumber.value_or(255))))
                 reportedProvider.reset();
             inventory->push_back({vid, pid, attributes.VersionNumber, caps.UsagePage, caps.Usage,
@@ -1306,7 +1350,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             (peripheralTransport(vid, pid) != transport || !haveCaps)) continue;
         if (*transport == Transport::rapoo_receiver && !isRapooReceiver(vid, pid)) continue;
         if (*transport == Transport::dareu_em901x_inventory || *transport == Transport::ajazz_mk87pro_receiver ||
-            atkCandidate) continue;
+            *transport == Transport::mchose_g87_candidate || atkCandidate) continue;
         const bool cn = cnReceiver(*transport);
         const bool superNova = *transport == Transport::gamesir_super_nova_receiver;
         if (cn || superNova || atkUsb || *transport == Transport::supported_mouse_receiver) {

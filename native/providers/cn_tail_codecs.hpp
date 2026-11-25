@@ -76,6 +76,15 @@ constexpr bool ajazzMk87ProCollection(unsigned vid, unsigned pid, unsigned page,
         product == L"HS USB Dongle";
 }
 
+// Shared BY receiver: identifies only a diagnostic collection, never a paired
+// keyboard. Its G87 battery reply can be cached across sleep and unplugging.
+constexpr bool mchoseG87CandidateCollection(unsigned vid, unsigned pid, unsigned iface,
+    unsigned page, unsigned usage, unsigned inputLength, unsigned outputLength)
+{
+    return vid == 0x41e4 && pid == 0x2001 && iface == 1 && page == 0xff02 && usage == 2 &&
+        inputLength == 20 && outputLength == 20;
+}
+
 // Inventory label only. The receiver can answer successfully with a cached
 // level after the mouse is turned off. A matching report is not live evidence.
 constexpr bool isDareuEm901xReceiver(unsigned vid, unsigned pid)

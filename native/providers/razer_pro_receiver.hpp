@@ -23,6 +23,24 @@ constexpr bool razerBatch13Product(unsigned vid, unsigned pid, std::wstring_view
     return name == L"orochi v2" || name == L"razer orochi v2";
 }
 
+// OpenRazer documents the receiver USB interface for its battery command.
+// This matches only enough metadata to flag a candidate in diagnostics;
+// it does not establish which Windows top-level collection will answer.
+constexpr bool razerKeyboardDescriptorCandidate(unsigned vid, unsigned pid, unsigned interfaceNumber,
+                                                 unsigned featureLength)
+{
+    if (vid != 0x1532 || featureLength != 91) return false;
+    switch (pid) {
+    case 0x0290: // DeathStalker V2 Pro full-size receiver
+    case 0x02d5: // BlackWidow V4 Tenkeyless HyperSpeed receiver
+        return interfaceNumber == 2;
+    case 0x0271: // BlackWidow V3 Mini HyperSpeed receiver
+        return interfaceNumber == 3;
+    default:
+        return false;
+    }
+}
+
 constexpr const wchar_t* razerProReceiverName(unsigned vid, unsigned pid)
 {
     if (vid != 0x1532) return nullptr;

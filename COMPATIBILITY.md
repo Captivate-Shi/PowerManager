@@ -190,3 +190,9 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 | 雷柏 VT3S MAX / 迈从 G87 | `24AE:1421` 仅从指定集合被动监听 19 字节无线在线报文，不主动查询。迈从 G87 的接收器可能在休眠时长期返回旧电量，查询会话可能与 M HUB 互斥，继续待接入。 [VT3S MAX 设备报告](https://github.com/wushuai0802/myfinder-device-battery/issues/86) · [G87 休眠缓存实测](https://github.com/evren-oct/vigil-watt/blob/main/docs/hardware/brands/mchose.md) |
 
 本批新增路径均需余电实物验收。Xbox 的三款 × 两种连接仅完成接口核对与[验证方案](docs/xbox-battery-validation.md)，不启用新采集。
+
+## 第 14 批：剩余 P0 取证入口
+
+[18 条 P0 真机清单](docs/p0-hardware-validation.md)给出每条的证据缺口和复测方式。雷蛇三款未启用的键盘和迈从 G87 只增加匹配描述符的诊断候选，不发主动命令。ATK V75X 无线继续只做诊断；Xbox 的六条连接不加入默认读取。
+
+另有 [Xbox 手工验证探针](tools/xbox-probe/README.md)，仅在测试机手动运行；不新增应用依赖或安装器内容。
