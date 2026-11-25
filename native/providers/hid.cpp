@@ -2198,7 +2198,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
         const auto canRequestFull = [&](const Collection& lane) {
             return dualSenseFullReportEligible(device.vid, device.pid, bluetooth, lane.page, lane.usage,
                 lane.inputLength, lane.outputLength, result) &&
-                lane.path.find(L"{00001124-0000-1000-8000-00805f9b34fb}") != std::wstring::npos;
+                lower(lane.path).find(L"{00001124-0000-1000-8000-00805f9b34fb}") != std::wstring::npos;
         };
         // Only the single physical Sony Bluetooth gamepad lane that actually
         // sent a basic report is eligible. Throttle even denied/timed-out I/O.
