@@ -266,6 +266,22 @@ int main()
     bluetooth[54] ^= 1;
     require(parseDualSenseReport(bluetooth, true).status == Status::bad_report, "DualSense Bluetooth CRC");
 
+    // Reproduce the status bytes observed on the same controller before and
+    // after unplugging. These are minimal Bluetooth frames with valid CRCs.
+    std::array<std::uint8_t, 78> observed{};
+    observed[0] = 0x31;
+    const auto setObserved = [&](std::uint8_t byte, std::array<std::uint8_t, 4> crc) {
+        observed[54] = byte;
+        for (unsigned i = 0; i < crc.size(); ++i) observed[74 + i] = crc[i];
+        return parseDualSenseReport(observed, true);
+    };
+    const auto charged = setObserved(0x28, {0x24, 0xd7, 0xbb, 0x9b});
+    const auto unplugged = setObserved(0x08, {0x2f, 0x87, 0x47, 0x81});
+    require(charged.status == Status::current && charged.detail == 0x28 &&
+            charged.reading == Reading{80, 89, Power::full, 8}, "Bluetooth charge complete at gauge bucket 8");
+    require(unplugged.status == Status::current && unplugged.detail == 0x08 &&
+            unplugged.reading == Reading{80, 89, Power::discharging, 8}, "Bluetooth unplug changes only power state");
+
     const Thresholds thresholds;
     AlertState state;
     require(state.observe(level(20, 29), thresholds, true) == Alert::none, "Use range upper bound");

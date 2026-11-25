@@ -243,6 +243,7 @@
 .rangeDash { font-size: .76em; font-weight: 450; margin-inline: .07em; color: var(--muted); }
 .heroData .meter { display: grid; grid-template-columns: auto minmax(0, 120px); align-items: center; gap: clamp(6px, .8vw, 12px); }
 .heroData .meter strong { width: 5.8ch; font-size: clamp(21px, 2.05vw, 33px); }
+.heroData .meter[data-charge-complete] strong { width: auto; grid-column: 1 / -1; }
 .heroData .meter :is(.track, .progress) { margin-top: 0; }
 .track { margin-top: 14px; }
 .progress { position: relative; height: 5px; width: 100%; border-radius: 8px; isolation: isolate; }

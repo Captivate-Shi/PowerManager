@@ -5,7 +5,7 @@ import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, C
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { defaults, historyRanges, inventoryState, isConnected, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -312,7 +312,7 @@ function overviewListFacts(device: Device, state: Snapshot, live: boolean) {
   const hasConnection = !!device.connection && isConnected(device);
   return {
     threshold, limit, readTime, time, power, powerLabel, powerDescription, hasConnection,
-    description: [(device.status === 'current' ? '电量：' : '上次电量：') + readingLabel(device.reading),
+    description: [isLiveDualSenseFull(device) ? '已充满' : (device.status === 'current' ? '电量：' : '上次电量：') + readingLabel(device.reading),
       limit, time, powerDescription, ...(hasConnection ? ['连接方式：' + device.connection] : [])].join('；'),
   };
 }
@@ -637,7 +637,7 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
         <div className={look.heroMeta}>
           <div className={look.heroState} data-tone={tone(featured, state)}>
             {phase === 'refreshing' && featured.status === 'current' ? <span role="status">正在更新 · 保留上次读数</span> :
-              <><i aria-hidden="true" /><span>{batteryState(featured, state)}</span>
+              !isLiveDualSenseFull(featured) && <><i aria-hidden="true" /><span>{batteryState(featured, state)}</span>
                 {featured.status !== 'current' && featured.reading && <small>上次电量 · {dateLabel(featured.lastRead)}</small>}</>}
           </div>
           <button className={look.ghost} onClick={() => openFeatured(featured)}>
@@ -729,7 +729,7 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
             <div className={look.railInfo + ' ' + listLook.sharedInfo}>
               <div className={look.railName}><b>{device.name}</b></div>
               <strong className={look.railValue} data-tone={tone(device, state)}>{device.status !== 'current' && device.reading &&
-                <small className={look.lastReading}>上次 </small>}{readingLabel(device.reading)}</strong>
+                <small className={look.lastReading}>上次 </small>}{isLiveDualSenseFull(device) ? '已充满' : readingLabel(device.reading)}</strong>
               <span className={listLook.modeExtra} data-mode-extra="" aria-hidden={mode !== 'list' || undefined}>
                 <span data-list-field="threshold" title={facts.limit}><Bell aria-hidden="true" /><span>{facts.threshold}%</span></span>
                 <span data-list-field="last-read" title={facts.time}><Clock aria-hidden="true" /><span>{facts.readTime ?? '—'}</span></span>
@@ -801,7 +801,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, sort, setSor
               <Art device={device} /><b>{device.name}</b>
             </button></td>
             <td>{device.status === 'stale' ? '待确认' : <Connection device={device} />}</td>
-            <td className={s.rowReading} data-tone={tone(device, state)}><strong>{readingLabel(device.reading)}</strong>
+            <td className={s.rowReading} data-tone={tone(device, state)}><strong>{isLiveDualSenseFull(device) ? '已充满' : readingLabel(device.reading)}</strong>
               {alert && <small className={s.compactReadingStatus}>{alert === 'critical' ? '电量告急' : '低电量'}</small>}
               {device.status !== 'current' && device.reading && <small title={dateLabel(device.lastRead)}>上次 · {dateLabel(device.lastRead)}</small>}</td>
             <td><StatusTag device={device} state={state} /></td>
@@ -836,9 +836,10 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <SceneStage device={device} detail />
         <button className={s.iconButton} aria-label="编辑设备备注" onClick={() => { setAlias(rules?.alias ?? ''); edit(true); }}><Pencil size={17} /></button></div>
       <div className={s.detailReadout + (full ? ' ' + look.detailReadout : '')} data-scroll-pane=""><div className={s.batteryPanel} data-tone={tone(device, state)}>
-        <div className={s.readoutLabel}><span>{!device.reading ? '无数据' : device.status === 'current' ? '当前电量' : '上次有效电量'}</span>{full && <span className={s.readingState}>{batteryState(device, state)}</span>}</div>
+        <div className={s.readoutLabel}><span>{!device.reading ? '无数据' : device.status === 'current' ? '当前电量' : '上次有效电量'}</span>{full && !isLiveDualSenseFull(device) && <span className={s.readingState}>{batteryState(device, state)}</span>}</div>
         <SceneBattery state={state} device={device} phase={state.refreshing ? "refreshing" : "ready"} /></div>
         <dl className={s.detailsFacts}>
+          {full && isLiveDualSenseFull(device) && <div><Activity size={21} /><div><dt>设备上报区间</dt><dd>{readingLabel(device.reading)}</dd></div></div>}
           <div><ShieldCheck size={21} /><div><dt>读取状态</dt><dd>{device.reason}</dd></div></div>
           <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? { hid: '设备 HID', windows: 'Windows 电量属性', ble: '蓝牙电池服务', hid_voltage: '设备电压估算', bluetooth_vendor: '厂商蓝牙协议' }[device.reading.source] : '—'}</dd></div></div>
           <div><Zap size={21} /><div><dt>{device.status === 'current' ? '充电状态' : '上次充电状态'}</dt><dd>{device.reading ? powerLabels[device.reading.power] : '—'}</dd></div></div>

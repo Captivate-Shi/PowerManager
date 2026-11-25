@@ -103,6 +103,9 @@ export const midpoint = (reading: Reading) => Math.ceil((reading.low + reading.h
 export const percent = (reading: Reading | null) =>
   reading ? (reading.low === reading.high ? '' : '约 ') + midpoint(reading) + '%' : '—';
 export const isConnected = (device: Device) => !['offline', 'no_radio_reply', 'stale', 'unreachable'].includes(device.status);
+// Presentation only: the HID charge flag does not replace the gauge bucket.
+export const isLiveDualSenseFull = (device?: Device) => device?.art === 'dualsense' &&
+  device.status === 'current' && device.reading?.source === 'hid' && device.reading.power === 'full';
 export const isDualSenseBluetooth = (device: Device) => device.art === 'dualsense' && /蓝牙|bluetooth/i.test(device.connection);
 export const threshold = (settings: Settings, deviceSettings?: DeviceSettings) =>
   Math.max(deviceSettings?.low ?? settings.low, settings.critical);
