@@ -38,12 +38,32 @@
 .topbar .jellyNav .navItem[aria-current]::after { content: none; }
 .topbar .jellyNav { position: relative; isolation: isolate; }
 .jellyNav .navItem { z-index: 1; }
+.topbar .jellyNav .navItem:hover { color: var(--ink); background: none; }
+.topbar .jellyNav .navItem::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(ellipse at var(--nav-press-x, 50%) 32%, color-mix(in srgb, var(--ink) 24%, transparent), transparent 72%);
+  opacity: 0; transition: opacity 105ms ease-out;
+}
+.topbar .jellyNav .navItem:active::before { opacity: 1; transition: none; }
+.jellyNav .navItem span { position: relative; }
+.navSheen {
+  position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--ink) 36%, transparent), transparent 64%);
+}
+@media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .navSheen { display: none; }
+  .topbar .jellyNav .navItem::before { transition: none; }
+}
+@media (forced-colors: active) {
+  .topbar .jellyNav .navItem::before { display: none; }
+}
 .jellyGlass {
   visibility: hidden;
   position: absolute;
   inset: 0 auto auto 0;
   z-index: 0;
   border-radius: 9px;
+  overflow: clip;
   pointer-events: none;
   transform-origin: left center;
 }
