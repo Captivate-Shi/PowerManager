@@ -81,7 +81,7 @@ export function Connection({ device }: { device: Device }) {
 export function StatusTag({ device, state }: { device: Device; state?: Snapshot }) {
   const connected = isConnected(device);
   const color = state ? tone(device, state) : 'normal';
-  const text = color === 'red' ? '电量告急' : color === 'amber' ? '低电量' : color === 'green' ? device.reading?.power === 'charging' ? '充电中' : '已充满' : device.status === 'current' ? '已连接' : device.status === 'stale' ? '等待读数' : device.status === 'unreachable' ? '未回应' : connected ? '读取受限' : '未连接';
+  const text = color === 'red' ? '电量告急' : color === 'amber' ? '低电量' : color === 'green' ? device.reading?.power === 'charging' ? '充电中' : '已充满' : device.status === 'current' ? '已连接' : device.status === 'stale' ? '等待读数' : device.status === 'unreachable' ? '未回应' : connected ? '无数据' : '未连接';
   return <span className={s.tag} data-tone={color}>{text}</span>;
 }
 export function tone(device: Device, state: Snapshot) {

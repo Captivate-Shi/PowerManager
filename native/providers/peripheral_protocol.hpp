@@ -207,6 +207,12 @@ inline std::optional<LogitechNamedIdentity> logitechNamedIdentity(unsigned vid, 
                                                                  unsigned model, std::wstring_view label,
                                                                  unsigned kind)
 {
+    if (logitechBolt(vid, pid) && model == 0xb36f && (kind == 0 || kind == 255)) {
+        std::wstring name(label);
+        std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+        if (name == L"signature k650" || name == L"signature k650 keyboard")
+            return LogitechNamedIdentity{L"Signature K650", 0, model, named_percent_1004 | named_legacy_1000};
+    }
     if (auto office = office12Identity(vid, pid, model, label, kind)) return office;
     if (auto lightspeed = lightspeed12Identity(vid, pid, model, label, kind)) return lightspeed;
     if (const auto bolt = boltBatch11Identity(vid, pid, model, label, kind))

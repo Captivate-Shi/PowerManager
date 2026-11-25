@@ -6,6 +6,12 @@
 int main()
 {
     using namespace pm;
+    const auto k650 = logitechNamedIdentity(0x046d, 0xc548, 0xb36f, L"Signature K650 Keyboard", 0);
+    assert(k650 && k650->batteryFeatures == (named_percent_1004 | named_legacy_1000));
+    assert(!logitechNamedIdentity(0x046d, 0xc548, 0xb370, L"Signature K650", 0));
+    assert(!logitechNamedIdentity(0x046d, 0xc548, 0xb36f, L"Signature K650 for Business", 0));
+    assert(!logitechNamedIdentity(0x046d, 0xc52b, 0xb36f, L"Signature K650", 0));
+    assert(!logitechNamedIdentity(0x046d, 0xc548, 0xb36f, L"Signature K650", 3));
     assert(peripheralTransport(0x320f, 0x5055) == Transport::vgn_usb);
     assert(peripheralTransport(0x320f, 0x5088) == Transport::vgn_receiver);
     assert(peripheralTransport(0x258a, 0x024e) == Transport::vgn_v3_usb);
@@ -145,7 +151,6 @@ int main()
     static_assert(logitechReportedModel(k650Info, 2) == 0xb36f);
     static_assert(logitechReportedModel(k650Info, 4) == 0);
     // Reserve both variants until the live retail report and battery capabilities are verified.
-    assert(!logitechNamedIdentity(0x046d, 0xc548, 0xb36f, L"Signature K650 Keyboard", 0));
     assert(!logitechNamedIdentity(0x046d, 0xc548, 0xb370, L"Signature K650 Keyboard", 0));
     assert(!logitechNamedIdentity(0x046d, 0xc548, 0xb36f, L"Signature K650 for Business", 0));
     const std::uint8_t legacyDiscrete[] = {4, 2}, legacyNoMileage[] = {20, 0}, legacyMileage[] = {20, 2};

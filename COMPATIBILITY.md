@@ -196,3 +196,11 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 [18 条 P0 真机清单](docs/p0-hardware-validation.md)给出每条的证据缺口和复测方式。雷蛇三款未启用的键盘和迈从 G87 只增加匹配描述符的诊断候选，不发主动命令。ATK V75X 无线继续只做诊断；Xbox 的六条连接不加入默认读取。
 
 另有 [Xbox 手工验证探针](tools/xbox-probe/README.md)，仅在测试机手动运行；不新增应用依赖或安装器内容。
+
+
+## 第 15 批：默认尝试，读不到再回退
+
+- 原生设备先试专用读数与同一设备的备用接口；仍无读数时，仅按无歧义的设备容器试 Windows 电量和标准 BLE。共享接收器的父容器不当作子设备，避免把同一读数贴给数台设备。
+- 普通蓝牙外设按 Windows 电量 → 标准 BLE → 已接入的厂商协议尝试。已明确连接且被系统识别为外设，即使无电量也可显示「无数据」。没有新读数就不触发电量提醒，不把历史值当实时。反馈中的雷柏通用接收器也保留系统识别名，尝试系统电量，不猜具体键盘型号。
+- [雷蛇](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md#razer-deathstalker-v2-pro-blackwidow-v3-mini-v4-mini-and-v4-tenkeyless-hyperspeed)三款原装接收器在唯一匹配的接口上试一次电量查询；罗技 Signature K650 零售 Bolt（B36F）在匹配同一个槽位和型号后尝试 HID++ 0x1004 / 0x1000。两项均未做余电真机复测。
+- 已知会返回旧电量或主动查询可能唤醒的接收器不拿缓存凑数；Xbox 槽位还不能与设备身份直接对应，先用可归属的系统电量。没有可用来源时不推算电量。

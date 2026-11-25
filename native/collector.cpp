@@ -3,6 +3,7 @@
 #include "peripheral_protocol.hpp"
 #include "device_search.hpp"
 #include "ble_battery.hpp"
+#include "battery_fallback.hpp"
 #include "gamepad_battery.hpp"
 #include "rfcomm_battery_transport.hpp"
 #include "json.hpp"
@@ -246,6 +247,20 @@ std::set<std::wstring> claimedContainers(const std::vector<Device>& endpoints)
         if (!id.empty()) seen.insert(std::move(id));
     }
     return seen;
+}
+
+// Only an endpoint's own container can provide a Windows/BAS fallback.
+// Shared receiver parents cannot attribute battery to an individual child.
+std::map<std::wstring, std::wstring> nativeContainerOwners(const std::vector<Device>& endpoints)
+{
+    std::map<std::wstring, std::wstring> owners;
+    for (const auto& endpoint : endpoints) {
+        const auto container = endpointContainer(endpoint.endpointKey);
+        if (container.empty()) continue;
+        auto [it, inserted] = owners.try_emplace(container, endpoint.key);
+        if (!inserted && it->second != endpoint.key) it->second.clear();
+    }
+    return owners;
 }
 
 using ReportTargets = std::map<std::wstring, std::string>;
@@ -519,7 +534,7 @@ private:
             if (claimed.contains(device.id)) continue;
             const bool bas = device.knownBluetooth && bleCandidates.contains(device.id);
             result.push_back({{"id", utf8(device.id)}, {"name", utf8(device.name)}, {"connection", utf8(device.connection)},
-                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false) || vendorHeadphone(device).has_value()},
+                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, false) || vendorHeadphone(device).has_value()},
                 {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading},
                 {"batteryCandidate", device.connected && device.inputOrHeadset && !device.battery && bas ?
                     json("ble_bas") : json(nullptr)}});
@@ -561,6 +576,33 @@ private:
         const auto shouldRead = [&](const std::string& key) {
             return request.value("force", false) || !due.contains(key) || due.at(key) == true;
         };
+        const bool force = request.value("force", false);
+        const auto& basCandidates = refreshBleCandidates(force);
+        const auto& windows = defaultWindowsDevices(force);
+        const auto containerOwners = nativeContainerOwners(endpoints);
+        unsigned basBudget = 2;
+        // A null result means a standard BLE read is due but deferred by the
+        // shared budget, not that all sources have failed.
+        const auto standardBattery = [&](const std::wstring& container) -> std::optional<Sample> {
+            const auto started = std::chrono::steady_clock::now();
+            const auto measured = readWindowsDevice(container);
+            const auto target = reportTarget(targets_, container);
+            const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
+            record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
+            const auto detail = static_cast<WindowsBatteryDetail>(measured.detail);
+            const bool useBas = !hasBatteryReading(measured) && basCandidates.contains(container) &&
+                (detail == WindowsBatteryDetail::missingProperty || detail == WindowsBatteryDetail::invalidPercent);
+            if (!useBas) return measured;
+            if (basBudget == 0) return std::nullopt;
+            --basBudget;
+            const auto attempt = std::chrono::steady_clock::now();
+            const auto ble = readBleBattery(container);
+            auto report = sample(ble);
+            report.erase("reportId");
+            if (ble.report) report["errorCode"] = ble.report;
+            record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(ble.detail)));
+            return batteryFallback(measured, ble);
+        };
         json rows = json::array();
         for (const auto& [key, group] : groups) {
             const auto id = utf8(key);
@@ -581,17 +623,31 @@ private:
                 record(*source, sample(measured), started, reportTarget(targets_, key));
                 const auto* preferred = source;
                 for (const auto* endpoint : group) {
-                    if (measured.reading) break;
+                    if (hasBatteryReading(measured)) break;
                     if (endpoint == preferred || disconnected(*endpoint)) continue;
                     const auto attempt = std::chrono::steady_clock::now();
                     const auto alternate = monitor_.sample(*endpoint);
                     record(*endpoint, sample(alternate), attempt, reportTarget(targets_, key));
-                    if (alternate.reading || (measured.status == Status::offline && alternate.status != Status::offline)) {
-                        source = endpoint;
-                        measured = alternate;
+                    if (hasBatteryReading(alternate) ||
+                        (measured.status == Status::offline && alternate.status != Status::offline)) source = endpoint;
+                    measured = batteryFallback(measured, alternate);
+                }
+                bool deferred = false;
+                if (!hasBatteryReading(measured)) {
+                    std::set<std::wstring> tried;
+                    for (const auto* endpoint : group) {
+                        if (disconnected(*endpoint)) continue;
+                        const auto container = endpointContainer(endpoint->endpointKey);
+                        const auto owner = containerOwners.find(container);
+                        if (owner == containerOwners.end() || owner->second != key || !tried.insert(container).second) continue;
+                        const auto fallback = standardBattery(container);
+                        if (!fallback) { deferred = true; continue; }
+                        if (hasBatteryReading(*fallback)) source = endpoint;
+                        measured = batteryFallback(measured, *fallback);
+                        if (hasBatteryReading(measured)) break;
                     }
                 }
-                value = sample(measured);
+                if (!deferred || hasBatteryReading(measured)) value = sample(batteryFallback(measured, {Status::offline}));
                 const auto now = std::chrono::steady_clock::now();
                 const auto last = voltageTimes_.find(key);
                 if (voltageEnabled && measured.status != Status::offline && isDualSense(source->transport) &&
@@ -611,9 +667,6 @@ private:
         }
 
         const auto claimed = claimedContainers(endpoints);
-        const bool force = request.value("force", false);
-        const auto& basCandidates = refreshBleCandidates(force);
-        const auto& windows = defaultWindowsDevices(force);
         std::map<std::wstring, rfcomm_battery::Model> vendorDevices;
         for (const auto& candidate : windows) {
             if (const auto model = vendorHeadphone(candidate); model && !claimed.contains(candidate.id))
@@ -643,16 +696,15 @@ private:
                 device.at("connection").get<std::string>(), false});
         }
         unsigned automaticCount = 0;
-        for (const auto& device : windows) {
-            if (automaticCount >= 32) break;
-            if (!vendorDevices.contains(device.id) &&
-                !defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
-            targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
-            ++automaticCount;
+        for (bool vendorPass : {true, false}) {
+            for (const auto& device : windows) {
+                if (automaticCount >= 32) break;
+                const bool vendor = vendorDevices.contains(device.id);
+                if (vendor != vendorPass || (!vendor && !defaultPeripheralMonitoring(device, claimed.contains(device.id)))) continue;
+                targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
+                ++automaticCount;
+            }
         }
-        // Deferred endpoints remain due. A bounded batch protects the collector
-        // from many connected BLE devices multiplying latency.
-        unsigned basBudget = 2;
         for (const auto& [container, device] : targets) {
             const auto& id = device.id;
             json value = nullptr;
@@ -664,34 +716,16 @@ private:
             const bool completed = vendorCompleted && vendorCompleted->first == container;
             if (shouldRead(id) || completed) {
                 const auto started = std::chrono::steady_clock::now();
-                auto measured = readWindowsDevice(container);
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
-                record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
-                const auto windowsDetail = static_cast<WindowsBatteryDetail>(measured.detail);
-                // These two statuses are returned only after Windows confirms
-                // Connected. A failed property query is not connection evidence.
-                const bool useBas = (windowsDetail == WindowsBatteryDetail::missingProperty ||
-                    windowsDetail == WindowsBatteryDetail::invalidPercent) &&
-                    basCandidates.contains(container);
-                if (useBas && basBudget > 0) {
-                    --basBudget;
-                    const auto attempt = std::chrono::steady_clock::now();
-                    measured = readBleBattery(container);
-                    auto report = sample(measured);
-                    report.erase("reportId");
-                    if (measured.report) report["errorCode"] = measured.report;
-                    record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(measured.detail)));
-                    value = sample(measured);
-                } else if (!useBas) {
-                    value = sample(measured);
-                }
-                // Never open an audio profile. On this exact, connected model,
-                // only the documented private battery service may be queried.
-                const bool connectedWithoutWindowsReading = windowsDetail == WindowsBatteryDetail::missingProperty ||
-                    windowsDetail == WindowsBatteryDetail::invalidPercent;
-                if (vendorModel != vendorDevices.end() && !measured.reading &&
-                    (sony ? windowsDetail != WindowsBatteryDetail::disconnected : connectedWithoutWindowsReading)) {
+                const auto measured = standardBattery(container);
+                if (measured) value = sample(batteryFallback(*measured, {Status::offline}));
+                const auto windowsDetail = measured
+                    ? static_cast<WindowsBatteryDetail>(measured->detail) : WindowsBatteryDetail::none;
+                // Try the private service only for an exact connected model
+                // and only after the standard sources have finished.
+                if (vendorModel != vendorDevices.end() && measured && !hasBatteryReading(*measured) &&
+                    windowsDetail != WindowsBatteryDetail::disconnected) {
                     if (completed) {
                         const auto& fresh = vendorCompleted->second;
                         Sample vendor{Status::unavailable};
@@ -702,7 +736,7 @@ private:
                                     ? (*fresh.battery->charging ? Power::charging : Power::discharging) : Power::unknown, level,
                                 ReadingSource::bluetooth_vendor}};
                         }
-                        value = sample(vendor);
+                        value = sample(batteryFallback(*measured, vendor));
                         const auto reason = [&] {
                             using R = rfcomm_battery::Status;
                             switch (fresh.status) {
@@ -717,11 +751,10 @@ private:
                             default: return "receiver_unavailable";
                             }
                         }();
-                        record(diagnostic, value, started, target, huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : "oppo-elnk", reason);
+                        record(diagnostic, sample(vendor), started, target, huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : "oppo-elnk", reason);
                     } else {
                         // Sampling is asynchronous and capped at one private
                         // connection in the process; cached values are never republished.
-                        value = nullptr;
                         if (!vendorTask_ && (!vendorDue_.contains(container) || now >= vendorDue_.at(container))) {
                             vendorDue_[container] = now + 60s;
                             const auto model = vendorModel->second;
@@ -730,6 +763,7 @@ private:
                                 catch (...) { return rfcomm_battery::Result{rfcomm_battery::Status::system_error}; }
                             })});
                         }
+                        if (vendorTask_ && vendorTask_->container == container) value = nullptr;
                     }
                 }
             }

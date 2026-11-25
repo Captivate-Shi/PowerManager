@@ -836,7 +836,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <SceneStage device={device} detail />
         <button className={s.iconButton} aria-label="编辑设备备注" onClick={() => { setAlias(rules?.alias ?? ''); edit(true); }}><Pencil size={17} /></button></div>
       <div className={s.detailReadout + (full ? ' ' + look.detailReadout : '')} data-scroll-pane=""><div className={s.batteryPanel} data-tone={tone(device, state)}>
-        <div className={s.readoutLabel}><span>{!device.reading ? '暂无电量读数' : device.status === 'current' ? '当前电量' : '上次有效电量'}</span>{full && <span className={s.readingState}>{batteryState(device, state)}</span>}</div>
+        <div className={s.readoutLabel}><span>{!device.reading ? '无数据' : device.status === 'current' ? '当前电量' : '上次有效电量'}</span>{full && <span className={s.readingState}>{batteryState(device, state)}</span>}</div>
         <SceneBattery state={state} device={device} phase={state.refreshing ? "refreshing" : "ready"} /></div>
         <dl className={s.detailsFacts}>
           <div><ShieldCheck size={21} /><div><dt>读取状态</dt><dd>{device.reason}</dd></div></div>

@@ -1,6 +1,7 @@
 #include "hid.hpp"
 #include "atk_v75x.hpp"
 #include "razer_pro_receiver.hpp"
+#include "battery_fallback.hpp"
 #include "rog_keyboard_battery.hpp"
 #include "cn_mouse_codecs.hpp"
 #include "cn_tail_codecs.hpp"
@@ -830,42 +831,56 @@ Sample readLogitech(const Device& device, unsigned& order)
         if (verified != identity) return verified ? Sample{Status::offline} : query.failure(3);
         return model == device.logitechNamedModel ? reading : Sample{Status::unavailable};
     };
+    Sample previous{Status::unavailable};
+    const auto remember = [&](const Sample& attempt) {
+        if (!previous.feature) previous = attempt;
+        // Busy/radio-off are transport failures, not missing battery features.
+        return attempt.status == Status::busy || attempt.status == Status::offline ||
+               attempt.status == Status::no_radio_reply || attempt.status == Status::timeout;
+    };
     for (const unsigned feature : {0x1004u, 0x1000u, 0x1001u}) {
         if (named && !(device.logitechNamedFeatures & namedBatteryFlag(feature))) continue;
         const auto index = query.feature(feature);
         if (!index) {
-            if (query.winError || query.protocolError) return query.failure(feature);
-            continue;
-        }
-        if (feature == 0x1004) {
-            const auto caps = query.read(index, 0);
-            if (caps.size() < 2) return query.failure(feature);
-            if (caps[1] & 2) {
-                const auto data = query.read(index, 1);
-                if (data.empty()) return query.failure(feature);
-                return verify(logitechBattery(feature, true, data));
+            if (query.winError || query.protocolError) {
+                const auto failure = query.failure(feature);
+                if (remember(failure)) return failure;
             }
             continue;
         }
-        bool coarse = false;
-        if (feature == 0x1000) {
-            const auto caps = query.read(index, 1);
-            const auto classification = namedLegacyCoarse(caps);
-            if (named && !classification)
-                return query.winError || query.protocolError ? query.failure(feature)
-                    : Sample{Status::unavailable, {}, 0x11, 0, feature};
-            coarse = named ? classification.value_or(false)
-                           : caps.size() >= 2 && caps[0] >= 2 && (caps[0] < 10 || !(caps[1] & 2));
+        Sample candidate{Status::unavailable, {}, 0x11, 0, feature};
+        if (feature == 0x1004) {
+            const auto caps = query.read(index, 0);
+            if (caps.size() < 2) candidate = query.failure(feature);
+            else if (caps[1] & 2) {
+                const auto data = query.read(index, 1);
+                candidate = data.empty() ? query.failure(feature) : logitechBattery(feature, true, data);
+            }
+        } else {
+            bool coarse = false;
+            if (feature == 0x1000) {
+                const auto caps = query.read(index, 1);
+                const auto classification = namedLegacyCoarse(caps);
+                if (named && !classification) {
+                    const auto failure = query.failure(feature);
+                    if (remember(failure)) return failure;
+                    continue;
+                }
+                coarse = named ? *classification
+                               : caps.size() >= 2 && caps[0] >= 2 && (caps[0] < 10 || !(caps[1] & 2));
+            }
+            const auto data = query.read(index, 0);
+            if (data.empty()) candidate = query.failure(feature);
+            else if (named && feature == 0x1000 && data.size() >= 3 && data[2] == 0 && data[1] > data[0])
+                candidate = {Status::bad_report, {}, 0x11, data[1], feature};
+            else candidate = logitechBattery(feature, true, data, coarse,
+                feature == 0x1001 && (named ? (device.logitechNamedFeatures & named_voltage_1001) != 0
+                                           : logitechVoltageProfile(device.label)));
         }
-        const auto data = query.read(index, 0);
-        if (data.empty()) return query.failure(feature);
-        if (named && feature == 0x1000 && data.size() >= 3 && data[2] == 0 && data[1] > data[0])
-            return {Status::bad_report, {}, 0x11, data[1], feature};
-        return verify(logitechBattery(feature, true, data, coarse,
-            feature == 0x1001 && (named ? (device.logitechNamedFeatures & named_voltage_1001) != 0
-                                       : logitechVoltageProfile(device.label))));
+        if (hasBatteryReading(candidate)) return verify(candidate);
+        if (remember(candidate)) return candidate;
     }
-    return {Status::unavailable};
+    return previous;
 }
 
 Sample readRazer(const Collection& collection, Clock::time_point deadline, RazerQuery query,
@@ -1091,7 +1106,6 @@ const wchar_t* transportName(Transport transport)
     case Transport::razer_pro_receiver:
     case Transport::razer_receiver: return L"2.4 GHz";
     case Transport::razer_shared_keyboard: return L"2.4 GHz 共享接收器";
-    case Transport::razer_keyboard_inventory_candidate: return L"2.4 GHz";
     case Transport::sony_gamepad_usb:
     case Transport::dualsense_usb: return L"USB";
     case Transport::switch_pro_bluetooth:
@@ -1128,7 +1142,6 @@ const wchar_t* providerName(Transport transport)
     case Transport::razer_receiver:
     case Transport::razer_shared_keyboard: return L"razer-1532-00b8";
     case Transport::razer_pro_receiver: return L"razer-pro-receiver";
-    case Transport::razer_keyboard_inventory_candidate: return L"razer-keyboard-candidate";
     case Transport::sony_gamepad_usb: return L"sony-gamepad-usb";
     case Transport::sony_gamepad_bluetooth: return L"sony-gamepad-bluetooth";
     case Transport::switch_pro_bluetooth: return L"nintendo-switch-pro-bluetooth";
@@ -1286,10 +1299,13 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         };
         const auto rzExactCollection = [&] {
             if (!rzProCollection()) return false;
-            if (!razerBatch13Receiver(vid, pid)) return true;
-            std::array<wchar_t, 128> product{};
-            if (!info.valid() || !HidD_GetProductString(info.value, product.data(), static_cast<ULONG>(sizeof(product))) ||
-                product.back() != 0 || !razerBatch13Product(vid, pid, lower(product.data()))) return false;
+            if (!razerBatch13Receiver(vid, pid) && !razerKeyboardReceiver(vid, pid)) return true;
+            if (!info.valid()) return false;
+            if (razerBatch13Receiver(vid, pid)) {
+                std::array<wchar_t, 128> product{};
+                if (!HidD_GetProductString(info.value, product.data(), static_cast<ULONG>(sizeof(product))) ||
+                    product.back() != 0 || !razerBatch13Product(vid, pid, lower(product.data()))) return false;
+            }
             PHIDP_PREPARSED_DATA prep{};
             if (!HidD_GetPreparsedData(info.value, &prep)) return false;
             std::array<char, 91> feature{};
@@ -1301,34 +1317,6 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if (inventory) {
             const auto interfaceNumber = hexId(normalized, L"&mi_", 2);
             auto reportedProvider = transport;
-            // Inventory-only: absent from candidate(), so these descriptors
-            // never introduce a device row, polling or feature I/O.
-            if (!transport && info.valid() && haveCaps && attributes.VendorID == vid &&
-                attributes.ProductID == pid && hexId(normalized, L"vid_", 4) == vid &&
-                hexId(normalized, L"pid_", 4) == pid &&
-                razerKeyboardDescriptorCandidate(vid, pid, interfaceNumber.value_or(255), caps.FeatureReportByteLength)) {
-                bool physical = false;
-                DEVINST node = devInfo.DevInst;
-                for (int depth = 0; depth < 9; ++depth) {
-                    const auto id = nodeId(node);
-                    if (id.starts_with(L"usb\\vid_") && id.find(L"&mi_") == std::wstring::npos &&
-                        hexId(id, L"vid_", 4) == vid && hexId(id, L"pid_", 4) == pid) {
-                        physical = true;
-                        break;
-                    }
-                    DEVINST parent{};
-                    if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS) break;
-                    node = parent;
-                }
-                PHIDP_PREPARSED_DATA prep{};
-                if (physical && HidD_GetPreparsedData(info.value, &prep)) {
-                    std::array<char, 91> feature{};
-                    if (HidP_InitializeReportForID(HidP_Feature, 0, prep, feature.data(),
-                        static_cast<ULONG>(feature.size())) == HIDP_STATUS_SUCCESS)
-                        reportedProvider = Transport::razer_keyboard_inventory_candidate;
-                    HidD_FreePreparsedData(prep);
-                }
-            }
             if (rzPro && !rzExactCollection()) reportedProvider.reset();
             if ((atkUsb || atkCandidate) && (!info.valid() || !atkDescriptor(info.value, pid)))
                 reportedProvider.reset();
@@ -1675,7 +1663,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
         auto result = readRazer(collection, Clock::now() + 400ms, command, true);
         // Zero can reflect a sleeping wireless endpoint, not a fresh battery
         // measurement. Do not alert at 0% on these newly enabled receivers.
-        if (razerBatch13Receiver(device.vid, device.pid) && result.reading && result.reading->raw == 0)
+        if ((razerBatch13Receiver(device.vid, device.pid) || razerKeyboardReceiver(device.vid, device.pid)) && result.reading && result.reading->raw == 0)
             return {Status::no_radio_reply, {}, 0x80};
         if (result.reading) result.reading->power = Power::unknown;
         return result;
