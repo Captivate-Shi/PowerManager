@@ -472,6 +472,9 @@ private:
                 {"sample", value}, {"art", art(*source)}, {"automatic", true}, {"voltage", voltage}});
         }
 
+        // Never let many BLE watches multiply the synchronous wait in one poll.
+        // Deferred devices stay due, so they get a turn on the next ordinary pass.
+        unsigned basBudget = 2;
         for (const auto& device : request.at("watched")) {
             const auto id = device.at("id").get<std::string>();
             json value = nullptr;
@@ -482,16 +485,24 @@ private:
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
                 record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
-                if (!measured.reading && measured.status != Status::offline &&
-                    refreshBleCandidates().contains(container)) {
+                const auto windowsDetail = static_cast<WindowsBatteryDetail>(measured.detail);
+                // These two statuses are returned only after Windows confirms
+                // Connected. A failed property query is not connection evidence.
+                const bool useBas = (windowsDetail == WindowsBatteryDetail::missingProperty ||
+                    windowsDetail == WindowsBatteryDetail::invalidPercent) &&
+                    refreshBleCandidates().contains(container);
+                if (useBas && basBudget > 0) {
+                    --basBudget;
                     const auto attempt = std::chrono::steady_clock::now();
                     measured = readBleBattery(container);
                     auto report = sample(measured);
                     report.erase("reportId");
                     if (measured.report) report["errorCode"] = measured.report;
                     record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(measured.detail)));
+                    value = sample(measured);
+                } else if (!useBas) {
+                    value = sample(measured);
                 }
-                value = sample(measured);
             }
             rows.push_back({{"id", id}, {"name", device.at("name")}, {"connection", device.at("connection")},
                 {"aliases", json::array()}, {"sample", value},

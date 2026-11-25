@@ -199,7 +199,7 @@ struct Work {
     std::map<std::wstring, Completed> completed;
 };
 constexpr auto waitBudget = 100ms;
-constexpr auto sampleLifetime = 24s;
+constexpr auto sampleLifetime = 8s;
 
 std::optional<Sample> take(Work& work, const std::wstring& id)
 {
