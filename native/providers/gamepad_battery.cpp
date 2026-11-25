@@ -7,12 +7,9 @@
 #include <bit>
 #include <memory>
 
-#if __has_include(<windows.gaming.input.h>) && __has_include(<windows.devices.power.h>)
-#define PM_HAS_WINDOWS_GAMING_INPUT 1
+#include <inspectable.h>
 #include <roapi.h>
 #include <winstring.h>
-#include <windows.gaming.input.h>
-#endif
 
 namespace pm {
 namespace {
@@ -45,21 +42,59 @@ void inspectXInput(GamepadBatteryInventory& result)
     }
 }
 
-#ifdef PM_HAS_WINDOWS_GAMING_INPUT
-namespace wgi = ABI::Windows::Gaming::Input;
-namespace foundation = ABI::Windows::Foundation;
-namespace systemPower = ABI::Windows::System::Power;
-namespace devicePower = ABI::Windows::Devices::Power;
+// The generated MinGW 13 Windows.Foundation header in w64devkit has
+// colliding Boolean and UINT8 template specializations in C++ mode.
+// Keep only the COM ABI slots used here. Order and IDs are from the tagged
+// MinGW generated windows.gaming.input.h, windows.devices.power.h and
+// windows.foundation.h. Unused entries below exist only to preserve order.
+namespace abi {
+struct BoxedInt32 : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_Value(INT32*) = 0;
+};
+struct BatteryReport : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_ChargeRateInMilliwatts(BoxedInt32**) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_DesignCapacityInMilliwattHours(BoxedInt32**) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_FullChargeCapacityInMilliwattHours(BoxedInt32**) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_RemainingCapacityInMilliwattHours(BoxedInt32**) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Status(INT32*) = 0;
+};
+struct ControllerBatteryInfo : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE TryGetBatteryReport(BatteryReport**) = 0;
+};
+struct RawController : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_AxisCount(INT32*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_ButtonCount(INT32*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_ForceFeedbackMotors(IInspectable**) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_HardwareProductId(UINT16*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_HardwareVendorId(UINT16*) = 0;
+};
+struct RawControllerVectorView : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE GetAt(UINT32, RawController**) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Size(UINT32*) = 0;
+};
+struct EventRegistrationToken { INT64 value; };
+struct RawControllerStatics : IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE add_RawGameControllerAdded(IInspectable*, EventRegistrationToken*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE remove_RawGameControllerAdded(EventRegistrationToken) = 0;
+    virtual HRESULT STDMETHODCALLTYPE add_RawGameControllerRemoved(IInspectable*, EventRegistrationToken*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE remove_RawGameControllerRemoved(EventRegistrationToken) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_RawGameControllers(RawControllerVectorView**) = 0;
+};
+constexpr GUID rawControllerStaticsId{0xeb8d0792, 0xe95a, 0x4b19,
+    {0xaf, 0xc7, 0x0a, 0x59, 0xf8, 0xbf, 0x75, 0x9e}};
+constexpr GUID batteryInfoId{0xdcecc681, 0x3963, 0x4da6,
+    {0x95, 0x5d, 0x55, 0x3f, 0x3b, 0x6f, 0x61, 0x61}};
+} // namespace abi
 
 template<class T> inline auto comPtr(T* value)
 {
     return std::unique_ptr<T, void(*)(T*)>(value, [](T* p) { p->Release(); });
 }
 
-using Capacity = HRESULT (STDMETHODCALLTYPE devicePower::IBatteryReport::*)(foundation::IReference<INT32>**);
-std::optional<int> capacity(devicePower::IBatteryReport* report, Capacity getter)
+using Capacity = HRESULT (STDMETHODCALLTYPE abi::BatteryReport::*)(abi::BoxedInt32**);
+std::optional<int> capacity(abi::BatteryReport* report, Capacity getter)
 {
-    foundation::IReference<INT32>* raw = nullptr;
+    abi::BoxedInt32* raw = nullptr;
     const auto hr = (report->*getter)(&raw);
     auto boxed = comPtr(raw);
     INT32 value = 0;
@@ -76,15 +111,15 @@ void inspectWgi(GamepadBatteryInventory& result)
         result.wgiStatus = "string_error";
         return;
     }
-    wgi::IRawGameControllerStatics* rawFactory = nullptr;
-    const auto factoryHr = RoGetActivationFactory(classId, __uuidof(wgi::IRawGameControllerStatics),
+    abi::RawControllerStatics* rawFactory = nullptr;
+    const auto factoryHr = RoGetActivationFactory(classId, abi::rawControllerStaticsId,
         reinterpret_cast<void**>(&rawFactory));
     auto factory = comPtr(rawFactory);
     if (FAILED(factoryHr) || !factory) {
         result.wgiStatus = "activation_failed";
         return;
     }
-    foundation::Collections::IVectorView<wgi::RawGameController*>* rawControllers = nullptr;
+    abi::RawControllerVectorView* rawControllers = nullptr;
     const auto listHr = factory->get_RawGameControllers(&rawControllers);
     auto controllers = comPtr(rawControllers);
     UINT32 count = 0;
@@ -95,7 +130,7 @@ void inspectWgi(GamepadBatteryInventory& result)
     result.wgiStatus = count > 16 ? "truncated" : "ok";
     for (UINT32 index = 0; index < std::min<UINT32>(count, 16); ++index) {
         GamepadBatteryObservation observation{.slot = index};
-        wgi::IRawGameController* raw = nullptr;
+        abi::RawController* raw = nullptr;
         const auto controllerHr = controllers->GetAt(index, &raw);
         auto controller = comPtr(raw);
         if (FAILED(controllerHr) || !controller) {
@@ -105,27 +140,27 @@ void inspectWgi(GamepadBatteryInventory& result)
             UINT16 vendor = 0, product = 0;
             if (SUCCEEDED(controller->get_HardwareVendorId(&vendor))) observation.vid = vendor;
             if (SUCCEEDED(controller->get_HardwareProductId(&product))) observation.pid = product;
-            wgi::IGameControllerBatteryInfo* rawInfo = nullptr;
-            const auto infoHr = controller->QueryInterface(__uuidof(wgi::IGameControllerBatteryInfo),
+            abi::ControllerBatteryInfo* rawInfo = nullptr;
+            const auto infoHr = controller->QueryInterface(abi::batteryInfoId,
                 reinterpret_cast<void**>(&rawInfo));
             auto info = comPtr(rawInfo);
             if (SUCCEEDED(infoHr) && info) {
-                devicePower::IBatteryReport* rawReport = nullptr;
+                abi::BatteryReport* rawReport = nullptr;
                 const auto reportHr = info->TryGetBatteryReport(&rawReport);
                 auto report = comPtr(rawReport);
                 if (FAILED(reportHr)) {
                     observation.status = GamepadBatteryStatus::api_error;
                     observation.detail = static_cast<unsigned>(reportHr);
                 } else if (report) {
-                    systemPower::BatteryStatus status{};
+                    INT32 status{};
                     const auto statusHr = report->get_Status(&status);
                     if (FAILED(statusHr)) {
                         observation.status = GamepadBatteryStatus::api_error;
                         observation.detail = static_cast<unsigned>(statusHr);
                     } else {
                         applyGamingInputBattery(observation, static_cast<unsigned>(status),
-                            capacity(report.get(), &devicePower::IBatteryReport::get_RemainingCapacityInMilliwattHours),
-                            capacity(report.get(), &devicePower::IBatteryReport::get_FullChargeCapacityInMilliwattHours));
+                            capacity(report.get(), &abi::BatteryReport::get_RemainingCapacityInMilliwattHours),
+                            capacity(report.get(), &abi::BatteryReport::get_FullChargeCapacityInMilliwattHours));
                     }
                 }
             } else if (infoHr != E_NOINTERFACE) {
@@ -136,18 +171,13 @@ void inspectWgi(GamepadBatteryInventory& result)
         result.windowsGamingInput.push_back(observation);
     }
 }
-#endif
 
 } // namespace
 
 GamepadBatteryInventory inspectGamepadBatteries()
 {
     GamepadBatteryInventory result;
-#ifdef PM_HAS_WINDOWS_GAMING_INPUT
     inspectWgi(result);
-#else
-    result.wgiStatus = "sdk_headers_unavailable";
-#endif
     inspectXInput(result);
     return result;
 }
