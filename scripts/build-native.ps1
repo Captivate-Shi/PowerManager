@@ -21,7 +21,7 @@ try {
     }
     $flags = @('-std=c++20','-O2','-Wall','-Wextra','-Wpedantic','-static','-DUNICODE','-D_UNICODE',
         '-DNOMINMAX','-DWIN32_LEAN_AND_MEAN','-D_WIN32_WINNT=0x0A00')
-    & $compiler @flags -Inative/providers -I.tools native/collector.cpp native/providers/battery.cpp native/providers/hid.cpp native/providers/device_search.cpp -o .native/collector.exe -lhid -lsetupapi -lcfgmgr32 -lole32 -lshell32 -ldwmapi -lwtsapi32 -lruntimeobject -lbthprops -lpsapi
+    & $compiler @flags -Inative/providers -I.tools native/collector.cpp native/providers/battery.cpp native/providers/hid.cpp native/providers/device_search.cpp native/providers/ble_battery.cpp native/providers/gamepad_battery.cpp -o .native/collector.exe -lhid -lsetupapi -lcfgmgr32 -lole32 -lshell32 -ldwmapi -lwtsapi32 -lruntimeobject -lbthprops -lpsapi
     if ($LASTEXITCODE -ne 0) { throw "Collector compilation failed ($LASTEXITCODE)" }
     if ($Test) {
         & $compiler @flags -I.tools tests/collector-fixture.cpp -o .native/collector-fixture.exe
@@ -34,6 +34,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test compilation failed' }
         & .native/peripheral-test.exe
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test failed' }
+        foreach ($suite in @('ble_battery', 'gamepad_battery')) {
+            & $compiler @flags -Inative/providers "tests/${suite}_test.cpp" -o ".native/${suite}_test.exe"
+            if ($LASTEXITCODE -ne 0) { throw "$suite test compilation failed" }
+            & ".native/${suite}_test.exe"
+            if ($LASTEXITCODE -ne 0) { throw "$suite test failed" }
+        }
         foreach ($suite in @('battery','history')) {
             & $compiler @flags -Inative/providers "tests/${suite}_test.cpp" "native/providers/$suite.cpp" -o ".native/${suite}_test.exe"
             if ($LASTEXITCODE -ne 0) { throw "$suite test compilation failed" }

@@ -1,16 +1,24 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Collector } from './collector';
+import { CompatibilityDraft, compatibilityJson } from './compatibility-report';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { release } from 'node:os';
 
-import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Sample, type Severity, type Settings, type Snapshot } from './model';
+import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 import { accumulateHistoryDay, historyStart } from './history-plot';
 
 const executeFile = promisify(execFile);
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
+
+function validReading(reading: Reading | null | undefined): reading is Reading {
+  return !!reading && Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
+    reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
+    ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
+    ['hid', 'windows', 'ble'].includes(reading.source);
+}
 
 // A local reading is only a last-known value. Never restore a live status from disk.
 function cachedDevice(value: unknown): Device | null {
@@ -20,11 +28,7 @@ function cachedDevice(value: unknown): Device | null {
       typeof connection !== 'string' || typeof watched !== 'boolean') return null;
   const safeArt = art && ['mouse', 'keyboard', 'dualsense', 'xbox', 'controller', 'headset', 'earbuds', 'stylus', 'unknown'].includes(art)
     ? art : classify(name);
-  const hasReading = reading && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0 &&
-    Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
-    reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
-    ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
-    ['hid', 'windows'].includes(reading.source);
+  const hasReading = validReading(reading) && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0;
   return { id, name, connection, art: safeArt, watched, status: 'stale', reason: '等待新读数',
     reading: hasReading ? reading : null, lastRead: hasReading ? lastRead : null };
 }
@@ -125,6 +129,7 @@ export class Monitor {
   start() { void this.poll(true); }
   close() {
     this.closed = true;
+    this.compatibilityDraft.clear();
     clearTimeout(this.timer);
     this.collector.close();
     this.markStale();
@@ -133,6 +138,7 @@ export class Monitor {
   async closeForMaintenance() {
     if (!this.persist()) return '无法保存设置或电量历史。';
     this.closed = true;
+    this.compatibilityDraft.clear();
     clearTimeout(this.timer);
     if (!await this.collector.closeGracefully()) {
       this.collector.allowRestartAfterClose();
@@ -217,31 +223,37 @@ export class Monitor {
     }));
   }
 
-  private exporting?: Promise<string>;
+  private compatibilityDraft = new CompatibilityDraft();
 
-  exportCompatibility(context: string, version: string) {
-    this.exporting ??= this.writeCompatibility(context, version).finally(() => { this.exporting = undefined; });
-    return this.exporting;
-  }
-
-  private async writeCompatibility(context: string, version: string) {
-    let report: Record<string, unknown>;
+  async previewCompatibility(context: string, version: string) {
+    let report: unknown;
     let capture: 'live' | 'inventory' = 'live';
     try {
       if (this.state.collector !== 'ready') throw new Error('Collector unavailable');
-      report = await this.collector.request<Record<string, unknown>>('compatibility');
+      report = await this.collector.request('compatibility');
     } catch {
       capture = 'inventory';
       const inventory = await executeFile(this.executable, ['--inventory'], { windowsHide: true, timeout: 10_000,
         maxBuffer: 768 * 1024, encoding: 'utf8' });
       report = JSON.parse(inventory.stdout);
     }
-    const file = join(this.directory, 'compatibility-report.json');
-    const metadata = { generatedAt: new Date().toISOString(), appVersion: version, windowsRelease: release(),
-      capture, collectorStatus: this.state.collector, context };
-    writeFileSync(file + '.tmp', JSON.stringify({ ...metadata, ...report }, null, 2), 'utf8');
-    renameSync(file + '.tmp', file);
-    return file;
+    if (this.closed) throw new Error('应用正在退出');
+    return this.compatibilityDraft.create(compatibilityJson({
+      appVersion: version, windowsRelease: release(), capture, collectorStatus: this.state.collector, context,
+    }, report));
+  }
+
+  exportCompatibility(token: string) {
+    this.compatibilityDraft.save(token, json => {
+      const target = join(this.directory, 'compatibility-report.json');
+      const temporary = join(this.directory, 'compatibility-report-' + token + '.tmp');
+      try {
+        writeFileSync(temporary, json, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+        renameSync(temporary, target);
+      } finally {
+        try { rmSync(temporary, { force: true }); } catch { /* target is either unchanged or fully replaced */ }
+      }
+    });
   }
 
   async discover() {
@@ -259,7 +271,7 @@ export class Monitor {
   }
   add(id: string) {
     const input = this.found.get(id);
-    if (!input?.reading || !input.connected || input.automatic || this.data.watched.some(item => item.id === id)) {
+    if (!input?.connected || (!input.reading && input.batteryCandidate !== 'ble_bas') || input.automatic || this.data.watched.some(item => item.id === id)) {
       throw new Error('该设备无法添加或已经在监测中');
     }
     if (this.data.watched.length >= 128) throw new Error('监测设备已达到上限');
@@ -452,7 +464,7 @@ export class Monitor {
     return true;
   }
   private setSample(row: Row, sample: Sample, time: number) {
-    if (sample.status === 'current' && !sample.reading) {
+    if (sample.status === 'current' && !validReading(sample.reading)) {
       sample = { status: 'unavailable', reason: '未取得有效电量读数', reading: null };
     }
     this.dirty = true;

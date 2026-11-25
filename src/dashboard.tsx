@@ -1,3 +1,4 @@
+import type { CompatibilityPreview } from './compatibility-report';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
@@ -841,7 +842,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <SceneBattery state={state} device={device} phase={state.refreshing ? "refreshing" : "ready"} /></div>
         <dl className={s.detailsFacts}>
           <div><ShieldCheck size={21} /><div><dt>读取状态</dt><dd>{device.reason}</dd></div></div>
-          <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? device.reading.source === 'hid' ? '设备 HID' : 'Windows 电量属性' : '—'}</dd></div></div>
+          <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? { hid: '设备 HID', windows: 'Windows 电量属性', ble: '蓝牙电池服务' }[device.reading.source] : '—'}</dd></div></div>
           <div><Zap size={21} /><div><dt>{device.status === 'current' ? '充电状态' : '上次充电状态'}</dt><dd>{device.reading ? powerLabels[device.reading.power] : '—'}</dd></div></div>
           <div><Clock size={21} /><div><dt>上次读数</dt><dd>{dateLabel(device.lastRead)}</dd></div></div>
         </dl>
@@ -1077,6 +1078,32 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
   }
   const [context, setContext] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [reportPreview, setReportPreview] = useState<CompatibilityPreview>();
+  const [reportError, setReportError] = useState('');
+  const previewButton = useRef<HTMLButtonElement>(null);
+  async function previewReport() {
+    setExporting(true);
+    setReportError('');
+    try {
+      const result = await run({ type: 'compatibility', context });
+      if (result.ok && result.compatibility) setReportPreview(result.compatibility);
+      else setReportError(result.ok ? '无法生成报告。' : result.error);
+    } finally { setExporting(false); }
+  }
+  function closeReport() {
+    setReportPreview(undefined);
+    setReportError('');
+    requestAnimationFrame(() => previewButton.current?.focus({ preventScroll: true }));
+  }
+  async function saveReport(preview: CompatibilityPreview) {
+    setExporting(true);
+    setReportError('');
+    try {
+      const result = await run({ type: 'compatibility', reportToken: preview.token });
+      if (result.ok) closeReport();
+      else setReportError(result.error);
+    } finally { setExporting(false); }
+  }
   const [active, setActive] = useState(position.current.category);
   const sections = useRef<HTMLDivElement>(null);
   const requested = useRef<string | undefined>(position.current.category);
@@ -1173,13 +1200,26 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
         <SettingRow title="记录 DualSense 电池电压" hint="电压记在本地诊断日志。"><SwitchControl label="记录 DualSense 电池电压" checked={state.settings.voltage} onChange={value => send({ type: 'settings', patch: { voltage: value } })} /></SettingRow>
         <SettingRow title="诊断日志"><button className={s.button} onClick={() => send({ type: 'diagnostics' })}>打开诊断目录 <ChevronRight size={16} /></button></SettingRow>
         <form className={preferences.compatibility} onSubmit={event => {
-          event.preventDefault(); setExporting(true);
-          void run({ type: 'compatibility', context }).finally(() => setExporting(false));
+          event.preventDefault(); void previewReport();
         }}>
           <label htmlFor="compat-context">兼容性反馈说明 <small>选填</small></label>
           <input id="compat-context" name="compatibility-context" maxLength={240} autoComplete="off" placeholder="例如 V98 Pro V3，2.4 GHz，唤醒后仍无电量…" value={context} onChange={event => setContext(event.target.value)} />
-          <button className={s.button} type="submit" disabled={exporting || state.demo}>{exporting ? '正在生成…' : '生成兼容性报告'}</button>
+          <button ref={previewButton} className={s.button} type="submit" disabled={exporting || state.demo}>{exporting ? '正在生成…' : '预览兼容性报告'}</button>
+          {reportError && !reportPreview && <p role="alert">{reportError}</p>}
         </form>
+        {reportPreview && <Modal title="兼容性报告预览"
+          description="仅保存下方内容到本地，不会自动发送。分享前请检查你填写的说明。"
+          onClose={() => { if (!exporting) closeReport(); }}>
+          <pre tabIndex={0} aria-label="兼容性报告内容" style={{ maxHeight: 'min(45vh, 430px)', overflow: 'auto',
+            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: 12, border: '1px solid var(--line)',
+            borderRadius: 8, background: 'var(--panel)', fontSize: 12 }}>{reportPreview.json}</pre>
+          {reportError && <p className={s.formError} role="alert">{reportError}</p>}
+          <div className={s.confirmActions}>
+            <button type="button" className={s.button} disabled={exporting} onClick={closeReport}>取消</button>
+            <button type="button" className={s.primary} disabled={exporting}
+              onClick={() => { void saveReport(reportPreview); }}>{exporting ? '正在保存…' : '保存到本地'}</button>
+          </div>
+        </Modal>}
       </section>
     </div>
   </div>;
@@ -1206,8 +1246,8 @@ function FindDevices({ state, run, close }: { state: Snapshot; run: Run; close: 
         {loading ? <p>正在扫描 Windows 设备…</p> : error ? <p>{error}</p> : !found?.length ? <p>未发现设备。</p> : found.map(device => {
           const watched = state.devices.some(item => item.id === device.id);
           return <div key={device.id} className={s.discoveryRow}><div><b>{device.name}</b><small>{device.connection} · {
-            device.automatic || watched ? '已监测' : !device.connected ? '未连接' : device.reading ? '可添加 · ' + readingLabel(device.reading) : 'Windows 暂无可用电量'}</small></div>
-            {device.connected && device.reading && !device.automatic && !watched && <button className={s.button} disabled={!!pending} onClick={() => {
+            device.automatic || watched ? '已监测' : !device.connected ? '未连接' : device.reading ? '可添加 · ' + readingLabel(device.reading) : device.batteryCandidate === 'ble_bas' ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small></div>
+            {device.connected && (device.reading || device.batteryCandidate === 'ble_bas') && !device.automatic && !watched && <button className={s.button} disabled={!!pending} onClick={() => {
                 setPending(device.id);
                 void run({ type: 'add', id: device.id }).then(reply => {
                   setPending(null);

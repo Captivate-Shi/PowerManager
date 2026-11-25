@@ -1,5 +1,6 @@
+import type { CompatibilityPreview } from './compatibility-report';
 export type Power = 'discharging' | 'charging' | 'full' | 'unknown';
-export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' };
+export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' | 'ble' };
 export type Status = 'current' | 'offline' | 'no_radio_reply' | 'busy' | 'timeout' | 'bad_report' |
   'unavailable' | 'basic_bluetooth' | 'charging_error' | 'stale' | 'unreachable';
 export type Sample = { status: Status; reason: string; reading: Reading | null };
@@ -12,7 +13,7 @@ export type Device = {
 };
 export type Found = {
   id: string; name: string; connection: string; connected: boolean; automatic: boolean;
-  reading: Reading | null; offerBluetooth: boolean;
+  reading: Reading | null; offerBluetooth: boolean; batteryCandidate?: 'ble_bas';
 };
 export type Settings = {
   low: number; critical: number; repeat: number; snooze: number; fullscreenSound: boolean;
@@ -62,13 +63,14 @@ export type Command =
   | { type: 'refresh' | 'discover' | 'diagnostics' | 'mute' | 'pin' | 'closeSurface' }
   | { type: 'open'; id?: string }
   | { type: 'compatibility'; context: string }
+  | { type: 'compatibility'; reportToken: string }
   | { type: 'history'; id: string; range?: HistoryRange }
   | { type: 'add' | 'remove' | 'bluetooth' | 'snooze' | 'ignore'; id: string }
   | { type: 'settings'; patch: Partial<Settings>; confirmHistoryShorten?: boolean }
   | { type: 'toggleAlertSetting'; key: AlertSwitch }
   | { type: 'deviceSettings'; id: string; patch: DeviceSettings }
   | { type: 'preview'; severity: Severity; id?: string };
-export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean } |
+export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean; compatibility?: CompatibilityPreview } |
   { ok: false; error: string };
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;

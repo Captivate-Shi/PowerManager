@@ -187,12 +187,14 @@ std::map<std::wstring, FoundDevice> presentKeyboards()
 Sample readBattery(const Properties& props)
 {
     if (!props.flag(PKEY_Devices_Connected)) {
-        return {Status::offline};
+        return {Status::offline, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::disconnected)};
     }
-    if (auto reading = windowsReading(props.byte(PKEY_Devices_BatteryLife), props.byte(PKEY_Devices_ChargingState))) {
+    const auto percent = props.byte(PKEY_Devices_BatteryLife);
+    if (auto reading = windowsReading(percent, props.byte(PKEY_Devices_ChargingState))) {
         return {Status::current, reading};
     }
-    return {Status::unavailable};
+    return {Status::unavailable, {}, 0, static_cast<unsigned>(
+        percent ? WindowsBatteryDetail::invalidPercent : WindowsBatteryDetail::missingProperty)};
 }
 
 } // namespace
@@ -264,10 +266,12 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
         const auto connection = bus == WindowsBus::unknown && !keyboard.empty()
             ? keyboard.mapped().connection : std::wstring(windowsConnection(bus));
         devices.push_back({id, std::move(name), connection, sample.status != Status::offline,
-                           razer || sony || (!keyboard.empty() && keyboard.mapped().automaticallyMonitored), sample.reading});
+                           razer || sony || (!keyboard.empty() && keyboard.mapped().automaticallyMonitored), sample.reading,
+                           false, static_cast<WindowsBatteryDetail>(sample.detail)});
     }
     cleanup();
     for (auto& [id, keyboard] : keyboards) {
+        keyboard.batteryDetail = WindowsBatteryDetail::missingProperty;
         devices.push_back(std::move(keyboard));
     }
     std::ranges::stable_sort(devices, {}, [](const FoundDevice& candidate) {
@@ -282,21 +286,36 @@ Sample readWindowsDevice(const std::wstring& id)
 {
     const auto& api = queryApi();
     if (!api.getProperties || !api.freeProperties) {
-        return {Status::unavailable};
+        return {Status::unavailable, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::apiUnavailable)};
     }
     ULONG count = 0;
     const QueryProperty* properties = nullptr;
     const auto result = api.getProperties(deviceContainerDisplay, id.c_str(), 0, batteryKeys.size(),
                                           batteryKeys.data(), &count, &properties);
     if (FAILED(result)) {
-        return result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND) ? Sample{Status::offline}
-                                                            : Sample{Status::unavailable};
+        return result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND) ?
+            Sample{Status::offline, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::notFound)} :
+            Sample{Status::unavailable, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::queryFailed)};
     }
     const auto sample = readBattery(Properties({properties, count}));
     if (properties) {
         api.freeProperties(count, properties);
     }
     return sample;
+}
+
+const char* windowsBatteryReason(const Sample& sample)
+{
+    if (sample.reading) return "windows_battery_ok";
+    switch (static_cast<WindowsBatteryDetail>(sample.detail)) {
+    case WindowsBatteryDetail::disconnected: return "windows_offline";
+    case WindowsBatteryDetail::missingProperty: return "windows_no_battery";
+    case WindowsBatteryDetail::invalidPercent: return "windows_invalid_percent";
+    case WindowsBatteryDetail::apiUnavailable: return "windows_api_unavailable";
+    case WindowsBatteryDetail::notFound: return "windows_not_found";
+    case WindowsBatteryDetail::queryFailed: return "windows_query_failed";
+    default: return "windows_unknown";
+    }
 }
 
 } // namespace pm

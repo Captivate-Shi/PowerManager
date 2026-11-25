@@ -584,9 +584,14 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
     case 'refresh': await monitor?.poll(true); break;
     case 'compatibility': {
       if (!monitor) throw new Error('请在实机模式生成兼容性报告');
+      if ('reportToken' in command) {
+        if (typeof command.reportToken !== 'string' || !/^[0-9a-f-]{36}$/.test(command.reportToken))
+          throw new Error('预览已失效，请重新生成。');
+        monitor.exportCompatibility(command.reportToken);
+        return { ok: true, message: '兼容性报告已保存，可在诊断目录查看' };
+      }
       if (typeof command.context !== 'string' || command.context.length > 240) throw new Error('反馈说明最多 240 字');
-      await monitor.exportCompatibility(command.context.trim(), app.getVersion());
-      return { ok: true, message: '兼容性报告已保存，可在诊断目录查看' };
+      return { ok: true, compatibility: await monitor.previewCompatibility(command.context, app.getVersion()) };
     }
     case 'diagnostics': {
       const error = await shell.openPath(dataDir);

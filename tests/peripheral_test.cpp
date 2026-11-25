@@ -14,6 +14,11 @@ int main()
     assert(!peripheralTransport(0x1234, 0xc547));
     assert(!peripheralTransport(0x258a, 0x0250));
     assert(!peripheralTransport(0x046d, 0xc00e));
+    assert(std::wstring_view(sharedKeyboardLabel(Transport::vgn_usb, L"ATK V75X")) == L"ATK V75X");
+    assert(std::wstring_view(sharedKeyboardLabel(Transport::vgn_receiver, L"ATK V75X Dongle")) == L"ATK V75X 接收器");
+    assert(std::wstring_view(sharedKeyboardLabel(Transport::vgn_usb, L"ATK V75X Dongle")) == L"兼容 USB 键盘");
+    assert(std::wstring_view(sharedKeyboardLabel(Transport::vgn_receiver, L"Unknown VGN V98 Pro")) == L"兼容键盘接收器");
+
 
     Collection outlet{L"", L"", 0xff02, 2, 19, 0, 19};
     const auto shortCommand = vgnQuery(Transport::vgn_v3_receiver, outlet);
