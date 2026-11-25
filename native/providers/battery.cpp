@@ -55,6 +55,16 @@ DualSenseFullReportRequest makeDualSenseFullReportRequest()
     return packet;
 }
 
+bool encodeDualSenseHostOutput(std::span<std::uint8_t> output)
+{
+    if (output.size() > dualSenseMaxHostOutputLength ||
+        !dualSenseValidHostOutputLength(static_cast<unsigned>(output.size()))) return false;
+    const auto report = makeDualSenseFullReportRequest();
+    std::ranges::fill(output, std::uint8_t{});
+    std::ranges::copy(report, output.begin());
+    return true;
+}
+
 DualSenseVoltageReport makeDualSenseVoltageQuery(bool bluetooth)
 {
     // Only the read-only ANALOG_DATA/BATTERY factory command is supported.

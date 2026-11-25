@@ -43,12 +43,18 @@ struct VoltageSample {
 
 using DualSenseFullReportRequest = std::array<std::uint8_t, 78>;
 DualSenseFullReportRequest makeDualSenseFullReportRequest();
+inline constexpr unsigned dualSenseMaxHostOutputLength = 1024;
+constexpr bool dualSenseValidHostOutputLength(unsigned length)
+{
+    return length >= DualSenseFullReportRequest{}.size() && length <= dualSenseMaxHostOutputLength;
+}
+bool encodeDualSenseHostOutput(std::span<std::uint8_t> output);
 
 constexpr bool dualSenseFullReportEligible(unsigned vid, unsigned pid, bool bluetooth,
     unsigned page, unsigned usage, unsigned input, unsigned output, const Sample& observed)
 {
     return bluetooth && vid == 0x054c && (pid == 0x0ce6 || pid == 0x0df2) &&
-        page == 1 && usage == 5 && input >= 78 && output >= 78 &&
+        page == 1 && usage == 5 && input >= 78 && dualSenseValidHostOutputLength(output) &&
         observed.status == Status::basic_bluetooth && observed.report == 0x01 && !observed.reading;
 }
 

@@ -1329,7 +1329,20 @@ DWORD requestDualSenseFullReport(const Collection& collection, unsigned pid, Clo
         return ERROR_INVALID_DATA;
     Handle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
     if (!event.valid()) return GetLastError();
-    const auto request = makeDualSenseFullReportRequest();
+    PHIDP_PREPARSED_DATA descriptor{};
+    if (!HidD_GetPreparsedData(file.value, &descriptor)) return ERROR_INVALID_DATA;
+    HIDP_CAPS caps{};
+    const auto capStatus = HidP_GetCaps(descriptor, &caps);
+    HidD_FreePreparsedData(descriptor);
+    if (capStatus != HIDP_STATUS_SUCCESS || caps.UsagePage != 1 || caps.Usage != 5 ||
+        caps.InputReportByteLength < 78 || caps.OutputReportByteLength != collection.outputLength ||
+        !dualSenseValidHostOutputLength(caps.OutputReportByteLength)) return ERROR_INVALID_DATA;
+
+    // Windows uses the collection size. The logical report and its CRC
+    // are still in bytes 0..77; trailing bytes are zero transport padding.
+    std::array<std::uint8_t, dualSenseMaxHostOutputLength> buffer{};
+    const auto request = std::span(buffer).first(caps.OutputReportByteLength);
+    if (!encodeDualSenseHostOutput(request)) return ERROR_INVALID_DATA;
     DWORD written{};
     const auto error = completeIo(file.value, event.value, deadline, written, [&](OVERLAPPED* io) {
         return WriteFile(file.value, request.data(), static_cast<DWORD>(request.size()), &written, io);

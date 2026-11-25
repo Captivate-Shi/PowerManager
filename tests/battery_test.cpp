@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "battery.hpp"
 #include "razer_pro_receiver.hpp"
 #include "dashboard.hpp"
@@ -271,6 +272,22 @@ int main()
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1c, 
         0xf5, 0x29, 0x5f};
     require(requestFull == expectedFull, "Exact 78-byte zero-effect output report including independent CRC fixture");
+    for (const auto len : {78u, 547u}) {
+        std::array<std::uint8_t, 548> host;
+        host.fill(0xff);
+        const auto destination = std::span(host).first(len);
+        require(encodeDualSenseHostOutput(destination), "Use physical collection's bounded output length");
+        require(std::ranges::equal(destination.first(78), expectedFull), "Logical frame and CRC unchanged");
+        require(std::ranges::all_of(destination.subspan(78), [](auto byte) { return byte == 0; }),
+                "Host buffer padding is zero after the CRC");
+        require(host[len] == 0xff, "No write past the submitted buffer");
+    }
+    std::array<std::uint8_t, 77> shortHost{};
+    std::array<std::uint8_t, dualSenseMaxHostOutputLength + 1> longHost{};
+    require(!encodeDualSenseHostOutput(shortHost) && !encodeDualSenseHostOutput(longHost),
+            "Reject unsafe host sizes");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 5, 78,
+            dualSenseMaxHostOutputLength + 1, basic), "Oversize output descriptor cannot enable write");
 
     std::array<std::uint8_t, 78> bluetooth{};
     bluetooth[0] = 0x31;
