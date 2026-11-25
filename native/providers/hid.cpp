@@ -1317,6 +1317,39 @@ Sample readPassiveGamepad(const Collection& collection, bool bluetooth, bool dua
     return result;
 }
 
+// A zero-effect BT output is accepted by the physical Sony gamepad only;
+// keep the ordinary reader read-only. No feature or control-report fallback.
+DWORD requestDualSenseFullReport(const Collection& collection, unsigned pid, Clock::time_point deadline)
+{
+    Handle file(CreateFileW(collection.path.c_str(), GENERIC_READ | GENERIC_WRITE, sharing,
+        nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr));
+    if (!file.valid()) return GetLastError();
+    HIDD_ATTRIBUTES attributes{sizeof(HIDD_ATTRIBUTES)};
+    if (!HidD_GetAttributes(file.value, &attributes) || attributes.VendorID != 0x054c || attributes.ProductID != pid)
+        return ERROR_INVALID_DATA;
+    Handle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    if (!event.valid()) return GetLastError();
+    PHIDP_PREPARSED_DATA descriptor{};
+    if (!HidD_GetPreparsedData(file.value, &descriptor)) return ERROR_INVALID_DATA;
+    HIDP_CAPS caps{};
+    const auto capStatus = HidP_GetCaps(descriptor, &caps);
+    HidD_FreePreparsedData(descriptor);
+    if (capStatus != HIDP_STATUS_SUCCESS || caps.UsagePage != 1 || caps.Usage != 5 ||
+        caps.InputReportByteLength < 78 || caps.OutputReportByteLength != collection.outputLength ||
+        !dualSenseValidHostOutputLength(caps.OutputReportByteLength)) return ERROR_INVALID_DATA;
+
+    // Windows uses the collection size. The logical report and its CRC
+    // are still in bytes 0..77; trailing bytes are zero transport padding.
+    std::array<std::uint8_t, dualSenseMaxHostOutputLength> buffer{};
+    const auto request = std::span(buffer).first(caps.OutputReportByteLength);
+    if (!encodeDualSenseHostOutput(request)) return ERROR_INVALID_DATA;
+    DWORD written{};
+    const auto error = completeIo(file.value, event.value, deadline, written, [&](OVERLAPPED* io) {
+        return WriteFile(file.value, request.data(), static_cast<DWORD>(request.size()), &written, io);
+    });
+    return error ? error : written == request.size() ? ERROR_SUCCESS : ERROR_WRITE_FAULT;
+}
+
 bool gamepad(const Collection& value)
 {
     return value.page == 1 && (value.usage == 4 || value.usage == 5);
@@ -2175,6 +2208,28 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
             break;
         }
         result = attempt(collection);
+        const auto canRequestFull = [&](const Collection& lane) {
+            return dualSenseFullReportEligible(device.vid, device.pid, bluetooth, lane.page, lane.usage,
+                lane.inputLength, lane.outputLength, result) &&
+                lower(lane.path).find(L"{00001124-0000-1000-8000-00805f9b34fb}") != std::wstring::npos;
+        };
+        // Only the single physical Sony Bluetooth gamepad lane that actually
+        // sent a basic report is eligible. Throttle even denied/timed-out I/O.
+        if (canRequestFull(collection) && std::ranges::count_if(device.collections, canRequestFull) == 1 &&
+            Clock::now() + 150ms < deadline) {
+            const auto now = Clock::now();
+            auto& next = dualSenseFullRequestDue_[collection.path];
+            if (now >= next) {
+                next = now + 60s;
+                const auto error = requestDualSenseFullReport(collection, device.pid, std::min(deadline, now + 150ms));
+                result.detail = error;
+                if (error == ERROR_SUCCESS) {
+                    const auto enhanced = attempt(collection);
+                    if (enhanced.reading) return enhanced;
+                    if (enhanced.status == Status::offline || enhanced.status == Status::charging_error) return enhanced;
+                }
+            }
+        }
         if (result.reading) {
             if (razer) {
                 razerCollections_[device.key] = collection.path;
@@ -2275,6 +2330,11 @@ void HidMonitor::forgetOffline(const std::vector<Device>& devices)
             rapooPaths.insert(device.collections.front().path);
     }
     rapoo_.retainPaths(rapooPaths);
+    std::erase_if(dualSenseFullRequestDue_, [&](const auto& entry) {
+        return std::ranges::none_of(devices, [&](const auto& device) {
+            return std::ranges::find(device.collections, entry.first, &Collection::path) != device.collections.end();
+        });
+    });
     std::erase_if(confirmedVxe_, [&](const auto& key) {
         return std::ranges::find(devices,key,&Device::key)==devices.end();
     });

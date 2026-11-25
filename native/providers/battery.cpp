@@ -44,6 +44,27 @@ std::uint32_t dualSenseCrc(std::uint8_t prefix, std::span<const std::uint8_t> re
 
 } // namespace
 
+DualSenseFullReportRequest makeDualSenseFullReportRequest()
+{
+    DualSenseFullReportRequest packet{};
+    packet[0] = 0x31;
+    packet[1] = packet[2] = 0x10;
+    // All effect-valid flags remain unset. Only request the full BT stream.
+    const auto crc = dualSenseCrc(0xa2, std::span(packet).first(74));
+    for (unsigned i = 0; i < 4; ++i) packet[74 + i] = static_cast<std::uint8_t>(crc >> (8 * i));
+    return packet;
+}
+
+bool encodeDualSenseHostOutput(std::span<std::uint8_t> output)
+{
+    if (output.size() > dualSenseMaxHostOutputLength ||
+        !dualSenseValidHostOutputLength(static_cast<unsigned>(output.size()))) return false;
+    const auto report = makeDualSenseFullReportRequest();
+    std::ranges::fill(output, std::uint8_t{});
+    std::ranges::copy(report, output.begin());
+    return true;
+}
+
 DualSenseVoltageReport makeDualSenseVoltageQuery(bool bluetooth)
 {
     // Only the read-only ANALOG_DATA/BATTERY factory command is supported.

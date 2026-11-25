@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "battery.hpp"
 #include "razer_pro_receiver.hpp"
 #include "dashboard.hpp"
@@ -254,6 +255,40 @@ int main()
             "DualSense short USB report");
     require(parseDualSenseReport(usb, true).status == Status::basic_bluetooth,
             "DualSense basic Bluetooth report");
+    const Sample basic{Status::basic_bluetooth, {}, 1};
+    require(dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 5, 78, 547, basic), "DualSense BT basic can recover");
+    require(dualSenseFullReportEligible(0x054c, 0x0df2, true, 1, 5, 78, 78, basic), "Edge BT basic can recover");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, false, 1, 5, 78, 78, basic), "No USB probe");
+    require(!dualSenseFullReportEligible(0x054c, 0x05c4, true, 1, 5, 78, 78, basic), "No DS4 probe");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 5, 78, 78, {Status::timeout}), "No probe on silence alone");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 5, 78, 78, {Status::current, Reading{80,89,Power::full,8}, 0x31}), "No probe with full input");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 4, 78, 78, basic), "No probe on the wrong collection");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 5, 78, 48, basic), "No undersized output");
+    const auto requestFull = makeDualSenseFullReportRequest();
+    const DualSenseFullReportRequest expectedFull{0x31, 0x10, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1c, 
+        0xf5, 0x29, 0x5f};
+    require(requestFull == expectedFull, "Exact 78-byte zero-effect output report including independent CRC fixture");
+    for (const auto len : {78u, 547u}) {
+        std::array<std::uint8_t, 548> host;
+        host.fill(0xff);
+        const auto destination = std::span(host).first(len);
+        require(encodeDualSenseHostOutput(destination), "Use physical collection's bounded output length");
+        require(std::ranges::equal(destination.first(78), expectedFull), "Logical frame and CRC unchanged");
+        require(std::ranges::all_of(destination.subspan(78), [](auto byte) { return byte == 0; }),
+                "Host buffer padding is zero after the CRC");
+        require(host[len] == 0xff, "No write past the submitted buffer");
+    }
+    std::array<std::uint8_t, 77> shortHost{};
+    std::array<std::uint8_t, dualSenseMaxHostOutputLength + 1> longHost{};
+    require(!encodeDualSenseHostOutput(shortHost) && !encodeDualSenseHostOutput(longHost),
+            "Reject unsafe host sizes");
+    require(!dualSenseFullReportEligible(0x054c, 0x0ce6, true, 1, 5, 78,
+            dualSenseMaxHostOutputLength + 1, basic), "Oversize output descriptor cannot enable write");
+
     std::array<std::uint8_t, 78> bluetooth{};
     bluetooth[0] = 0x31;
     bluetooth[54] = 0x06;
