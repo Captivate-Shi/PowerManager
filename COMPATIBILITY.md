@@ -210,3 +210,11 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 [支持设备研发台账](docs/device-compatibility-ledger.md)按「型号 × 连接」记录开发结论。开发完仅表示默认可尝试；仅系统／标准蓝牙路径与专用协议分开标注，真机验收仍单独记录。发现身份冲突时保留原条目，新建正确的型号路径，不把硬件 ID 或共享接收器当型号证明。
 
 仍无法确认的设备继续试可归属的通用路径，全部失败显示「无数据」。不以旧读数、未知百分比、Windows/第三方占位数据或其他设备的电量填充。
+
+
+## 第 17 批：复用协议族和设备反馈
+
+- [122 条原因及复用清单](docs/peripheral-fallback-audit.md)逐行区分协议证据、身份、新鲜度、数值语义等。列为候选不等于通过验收。
+- **Sony**：经典蓝牙先读 Windows、再试单一 BAS。WH-1000XM3 和 WH-1000XM4 在确认同一个已配对并已连接的设备及其精确 SDP 身份后，共用 MDR v1 电量查询；已修正服务 UUID。WH-1000XM5 和其他 Sony WH 头戴系列可探测同设备的 [Fast Pair 消息服务](https://developers.google.com/nearby/fast-pair/specifications/extensions/deviceinformation)，只接收可验证的单电池新报文，不发送查询、订阅或设置命令。系列名只用于筛选候选，品牌以 Windows SDP 身份为准。WF 真无线耳机不套用单电池解析。
+- **Logitech**：[HID++](https://github.com/Logitech/cpg-docs/blob/master/hidpp20/README.rst) 的同一只设备可在已有通道里按实际公告能力尝试 0x1004/0x1000，不再因该型号录入时只验证过其中一个就停止；结果发布前复核当前设备。只有电压时不套用其他设备的百分比曲线。
+- **用户反馈**：在诊断里选设备后，可关联同一设备的 HID 接口号、VID/PID、用途与报文长度、标准蓝牙电量服务数量和各次读取的阶段、耗时、失败原因。无法绑定的共享接收器、手填设备和独立盘点不会错配给其他设备；不记录键鼠输入、原始报文、MAC、序列号或系统路径。报告依旧由用户预览、保存并自行提交。

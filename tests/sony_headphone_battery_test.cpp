@@ -1,4 +1,4 @@
-#include "sony_headphone_battery.hpp"
+#include "rfcomm_battery_transport.hpp"
 
 #include <array>
 #include <cassert>
@@ -25,7 +25,34 @@ static std::vector<std::uint8_t> reply(std::uint8_t sequence, unsigned level,
 
 int main()
 {
+    using pm::rfcomm_battery::matchModel;
+    using pm::rfcomm_battery::Model;
+    using pm::rfcomm_battery::sonyMdrV1ProductId;
+    static_assert(matchModel(L"WH-1000XM3") == Model::sonyXm3);
+    static_assert(matchModel(L"WH-1000XM4") == Model::sonyXm4);
+    static_assert(matchModel(L"WH-1000XM5") == Model::sonyXm5FastPair);
+    static_assert(matchModel(L"WH-1000XM6") == Model::sonyWhFastPair);
+    static_assert(matchModel(L"WH-CH720N") == Model::sonyWhFastPair);
+    static_assert(!matchModel(L"WH-NAME"));
+    static_assert(!matchModel(L"WF-1000XM3"));
+    static_assert(!matchModel(L"LE_WH-1000XM3"));
+    static_assert(!matchModel(L"WH-1000XM3 copy"));
+    static_assert(mdrV1SdpIdentity(sonyMdrV1ProductId(*matchModel(L"WH-1000XM3")), 2, 0x054c, 0x0cd3));
+    static_assert(mdrV1SdpIdentity(sonyMdrV1ProductId(*matchModel(L"WH-1000XM4")), 2, 0x054c, 0x0d58));
+    static_assert(!mdrV1SdpIdentity(xm3ProductId, 2, 0x054c, 0x0d58));
+    static_assert(!mdrV1SdpIdentity(xm4ProductId, 2, 0x054c, 0x0cd3));
+    static_assert(!mdrV1SdpIdentity(xm3ProductId, 1, 0x054c, 0x0cd3));
+    static_assert(!mdrV1SdpIdentity(xm3ProductId, 2, 0x0000, 0x0cd3));
+    static_assert(!mdrV1SdpIdentity(sonyMdrV1ProductId(Model::sonyXm5FastPair), 2, 0x054c, 0x0df0));
     static_assert(xm5SdpIdentity(2, 0x054c, 0x0df0));
+    using pm::rfcomm_battery::sonyFastPairIdentity;
+    static_assert(sonyFastPairIdentity(Model::sonyWhFastPair, 2, 0x054c, 0x0e00));
+    static_assert(!sonyFastPairIdentity(Model::sonyWhFastPair, 1, 0x054c, 0x0e00));
+    static_assert(!sonyFastPairIdentity(Model::sonyWhFastPair, 2, 0x046d, 0x0e00));
+    static_assert(!sonyFastPairIdentity(Model::sonyWhFastPair, 2, 0x054c, 0));
+    static_assert(!sonyFastPairIdentity(Model::sonyWhFastPair, 2, 0x054c, 0xffff));
+    static_assert(!sonyFastPairIdentity(Model::sonyXm5FastPair, 2, 0x054c, 0x0e00));
+    static_assert(!sonyFastPairIdentity(Model::sonyXm3, 2, 0x054c, 0x0cd3));
     static_assert(!xm5SdpIdentity(1, 0x054c, 0x0df0));
     static_assert(!xm5SdpIdentity(2, 0x054c, 0x0d58)); // XM4
     Xm5FastPairStream fastPair;

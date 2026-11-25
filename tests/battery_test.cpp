@@ -3,12 +3,21 @@
 #include "dashboard.hpp"
 #include "device_identity.hpp"
 #include "device_transport.hpp"
+#include "logitech_named_identity.hpp"
 #include <cassert>
 
 #include <cstdlib>
 #include <iostream>
 
 using namespace pm;
+
+static_assert(pm::tryLogitechBatteryFeature(0x1004, pm::named_legacy_1000, true, true));
+static_assert(pm::tryLogitechBatteryFeature(0x1000, pm::named_percent_1004, true, true));
+static_assert(!pm::tryLogitechBatteryFeature(0x1000, pm::named_percent_1004, true, false));
+static_assert(!pm::tryLogitechBatteryFeature(0x1001, pm::named_percent_1004, true, true));
+static_assert(pm::tryLogitechBatteryFeature(0x1001, pm::named_voltage_1001, true, true));
+static_assert(pm::tryLogitechBatteryFeature(0x1004, 0, false, true));
+static_assert(!pm::tryLogitechBatteryFeature(0x1002, 0, false, true));
 
 void require(bool condition, const char* message)
 {

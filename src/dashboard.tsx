@@ -1264,7 +1264,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
   const inputStyle: CSSProperties = { minWidth: 0, width: '100%', background: 'var(--panel)', border: '1px solid var(--line)',
     borderRadius: 8, padding: '8px 10px' };
   return <Modal title={preview ? '兼容性报告预览' : '选择要诊断的设备'}
-    description={preview ? '只保存到本地，不会自动发送。' : '请选择遇到问题的设备；只在系统未识别时填写。'}
+    description={preview ? '只保存到本地，不会自动发送。' : '请选择遇到问题的设备。只显示通用名称时，也请先选中，再填写型号。'}
     onClose={() => { if (!working) close(); }}>
     {preview ? <>
       <pre tabIndex={0} aria-label="兼容性报告内容" style={{ maxHeight: 'min(45vh, 430px)', overflow: 'auto',
@@ -1289,7 +1289,8 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
           <button className={s.button} type="button" disabled={scanning || working} onClick={() => { void scan(); }}>重新扫描</button>
         </div>
       </div>
-      {!scanning && devices.length === 0 && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
+      {!scanning && devices.length === 0 && !manual && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
+      {manual && <small role="status">手动补录不关联接口。若列表中有对应的通用设备，请选中它。</small>}
       {(manual || (selected && !selected.model)) && <label style={fieldStyle}>填写设备型号
         <input maxLength={80} autoComplete="off" style={inputStyle} required value={model} disabled={working}
           onChange={event => setModel(event.target.value)} placeholder="例如 V98 Pro V3" />

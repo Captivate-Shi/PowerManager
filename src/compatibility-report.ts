@@ -25,6 +25,7 @@ const gamepadStates = new Set(['ok', 'current', 'ready', 'unknown', 'not_availab
   'truncated', 'not_reported', 'api_error']);
 const gamepadLevels = new Set(['empty', 'low', 'medium', 'full', 'unknown']);
 const firmwareKind = new Set(['number', 'exact', 'range', 'coarse', 'unknown']);
+const descriptorStates = new Set(['unavailable', 'candidate', 'descriptor_mismatch', 'no_provider']);
 const connections = new Set(['USB', 'USB（直连或接收器）', 'USB（直连）', '蓝牙', 'Windows 外设', 'Windows 电量',
   '2.4 GHz', 'USB / 2.4 GHz', '2.4 GHz 共享接收器', 'Bluetooth LE', '蓝牙 LE', 'XInput', 'Windows 游戏手柄', 'Windows 手柄']);
 function from(value: unknown, values: Set<string>) {
@@ -139,11 +140,13 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     hidInterfaces: scoped(raw.hidInterfaces, 256, a => ({
       ...hardware(a), ...selectInts(a, ['usagePage', 'usage', 'inputBytes', 'outputBytes', 'featureBytes'], 0, 0xffff),
       ...selectInts(a, ['interfaceNumber'], -1, 0xffff),
-      ...selectFlags(a, ['descriptorAvailable']), candidateProvider: provider(a.candidateProvider) ?? null,
+      ...selectFlags(a, ['descriptorAvailable']), descriptorState: from(a.descriptorState, descriptorStates),
+      candidateProvider: provider(a.candidateProvider) ?? null, target: target(a.target),
     })),
     nativeDevices: scoped(raw.nativeDevices, 256, sample),
     windowsDevices: scoped(raw.windowsDevices, 256, a => ({
-      ...hardware(a), ...selectFlags(a, ['connected', 'bleBasListed']), connection: from(a.connection, connections),
+      ...hardware(a), ...selectFlags(a, ['connected', 'bleBasListed', 'inputOrHeadset', 'knownBluetooth']),
+      ...selectInts(a, ['bleServiceCount'], 0, 255), connection: from(a.connection, connections),
       battery: reading(a.battery), status: from(a.status, statuses), code: from(a.code, results),
       provider: provider(a.provider), transport: from(a.transport, connections), target: target(a.target), reasonCode: reasonCode(a.reasonCode), bleReasonCode: reasonCode(a.bleReasonCode),
     })),
@@ -161,7 +164,14 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     connection: from(subject.connection, connections), connected: subject.connected,
     evidence: matchingRows ? 'matched' : 'not_correlated',
   };
-  return JSON.stringify({ ...details, selectedDevice }, null, 2) + '\n';
+  const selectedEvidence = subject && {
+    scope: metadata.capture !== 'live' ? 'inventory_not_linked'
+      : !subjectTag ? 'device_not_linked'
+      : matchingRows ? 'selected_device_only' : 'device_not_in_snapshot',
+    hidInterfaceCount: details.hidInterfaces.length,
+    batteryAttemptCount: details.recentSamples.length + details.providerAttempts.length,
+  };
+  return JSON.stringify({ ...details, selectedDevice, selectedEvidence }, null, 2) + '\n';
 }
 
 export type CompatibilityPreview = { token: string; json: string };

@@ -24,6 +24,21 @@ constexpr unsigned namedBatteryFlag(unsigned feature)
         : feature == 0x1001 ? named_voltage_1001 : 0u;
 }
 
+// Native battery features are negotiated with the active unit. A model entry
+// selects a preferred route, but is not a requirement for another advertised
+// native feature. Voltage-to-percentage remains an explicitly proven profile.
+constexpr bool logitechNativeBatteryFeature(unsigned feature)
+{
+    return feature == 0x1004 || feature == 0x1000;
+}
+
+constexpr bool tryLogitechBatteryFeature(unsigned feature, unsigned preferred, bool named, bool uniqueChannel)
+{
+    if (!named) return logitechNativeBatteryFeature(feature) || feature == 0x1001;
+    return (preferred & namedBatteryFlag(feature)) != 0 ||
+        (uniqueChannel && logitechNativeBatteryFeature(feature));
+}
+
 constexpr bool logitechUnifying(unsigned vid, unsigned pid)
 {
     return vid == 0x046d && (pid == 0xc52b || pid == 0xc532);

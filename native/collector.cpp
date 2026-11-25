@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include "diagnostic_scope.hpp"
 #include "razer_pro_receiver.hpp"
 #include "peripheral_protocol.hpp"
 #include "device_search.hpp"
@@ -295,20 +296,35 @@ json gamepadInventory()
         {"windowsGamingInput", serialize(pads.windowsGamingInput)}, {"xinput", serialize(pads.xinput)}};
 }
 
-json inventory(ReportTargets& targets)
+json inventory(ReportTargets& targets, const std::vector<Device>& endpoints = {})
 {
     std::vector<HidInterface> descriptors;
     HidMonitor monitor;
     monitor.enumerate(false, &descriptors);
+    const auto devices = findWindowsDevices();
+    const auto owners = nativeContainerOwners(endpoints);
+    std::set<std::wstring> sharedReceivers;
+    for (const auto& endpoint : endpoints) {
+        const auto id = endpointContainer(endpoint.parentEndpoint);
+        if (!id.empty()) sharedReceivers.insert(id);
+    }
+    std::set<std::wstring> discovered;
+    if (devices) for (const auto& device : *devices) discovered.insert(device.id);
+    const auto scopedTarget = [&](const std::wstring& id) -> std::string {
+        const auto key = diagnosticScopeKey(id, owners, sharedReceivers, discovered);
+        return key.empty() ? std::string{} : reportTarget(targets, key);
+    };
     json hid = json::array();
     for (const auto& item : descriptors) {
-        hid.push_back({{"vid", item.vid}, {"pid", item.pid}, {"revision", item.revision},
-            {"interfaceNumber", item.interfaceNumber}, {"usagePage", item.page}, {"usage", item.usage},
+        const auto descriptorState = !item.descriptorAvailable ? "unavailable" :
+            item.provider ? "candidate" : item.providerRecognized ? "descriptor_mismatch" : "no_provider";
+        hid.push_back({{"target", scopedTarget(item.physicalContainer)}, {"vid", item.vid}, {"pid", item.pid},
+            {"revision", item.revision}, {"interfaceNumber", item.interfaceNumber},
+            {"usagePage", item.page}, {"usage", item.usage},
             {"inputBytes", item.inputLength}, {"outputBytes", item.outputLength}, {"featureBytes", item.featureLength},
-            {"descriptorAvailable", item.descriptorAvailable},
+            {"descriptorAvailable", item.descriptorAvailable}, {"descriptorState", descriptorState},
             {"candidateProvider", item.provider ? json(utf8(providerName(*item.provider))) : json(nullptr)}});
     }
-    const auto devices = findWindowsDevices();
     const auto ble = inspectBleBatteryServices();
     json windows = json::array();
     if (devices) {
@@ -317,16 +333,19 @@ json inventory(ReportTargets& targets)
             const Sample observed{Status::unavailable, device.battery, 0, static_cast<unsigned>(device.batteryDetail)};
             const auto found = ble.counts.find(device.id);
             const auto services = found == ble.counts.end() ? 0u : found->second;
-            windows.push_back({{"target", reportTarget(targets, device.id)}, {"connection", utf8(device.connection)},
+            windows.push_back({{"target", scopedTarget(device.id)}, {"connection", utf8(device.connection)},
                 {"connected", device.connected}, {"battery", reading(device.battery)},
+                {"inputOrHeadset", device.inputOrHeadset}, {"knownBluetooth", device.knownBluetooth},
                 {"reasonCode", windowsBatteryReason(observed)},
-                {"bleBasListed", services == 1},
+                {"bleBasListed", ble.complete && services == 1},
+                {"bleServiceCount", ble.complete && device.knownBluetooth ? json(services) : json(nullptr)},
                 {"bleReasonCode", !ble.complete ? "ble_interface_enumeration_failed" :
                     services > 1 ? "ble_multiple_battery_services" : services == 1 ? "ble_candidate" :
                     device.connection == L"蓝牙" ? "ble_no_battery_service" : "ble_not_bluetooth"}});
         }
     }
-    return {{"schemaVersion", 2}, {"hidInterfaces", hid}, {"windowsDevices", windows},
+    return {{"schemaVersion", 3}, {"hidInterfaces", hid}, {"windowsDevices", windows},
+        {"bleQuerySucceeded", ble.complete},
         {"windowsQuerySucceeded", devices.has_value()}, {"bleEnumerationError", ble.error}, {"gamepads", gamepadInventory()}};
 }
 
@@ -394,11 +413,15 @@ private:
     std::vector<FoundDevice> windowsDevices_;
     std::map<std::wstring, std::wstring> diagnosticFirmwareTargets_;
     using Time = std::chrono::steady_clock::time_point;
+    struct VendorAttempt {
+        rfcomm_battery::Result result;
+        Time started;
+        Time finished;
+    };
     struct VendorTask {
         std::wstring container;
-        Time started;
         rfcomm_battery::Model model;
-        std::future<rfcomm_battery::Result> result;
+        std::future<VendorAttempt> result;
         bool stillConnected{true};
     };
     std::optional<VendorTask> vendorTask_;
@@ -481,7 +504,7 @@ private:
 
     json compatibility()
     {
-        auto report = inventory(targets_);
+        auto report = inventory(targets_, endpoints_);
         json scans = json::array();
         for (const auto& attempt : monitor_.receiverAttempts()) {
             scans.push_back({{"vid", attempt.vid}, {"pid", attempt.pid}, {"slot", attempt.slot},
@@ -504,16 +527,34 @@ private:
     }
 
     void record(const Device& device, const json& measured, std::chrono::steady_clock::time_point start,
-        const std::string& target = {}, const char* route = nullptr, const std::string& reason = {})
+        const std::string& target = {}, const char* route = nullptr, const std::string& reason = {},
+        std::optional<Time> finish = {})
     {
         if (recent_.size() == 160) recent_.pop_front();
         const auto now = std::chrono::system_clock::now().time_since_epoch();
+        const auto routeName = route ? std::string_view(route) : std::string_view{};
+        const char* stage = "sample";
+        if (routeName == "ble-bas")
+            stage = "ble-level";
+        else if (reason.starts_with("windows_"))
+            stage = "windows-property";
+        else if (reason.find("identity") != std::string::npos || reason.find("mismatch") != std::string::npos)
+            stage = "identity";
+        else if (reason == "receiver_no_battery_message")
+            stage = "reply";
+        else if (reason == "receiver_protocol_invalid")
+            stage = "decode";
+        else if (reason == "receiver_service_unavailable")
+            stage = "service";
+        else if (reason == "receiver_unknown_endpoint" || reason == "receiver_ambiguous" || reason == "receiver_disconnected")
+            stage = "identity";
         recent_.push_back({{"unixMs", std::chrono::duration_cast<std::chrono::milliseconds>(now).count()},
             {"vid", device.vid}, {"pid", device.pid}, {"revision", device.revision}, {"slot", device.slot},
             {"transport", utf8(transportName(device.transport))},
             {"provider", route ? std::string(route) : utf8(providerName(device.transport))},
-            {"target", target}, {"reasonCode", !reason.empty() ? reason : "hid_" + measured.value("status", std::string("unavailable"))},
-            {"elapsedMs", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()},
+            {"target", target}, {"stage", stage},
+            {"reasonCode", !reason.empty() ? reason : "hid_" + measured.value("status", std::string("unavailable"))},
+            {"elapsedMs", std::chrono::duration_cast<std::chrono::milliseconds>(finish.value_or(std::chrono::steady_clock::now()) - start).count()},
             {"outcome", measured}});
     }
     std::vector<Device> endpoints_;
@@ -671,16 +712,16 @@ private:
                 vendorDevices.try_emplace(candidate.id, *model);
         }
         const auto now = std::chrono::steady_clock::now();
-        std::optional<std::pair<std::wstring, rfcomm_battery::Result>> vendorCompleted;
+        std::optional<std::pair<std::wstring, VendorAttempt>> vendorCompleted;
         if (vendorTask_) {
             const auto found = vendorDevices.find(vendorTask_->container);
             vendorTask_->stillConnected = vendorTask_->stillConnected &&
                 found != vendorDevices.end() && found->second == vendorTask_->model;
             if (vendorTask_->result.wait_for(0ms) == std::future_status::ready) {
-                auto result = vendorTask_->result.get();
+                auto attempt = vendorTask_->result.get();
                 if (vendorTask_->stillConnected) {
-                    if (now - vendorTask_->started > 8s) result = rfcomm_battery::Result{rfcomm_battery::Status::timeout};
-                    vendorCompleted.emplace(vendorTask_->container, result);
+                    if (now - attempt.started > 8s) attempt.result = {rfcomm_battery::Status::timeout};
+                    vendorCompleted.emplace(vendorTask_->container, std::move(attempt));
                 }
                 vendorTask_.reset();
             }
@@ -710,26 +751,26 @@ private:
             json value = nullptr;
             const auto vendorModel = vendorDevices.find(container);
             const bool sony = vendorModel != vendorDevices.end() &&
-                vendorModel->second == rfcomm_battery::Model::sonyXm4;
+                rfcomm_battery::sonyMdrV1ProductId(vendorModel->second) != 0;
             const bool sonyFastPair = vendorModel != vendorDevices.end() &&
-                vendorModel->second == rfcomm_battery::Model::sonyXm5FastPair;
+                rfcomm_battery::isSonyFastPair(vendorModel->second);
             const bool huawei = vendorModel != vendorDevices.end() &&
                 vendorModel->second == rfcomm_battery::Model::huaweiFreeClip2;
             const bool completed = vendorCompleted && vendorCompleted->first == container;
             if (shouldRead(id) || completed) {
-                const auto started = std::chrono::steady_clock::now();
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
                 const auto measured = standardBattery(container, container, completed);
                 if (measured) value = sample(batteryFallback(*measured, {Status::offline}));
                 const auto windowsDetail = measured
                     ? static_cast<WindowsBatteryDetail>(measured->detail) : WindowsBatteryDetail::none;
-                // Try the private service only for an exact connected model
-                // and only after the standard sources have finished.
+                // Only an eligible local Bluetooth endpoint can reach a
+                // vendor service; finish the standard sources first.
                 if (vendorModel != vendorDevices.end() && measured && !hasBatteryReading(*measured) &&
                     windowsDetail != WindowsBatteryDetail::disconnected) {
                     if (completed) {
-                        const auto& fresh = vendorCompleted->second;
+                        const auto& attempt = vendorCompleted->second;
+                        const auto& fresh = attempt.result;
                         Sample vendor{Status::unavailable};
                         if (fresh.battery) {
                             const int level = static_cast<int>(fresh.battery->percent);
@@ -744,25 +785,31 @@ private:
                             switch (fresh.status) {
                             case R::success: return "receiver_current";
                             case R::unknown_endpoint: return "receiver_unknown_endpoint";
+                            case R::identity_unverified: return "receiver_identity_unverified";
                             case R::disconnected: return "receiver_disconnected";
                             case R::ambiguous: return "receiver_ambiguous";
                             case R::service_unavailable: return "receiver_service_unavailable";
                             case R::busy: return "receiver_busy";
                             case R::timeout: return "receiver_timeout";
                             case R::protocol_invalid: return "receiver_protocol_invalid";
+                            case R::no_battery_message: return "receiver_no_battery_message";
                             default: return "receiver_unavailable";
                             }
                         }();
-                        record(diagnostic, sample(vendor), started, target, huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : sonyFastPair ? "sony-fast-pair" : "oppo-elnk", reason);
+                        record(diagnostic, sample(vendor), attempt.started, target,
+                            huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : sonyFastPair ? "sony-fast-pair" : "oppo-elnk",
+                            reason, attempt.finished);
                     } else {
                         // Sampling is asynchronous and capped at one private
                         // connection in the process; cached values are never republished.
                         if (!vendorTask_ && (!vendorDue_.contains(container) || now >= vendorDue_.at(container))) {
                             vendorDue_[container] = now + 60s;
                             const auto model = vendorModel->second;
-                            vendorTask_.emplace(VendorTask{container, now, model, std::async(std::launch::async, [container, model] {
-                                try { return rfcomm_battery::read(container, model); }
-                                catch (...) { return rfcomm_battery::Result{rfcomm_battery::Status::system_error}; }
+                            vendorTask_.emplace(VendorTask{container, model, std::async(std::launch::async, [container, model] {
+                                const auto started = std::chrono::steady_clock::now();
+                                auto result = rfcomm_battery::Result{rfcomm_battery::Status::system_error};
+                                try { result = rfcomm_battery::read(container, model); } catch (...) {}
+                                return VendorAttempt{std::move(result), started, std::chrono::steady_clock::now()};
                             })});
                         }
                         // In flight or deliberately rate-limited is not a

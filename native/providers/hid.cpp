@@ -1148,20 +1148,21 @@ Sample readLogitech(const Device& device, unsigned& order)
     LogitechQuery query(*channel, shortLogitechChannel(device), device.slot, order, Clock::now() + 900ms);
     unsigned model = 0;
     const bool named = device.logitechNamedModel != 0;
-    if (named && std::ranges::count_if(device.collections, logitechChannel) != 1)
+    const bool uniqueChannel = std::ranges::count_if(device.collections, logitechChannel) == 1;
+    if (named && !uniqueChannel)
         return {Status::unavailable};
     const unsigned modelLink = logitechBolt(device.vid, device.pid) ? 2 : 4;
     const auto identity = query.unit(named ? &model : nullptr, modelLink);
     if (identity != device.unit) return identity ? Sample{Status::offline} : query.failure(3);
     if (named && model != device.logitechNamedModel) return {Status::unavailable};
     const auto verify = [&](Sample reading) {
-        if (!named || !reading.reading) return reading;
+        if (!reading.reading) return reading;
         // A receiver remains attached while a paired device is replaced.
         // Re-check the live unit + model rather than publishing its reading
         // against the identity cached during enumeration.
-        const auto verified = query.unit(&model, modelLink);
+        const auto verified = query.unit(named ? &model : nullptr, modelLink);
         if (verified != identity) return verified ? Sample{Status::offline} : query.failure(3);
-        return model == device.logitechNamedModel ? reading : Sample{Status::unavailable};
+        return !named || model == device.logitechNamedModel ? reading : Sample{Status::unavailable};
     };
     Sample previous{Status::unavailable};
     const auto remember = [&](const Sample& attempt) {
@@ -1170,8 +1171,13 @@ Sample readLogitech(const Device& device, unsigned& order)
         return attempt.status == Status::busy || attempt.status == Status::offline ||
                attempt.status == Status::no_radio_reply || attempt.status == Status::timeout;
     };
-    for (const unsigned feature : {0x1004u, 0x1000u, 0x1001u}) {
-        if (named && !(device.logitechNamedFeatures & namedBatteryFlag(feature))) continue;
+    std::array<unsigned, 3> features{0x1004u, 0x1000u, 0x1001u};
+    // Experience from an exact model is still preferred; another announced
+    // native percentage/level function is tried if that route fails.
+    if (named && (device.logitechNamedFeatures & named_legacy_1000) &&
+        !(device.logitechNamedFeatures & named_percent_1004)) std::swap(features[0], features[1]);
+    for (const unsigned feature : features) {
+        if (!tryLogitechBatteryFeature(feature, device.logitechNamedFeatures, named, uniqueChannel)) continue;
         const auto index = query.feature(feature);
         if (!index) {
             if (query.winError || query.protocolError) {
@@ -1193,17 +1199,17 @@ Sample readLogitech(const Device& device, unsigned& order)
             if (feature == 0x1000) {
                 const auto caps = query.read(index, 1);
                 const auto classification = namedLegacyCoarse(caps);
-                if (named && !classification) {
+                if (!classification) {
                     const auto failure = query.failure(feature);
                     if (remember(failure)) return failure;
+                    // No guessed interpretation (raw level versus percent).
                     continue;
                 }
-                coarse = named ? *classification
-                               : caps.size() >= 2 && caps[0] >= 2 && (caps[0] < 10 || !(caps[1] & 2));
+                coarse = *classification;
             }
             const auto data = query.read(index, 0);
             if (data.empty()) candidate = query.failure(feature);
-            else if (named && feature == 0x1000 && data.size() >= 3 && data[2] == 0 && data[1] > data[0])
+            else if (feature == 0x1000 && data.size() >= 3 && data[2] == 0 && data[1] > data[0])
                 candidate = {Status::bad_report, {}, 0x11, data[1], feature};
             else candidate = logitechBattery(feature, true, data, coarse,
                 feature == 0x1001 && (named ? (device.logitechNamedFeatures & named_voltage_1001) != 0
@@ -1697,9 +1703,22 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                  transport == Transport::ajazz_mk87pro_receiver || transport == Transport::mchose_g87_candidate) &&
                 (!info.valid() || !cnDescriptor(info.value, *transport, interfaceNumber.value_or(255))))
                 reportedProvider.reset();
+            std::wstring physicalContainer;
+            // Do not fall back to a USB parent or path: a shared receiver,
+            // hub or composite parent is not evidence of child identity.
+            DEVPROPTYPE type{};
+            GUID id{};
+            ULONG size = sizeof(id);
+            if (CM_Get_DevNode_PropertyW(devInfo.DevInst, &DEVPKEY_Device_ContainerId, &type,
+                    reinterpret_cast<PBYTE>(&id), &size, 0) == CR_SUCCESS &&
+                type == DEVPROP_TYPE_GUID && size == sizeof(id) && id.Data1 != 0 && id.Data1 != 0xffffffff) {
+                wchar_t value[40]{};
+                if (StringFromGUID2(id, value, 40)) physicalContainer = lower(value);
+            }
             inventory->push_back({vid, pid, attributes.VersionNumber, caps.UsagePage, caps.Usage,
                 caps.InputReportByteLength, caps.OutputReportByteLength, caps.FeatureReportByteLength,
-                interfaceNumber ? static_cast<int>(*interfaceNumber) : -1, haveCaps, reportedProvider});
+                interfaceNumber ? static_cast<int>(*interfaceNumber) : -1, haveCaps, reportedProvider,
+                std::move(physicalContainer), transport.has_value()});
             continue;
         }
         if ((isVgn(*transport) || *transport == Transport::logitech_receiver || *transport == Transport::logitech_usb) &&

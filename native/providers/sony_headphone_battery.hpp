@@ -12,8 +12,18 @@ namespace pm::sony_headphone {
 
 // Single-battery MDR V1 interoperability behavior, documented and tested by
 // https://github.com/marconvcm/sony-device-center/blob/897022b041b7b312f6ccbd6956e5f0c6e6e76b57/libs/sony-protocol/src/ProtocolV1.cpp
-// This intentionally implements no other Sony model, commands or protocol generation.
-inline constexpr std::wstring_view model = L"WH-1000XM4";
+// Supported classic endpoints have recorded SDP PnP identities (USB vendor ID source):
+// https://github.com/bluez/bluez/issues/398 (XM3, 0CD3)
+// https://github.com/blueman-project/blueman/issues/1616 (XM4, 0D58)
+inline constexpr std::wstring_view xm3Name = L"WH-1000XM3";
+inline constexpr std::wstring_view xm4Name = L"WH-1000XM4";
+inline constexpr unsigned xm3ProductId = 0x0cd3;
+inline constexpr unsigned xm4ProductId = 0x0d58;
+constexpr bool mdrV1SdpIdentity(unsigned expectedPid, unsigned source, unsigned vid, unsigned pid)
+{
+    return (expectedPid == xm3ProductId || expectedPid == xm4ProductId) &&
+        source == 2 && vid == 0x054c && pid == expectedPid;
+}
 
 struct Battery {
     unsigned percent;

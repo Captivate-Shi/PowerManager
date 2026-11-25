@@ -1,7 +1,7 @@
 # 支持设备研发台账
 
-246 条型号 × 连接：开发完 124 条（其中 33 条只有系统／标准蓝牙读数路径），无法判断 122 条（含 3 条模拟音频排除项）。
-开发完只表示读取路径已写入代码，仍以真机能否取得有效数据为准。“无法判断”不阻止已经可用的系统兜底，不以假值填充。真实 0% 和无数据不同。
+247 条型号 × 连接：开发完 125 条（其中 33 条只有系统／标准蓝牙读数路径），无法判断 122 条（含 3 条模拟音频排除项）。
+开发完只表示读取路径已写入代码，仍以真机能否取得有效数据为准。“无法判断”不阻止已经可用的系统兜底，不以假值填充。真实 0% 和无数据不同。上一批 122 条的逐行归类见[兜底审计](./peripheral-fallback-audit.md)。
 
 | ID | 设备 | 连接 | 结论 | 说明 |
 |---|---|---|---|---|
@@ -81,7 +81,8 @@
 | DEV-7882A9E055 | HUAWEI FreeClip 2 | 配对后经典蓝牙 | 开发完 | Windows SIG 027D:4113、已配对且已连接；系统无读数才查 SPP，忙时退出。显示最低有效耳机电量；充电状态不推断。余电待真机。 |
 | DEV-A0071606A0 | OPPO Enco Clip2 | 配对后经典蓝牙候选 | 开发完 | 仅已配对、连接、精确型号和 ELNK 服务；确认 06E010 后才读电量。耳机取最低有效值，不拿盒电量代替。真机待验。 |
 | DEV-E71A5F4913 | OPPO Enco X4 | 配对后经典蓝牙 | 开发完 | 接入序 1：产品 ID 06EC10；读取最低有效耳机电量，不含 LE Audio。 |
-| DEV-FCFFFD3DA2 | Sony WH-1000XM4 | 配对后经典蓝牙 | 开发完 | 上游报告 Windows 固件 3.0.1 读数；本项目集成不等于硬件验证。 |
+| DEV-AD8F661901 | Sony WH-1000XM3 | 配对后经典蓝牙 | 开发完 | Windows → BAS → Sony MDR v1；与 XM4 共用电量查询，核对同一容器和独立 SDP 身份 054C:0CD3。待余电真机。 [来源](https://github.com/mos9527/SonyHeadphonesClient/blob/v1-compat/docs/device-support/WH-1000XM3.md) |
+| DEV-FCFFFD3DA2 | Sony WH-1000XM4 | 配对后经典蓝牙 | 开发完 | 与 XM3 共用 MDR v1 电量查询，校正服务 UUID；核对同一容器和 SDP 身份 054C:0D58。待余电真机。 [来源](https://github.com/randwardatake/wh1000xm4-anc-optimizer/blob/main/docs/STATUS.md) |
 | DEV-C5DE96A056 | ASUS ROG ROG Gladius III Wireless AimPoint | 2.4G OMNI | 无法判断 | OMNI 共用接收器尚不能把 Gladius III AimPoint 与其他鼠标的在线身份绑定；未启用。 [来源](https://www.asus.com/us/support/faq/1050878/) |
 | DEV-869A8AD6F9 | ASUS ROG ROG Harpe Ace Aim Lab Edition | 2.4G OMNI | 无法判断 | 缺 Harpe Ace Aim Lab Edition 的 OMNI 模式实时型号与电量回包；不借共用接收器身份。 [来源](https://www.asus.com/us/support/faq/1050878/) |
 | DEV-9D38CCDA66 | ASUS ROG ROG Keris II Ace | 2.4G OMNI | 无法判断 | 缺 Keris II Ace 的 OMNI 同鼠标在线身份与厂商电量回包；早代 Keris 路径不外推。 [来源](https://www.asus.com/us/support/faq/1050878/) |
@@ -171,7 +172,7 @@
 | DEV-CBD94A3ACD | Samsung Galaxy Buds3 | 配对后经典蓝牙 | 无法判断 | 上游有型号配置，但未核实此型号的会话身份、电量样本与新鲜度。 [来源](https://github.com/timschneeb/GalaxyBudsClient/blob/master/GalaxyBudsClient/Model/Specifications/Buds3DeviceSpec.cs) |
 | DEV-237E9E784A | Samsung Galaxy Buds3 Pro | 配对后经典蓝牙 | 无法判断 | 上游有 Windows 型号解码测试，尚未验证私有会话和电量采样实时性。 [来源](https://github.com/timschneeb/GalaxyBudsClient/tree/master/GalaxyBudsClient.Tests/Buds3Pro) |
 | DEV-CC4E3B59BF | Sony WH-1000XM5 | 配对后经典蓝牙 | 开发完 | 精确名称、配对且连接、Windows 同容器、SDP USB-IF 054C:0DF0；Fast Pair RFCOMM 只接收单电池新报文，无写入、无订阅，不从 MDR 或广播猜电量。待 Windows 真机。 [来源](https://developers.google.com/nearby/fast-pair/specifications/extensions/deviceinformation) |
-| DEV-D3671EC1DB | Sony WH-1000XM6 | 配对后经典蓝牙 | 无法判断 | MDR2 上游电量间歇，缺可靠样本和 Windows 硬件绑定。 [来源](https://github.com/marconvcm/sony-device-center/blob/main/README.md) |
+| DEV-D3671EC1DB | Sony WH-1000XM6 | 配对后经典蓝牙 | 无法判断 | 默认尝试 Windows／BAS 和 Sony WH 系列只收不发的 Fast Pair 单电池路径；是否有该服务及实时读数未实测。MDR2 缺稳定证据，不发送 XM3/XM4 命令。 [来源](https://github.com/marconvcm/sony-device-center/blob/main/README.md) |
 | DEV-1A917A12CD | soundcore Liberty 4 NC | 配对蓝牙 | 无法判断 | 找到型号专用 RFCOMM UUID 与 A3947 状态报文；上游只提供五格电量，不证实每格对应的百分比边界。产品界面需支持保留原始档位后再接，不将格数换算成精确值。 [来源](https://github.com/Oppzippy/OpenSCQ30/blob/master/tools/soundcore-device-faker/devices/a3947.toml) |
 | DEV-FA95A9B1CE | soundcore Space One | 配对蓝牙 | 无法判断 | 找到型号专用 RFCOMM UUID 与 A3035 状态报文；上游只提供五格电量，不证实每格对应的百分比边界。产品界面需支持保留原始档位后再接，不将格数换算成精确值。 [来源](https://github.com/Oppzippy/OpenSCQ30/blob/master/tools/soundcore-device-faker/devices/a3035.toml) |
 | DEV-DCB0BD123C | soundcore Space Q45 | 配对蓝牙 | 无法判断 | 找到型号专用 RFCOMM UUID 与 A3040 状态报文；上游只提供五格电量，不证实每格对应的百分比边界。产品界面需支持保留原始档位后再接，不将格数换算成精确值。 [来源](https://github.com/Oppzippy/OpenSCQ30/blob/master/tools/soundcore-device-faker/devices/a3040.toml) |

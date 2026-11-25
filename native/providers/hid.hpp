@@ -62,6 +62,9 @@ struct HidInterface {
     int interfaceNumber;
     bool descriptorAvailable;
     std::optional<Transport> provider;
+    // Local correlation only; never serialized to IPC or included in a report.
+    std::wstring physicalContainer{};
+    bool providerRecognized{};
 };
 
 struct ReceiverAttempt {
