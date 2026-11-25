@@ -66,6 +66,7 @@ using RazerReport = std::array<std::uint8_t, 91>;
 enum class RazerQuery { mouseBattery, pairedDevices, keyboardBattery, keyboardCharging };
 RazerReport makeRazerQuery(RazerQuery query = RazerQuery::mouseBattery);
 Sample parseRazerReport(std::span<const std::uint8_t> report, RazerQuery query = RazerQuery::mouseBattery);
+Sample parseSwitchProBluetoothReport(std::span<const std::uint8_t> report);
 Sample parse8BitDoPro3BluetoothReport(std::span<const std::uint8_t> report);
 Sample parseDualShock4Report(std::span<const std::uint8_t> report, bool bluetooth);
 Sample parseDualSenseReport(std::span<const std::uint8_t> report, bool bluetooth);

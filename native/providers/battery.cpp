@@ -167,6 +167,24 @@ Sample parseDualSenseReport(std::span<const std::uint8_t> report, bool bluetooth
             id, status};
 }
 
+Sample parseSwitchProBluetoothReport(std::span<const std::uint8_t> report)
+{
+    if (report.empty()) return {Status::bad_report};
+    if (report[0] == 0x3f) return {Status::basic_bluetooth, {}, 0x3f};
+    // Only the full input-state report, never command response or NFC data.
+    // HidClass can pad this 49-byte Bluetooth report to the largest report.
+    if (report[0] != 0x30 || report.size() < 49)
+        return {Status::bad_report, {}, report[0], static_cast<unsigned>(report.size())};
+    const unsigned state = report[2];
+    const unsigned level = state >> 5;
+    if (level > 4) return {Status::bad_report, {}, 0x30, state};
+    const auto power = state & 0x10 ? Power::charging : Power::discharging;
+    // UI bands for the five discrete levels; not a calibrated percentage.
+    const int upper = static_cast<int>(level) * 25;
+    return {Status::current, Reading{upper ? upper - 24 : 0, upper, power, static_cast<int>(level)},
+        0x30, state};
+}
+
 Sample parse8BitDoPro3BluetoothReport(std::span<const std::uint8_t> report)
 {
     if (report.size() < 15 || report[0] != 4) {

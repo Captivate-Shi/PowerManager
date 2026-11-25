@@ -322,7 +322,8 @@ const char* art(const Device& device)
     if (isDualSense(device.transport)) return "dualsense";
     if (device.transport == Transport::sony_gamepad_usb || device.transport == Transport::sony_gamepad_bluetooth)
         return device.pid == 0x0df2 ? "dualsense" : "controller";
-    if (device.transport == Transport::eightbitdo_pro3_bluetooth) return "controller";
+    if (device.transport == Transport::eightbitdo_pro3_bluetooth ||
+        device.transport == Transport::switch_pro_bluetooth) return "controller";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard) return "keyboard";
     if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver ||
         device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver) return "mouse";

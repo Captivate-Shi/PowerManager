@@ -24,6 +24,22 @@ Sample level(int low, int high, Power power = Power::discharging)
 
 int main()
 {
+    std::array<std::uint8_t, 49> switchFull{0x30, 0, 0x8e};
+    const auto fullBand = parseSwitchProBluetoothReport(switchFull);
+    assert(fullBand.reading && fullBand.reading->low == 76 && fullBand.reading->high == 100);
+    switchFull[2] = 0x31;
+    const auto chargingBand = parseSwitchProBluetoothReport(switchFull);
+    assert(chargingBand.reading && chargingBand.reading->low == 1 && chargingBand.reading->high == 25);
+    assert(chargingBand.reading->power == Power::charging);
+    switchFull[2] = 0x00;
+    assert(parseSwitchProBluetoothReport(switchFull).reading->high == 0);
+    switchFull[2] = 0xa0;
+    assert(!parseSwitchProBluetoothReport(switchFull).reading);
+    assert(!parseSwitchProBluetoothReport(std::span(switchFull).first(48)).reading);
+    switchFull[0] = 0x21;
+    assert(!parseSwitchProBluetoothReport(switchFull).reading);
+    switchFull[0] = 0x3f;
+    assert(parseSwitchProBluetoothReport(switchFull).status == Status::basic_bluetooth);
     using pm::WindowsBus;
     const std::wstring_view usbIds[] = {L"USB\\VID_1234&PID_2345"};
     const std::wstring_view ble[] = {L"BTHLEDEVICE\\{SERVICE}", L"USB\\VID_0000"};

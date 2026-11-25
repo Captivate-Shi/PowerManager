@@ -119,3 +119,9 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 | 5 · 等设备身份 | 用户反馈的雷柏通用键盘及其他仅见通用名称的设备 | 不套用鼠标报文；先核对设备型号及接收器接口，再排期。 |
 
 “本批”只表示代码进入兼容草稿。真机和并行音频仍需验证。
+
+## Switch Pro 原生蓝牙
+
+仅限原生 Bluetooth HID 的 `057E:2009` 游戏手柄集合，需有唯一匹配接口和 Windows 设备容器。只被动读取完整 `0x30` 报告里的电量档位和充电标记，不发子命令、不强切模式，也不读取 USB 或 Joy-Con。手柄仅上报简化 `0x3F` 时，尝试同一物理容器的 Windows 电量；仍无则保留未知。界面的区间是档位表达，不是校准的百分比。第三方手柄可能复用同一标识，所以用“Switch Pro（蓝牙模式）”，不据此辨别原厂。
+
+依据：[SDL 报告布局](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_switch.c) · [Windows 枚举记录](https://github.com/libsdl-org/SDL/issues/11849) · [HaloBattery 实现范围](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md#nintendo-switch-pro-controller-joy-con-l--r)。余电仍待实物，需对照 Steam 或游戏已开启完整报告及无完整报告两种状态。
