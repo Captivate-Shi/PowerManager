@@ -29,7 +29,9 @@ Windows 发现阶段已根据总线和硬件 ID 区分蓝牙、USB 与连接方�
 | VGN V98 Pro V3 2.4 GHz `258A:024F` | 匹配已报道的厂商通道 `FF02:0002`，按描述符处理 19 字节和带校验的 20 字节格式。无线应答需确认当前模式，0% 占位暂视为未知。19 字节路径有独立上游实测。USB 和接收器线路分开记录，缺少可验证的跨线路设备身份时可出现两条记录。 |
 | VGN V98 Pro V4 与其他 VGN 协议 | 先导出报告核对实际 VID/PID、版本与报文接口。V4 的 VIA 路径单独评估。蓝牙继续以 Windows 可用的电量为准。 |
 | Logitech LIGHTSPEED、Bolt、Unifying、部分 Nano | 已接入限定接收器表和 HID++ 2.0 的只读槽位轮询。匹配槽位和设备实体后才绑定读数。能够取得稳定的单元标识后进入自动监测。百分比支持声明明确时使用 `0x1004`，有 `0x1000` 时区分低分辨率档位、充满状态和未知值。HID++ 1.0 与 Centurion 另行适配。 |
-| Logitech 电压型设备，例如部分 G502 LIGHTSPEED | `0x1001` 可记下毫伏值供比对。G502 X PLUS 等上报原生百分比的型号走数字读数路径。不同厂商、电池或充电状态不共用一条电压曲线。 |
+| Logitech G502 LIGHTSPEED、G PRO Wireless 初代 | 先查原生百分比；只上报 `0x1001` 时，按已匹配的型号把放电电压显示为估算区间，不显示假精度。GPW 初代的 2.4G 与 USB 仅读取路径及报文测试通过，余电真机待验。不扩给 SUPERLIGHT、耳机或未知设备。 |
+
+GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https://github.com/pwr-Solaar/Solaar/issues/2330)；回归边界：[OpenLogi #688（G502 只有电压）](https://github.com/AprilNEA/OpenLogi/issues/688)、[HaloBattery #413（截断回包）](https://github.com/HeyOkay/HaloBattery/issues/413)。
 
 型号和协议依据：[VGNKeyboardBattery](https://github.com/MuyuDada/VGNKeyboardBattery) · [wdbattery 的 V3 实测](https://github.com/RIVERCROFT111/wdbattery) · [Logitech 公共协议](https://github.com/Logitech/cpg-docs) · [Solaar 接收器表](https://github.com/pwr-Solaar/Solaar/blob/master/lib/logitech_receiver/base_usb.py) · [HaloBattery 协议与型号记录](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md)
 

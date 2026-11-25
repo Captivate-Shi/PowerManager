@@ -57,14 +57,19 @@ int main()
     frame[5] = 101;
     assert(parseVgn(Transport::vgn_v3_receiver, frame)->status == Status::bad_report);
 
-    const std::uint8_t reply[] = {0x11, 2, 5, 0x1b, 0, 1, 0};
+    const std::uint8_t reply[20] = {0x11, 2, 5, 0x1b, 0, 1, 0};
     assert(!parseLogitechReply(reply, 1, 5, 0x1b));
     assert(!parseLogitechReply(reply, 2, 4, 0x1b));
     assert(!parseLogitechReply(reply, 2, 5, 0x1a));
+    assert(!parseLogitechReply(std::span(reply).first(19), 2, 5, 0x1b));
+    assert(!parseLogitechReply(std::span(reply).first(7), 2, 5, 0x1b));
     const auto valid = parseLogitechReply(reply, 2, 5, 0x1b);
     assert(valid && logitechBattery(0x1004, true, valid->params).reading->low == 0);
     assert(!logitechBattery(0x1004, false, valid->params).reading);
-    const std::uint8_t protocolError[] = {0x10, 2, 0x8f, 5, 0x1b, 8};
+    const std::uint8_t paddedShort[20] = {0x10, 2, 5, 0x1b, 87, 4, 0, 255};
+    assert(parseLogitechReply(paddedShort, 2, 5, 0x1b)->params.size() == 3);
+    assert(!parseLogitechReply(std::span(paddedShort).first(6), 2, 5, 0x1b));
+    const std::uint8_t protocolError[] = {0x10, 2, 0x8f, 5, 0x1b, 8, 0};
     assert(parseLogitechReply(protocolError, 2, 5, 0x1b)->error == 8);
     const std::uint8_t legacyCharging[] = {0, 0, 1};
     assert(!logitechBattery(0x1000, true, legacyCharging).reading);
@@ -78,7 +83,15 @@ int main()
     const std::uint8_t voltage[] = {0x0f, 0x42, 0};
     const auto voltageOnly = logitechBattery(0x1001, true, voltage);
     assert(!voltageOnly.reading && voltageOnly.millivolts == 3906);
+    const auto gpw = logitechBattery(0x1001, true, voltage, false,
+        logitechVoltageProfile(L"G Pro Wireless Gaming Mouse"));
+    assert(gpw.reading && gpw.reading->low == 60 && gpw.reading->high == 70);
+    assert(gpw.reading->source == ReadingSource::hid_voltage);
     assert(logitechVoltageProfile(L"G502 LIGHTSPEED Wireless Gaming Mouse"));
+    assert(logitechVoltageProfile(L"G Pro Wireless Gaming Mouse"));
+    assert(logitechVoltageProfile(logitechUsbName(0x046d, 0xc088)));
+    assert(!logitechVoltageProfile(L"G PRO X SUPERLIGHT"));
+    assert(!logitechVoltageProfile(L"G PRO Wireless Headset"));
     assert(!logitechVoltageProfile(L"G502 X PLUS"));
     assert(!logitechVoltageProfile(L"Logitech HID++ 外设"));
     const std::uint8_t reportedG502[] = {0x10, 0x13, 0};

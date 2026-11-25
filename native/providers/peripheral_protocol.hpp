@@ -132,8 +132,12 @@ struct LogitechReply {
 inline std::optional<LogitechReply> parseLogitechReply(std::span<const std::uint8_t> bytes,
                                                        unsigned slot, unsigned index, unsigned function)
 {
-    if (bytes.size() < 4 || (bytes[0] != 0x10 && bytes[0] != 0x11) || bytes[1] != slot) return {};
-    if (bytes.size() >= 6 && (bytes[2] == 0x8f || bytes[2] == 0xff) &&
+    if (bytes.empty()) return {};
+    const auto length = bytes[0] == 0x10 ? 7u : bytes[0] == 0x11 ? 20u : 0u;
+    if (!length || bytes.size() < length || bytes[1] != slot) return {};
+    // HIDClass can pad a short reply to the collection's maximum length.
+    bytes = bytes.first(length);
+    if ((bytes[2] == 0x8f || bytes[2] == 0xff) &&
         bytes[3] == index && bytes[4] == function) return LogitechReply{{}, bytes[5]};
     if (bytes[2] == index && bytes[3] == function) return LogitechReply{bytes.subspan(4)};
     return {};
@@ -146,7 +150,8 @@ inline bool logitechVoltageProfile(std::wstring_view label)
 {
     std::wstring name(label);
     std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
-    return name == L"g502 lightspeed wireless gaming mouse" || name == L"g502 lightspeed";
+    return name == L"g502 lightspeed wireless gaming mouse" || name == L"g502 lightspeed" ||
+        name == L"g pro wireless gaming mouse" || name == L"logitech g pro wireless";
 }
 
 inline Sample logitechBattery(unsigned feature, bool percentage, std::span<const std::uint8_t> data,
