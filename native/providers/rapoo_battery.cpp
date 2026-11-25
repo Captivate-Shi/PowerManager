@@ -16,14 +16,14 @@ Sample rapooStatus(Status status, RapooDetail detail, unsigned error = 0)
     return {status, {}, 0x07, static_cast<unsigned>(detail), error};
 }
 
-bool rapooDescriptor(HANDLE file)
+unsigned rapooDescriptor(HANDLE file)
 {
     HIDD_ATTRIBUTES attributes{sizeof(HIDD_ATTRIBUTES)};
     if (!HidD_GetAttributes(file, &attributes) ||
-        !isRapooReceiver(attributes.VendorID, attributes.ProductID)) return false;
+        !isRapooReceiver(attributes.VendorID, attributes.ProductID)) return 0;
 
     PHIDP_PREPARSED_DATA data{};
-    if (!HidD_GetPreparsedData(file, &data)) return false;
+    if (!HidD_GetPreparsedData(file, &data)) return 0;
     HIDP_CAPS caps{};
     bool proven = false;
     if (HidP_GetCaps(data, &caps) == HIDP_STATUS_SUCCESS &&
@@ -41,7 +41,7 @@ bool rapooDescriptor(HANDLE file)
         }
     }
     HidD_FreePreparsedData(data);
-    return proven;
+    return proven ? attributes.ProductID : 0;
 }
 
 } // namespace
@@ -51,6 +51,7 @@ struct RapooBatteryReader::Endpoint {
     HANDLE event{};
     OVERLAPPED io{};
     std::array<std::uint8_t, 19> report{};
+    unsigned pid{};
     bool pending{};
 
     ~Endpoint()
@@ -78,7 +79,7 @@ Sample RapooBatteryReader::read(const std::wstring& path)
                                     nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
         if (endpoint->file == INVALID_HANDLE_VALUE)
             return rapooStatus(Status::unavailable, RapooDetail::openFailed, GetLastError());
-        if (!rapooDescriptor(endpoint->file))
+        if (!(endpoint->pid = rapooDescriptor(endpoint->file)))
             return rapooStatus(Status::unavailable, RapooDetail::descriptorMismatch);
         endpoint->event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!endpoint->event)
@@ -117,10 +118,10 @@ Sample RapooBatteryReader::read(const std::wstring& path)
             }
         }
         const auto parsed = bytes == endpoint.report.size()
-            ? parseRapooBatteryReport(endpoint.report)
+            ? parseRapooBatteryReport(endpoint.report, endpoint.pid)
             : Sample{Status::bad_report};
-        if (parsed.reading) newest = parsed;
-        else if (!newest.reading) newest = rapooStatus(Status::bad_report, RapooDetail::invalidReport, bytes);
+        if (parsed.reading || parsed.status == Status::offline) newest = parsed;
+        else if (!newest.reading && newest.status != Status::offline) newest = rapooStatus(Status::bad_report, RapooDetail::invalidReport, bytes);
     }
     return newest;
 }

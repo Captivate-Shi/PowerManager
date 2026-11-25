@@ -654,7 +654,7 @@ const wchar_t* deviceName(Transport transport)
     if (transport == Transport::vgn_usb || transport == Transport::vgn_receiver) return sharedKeyboardLabel(transport, {});
     if (isVgn(transport)) return L"VGN V98 Pro V3";
     if (transport == Transport::logitech_receiver || transport == Transport::logitech_usb) return L"Logitech HID++ 外设";
-    if (transport == Transport::rapoo_receiver) return L"Rapoo VT3S 接收器";
+    if (transport == Transport::rapoo_receiver) return L"Rapoo 接收器";
     if (transport == Transport::supported_mouse_receiver) return L"2.4 GHz 鼠标";
     return transport == Transport::windows_battery ? L"Windows 外设" : L"DualSense";
 }
@@ -905,6 +905,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             if (current == device.collections.end() || std::ranges::count_if(device.collections, vendorCollection) != 1 ||
                 std::ranges::any_of(device.collections, [](const Collection& c) { return !c.page && !c.usage; }) ||
                 !isRapooBatteryCollection(current->page, current->usage, current->inputLength)) continue;
+            device.label = rapooReceiverName(device.vid, device.pid);
             const auto only = *current;
             device.collections = {only};
         }
