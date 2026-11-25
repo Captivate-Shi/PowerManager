@@ -42,12 +42,16 @@ void inspectXInput(GamepadBatteryInventory& result)
     }
 }
 
+} // namespace
+
 // The generated MinGW 13 Windows.Foundation header in w64devkit has
 // colliding Boolean and UINT8 template specializations in C++ mode.
 // Keep only the COM ABI slots used here. Order and IDs are from the tagged
 // MinGW generated windows.gaming.input.h, windows.devices.power.h and
 // windows.foundation.h. Unused entries below exist only to preserve order.
-namespace abi {
+// Keep these types externally linked: GCC must dispatch through the Windows
+// COM object's vtable, not devirtualize an apparently unimplemented interface.
+namespace gamepad_abi {
 struct BoxedInt32 : IInspectable {
     virtual HRESULT STDMETHODCALLTYPE get_Value(INT32*) = 0;
 };
@@ -84,7 +88,10 @@ constexpr GUID rawControllerStaticsId{0xeb8d0792, 0xe95a, 0x4b19,
     {0xaf, 0xc7, 0x0a, 0x59, 0xf8, 0xbf, 0x75, 0x9e}};
 constexpr GUID batteryInfoId{0xdcecc681, 0x3963, 0x4da6,
     {0x95, 0x5d, 0x55, 0x3f, 0x3b, 0x6f, 0x61, 0x61}};
-} // namespace abi
+} // namespace gamepad_abi
+
+namespace {
+namespace abi = gamepad_abi;
 
 template<class T> inline auto comPtr(T* value)
 {

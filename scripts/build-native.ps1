@@ -25,7 +25,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Collector compilation failed ($LASTEXITCODE)" }
     if ($Test) {
         $inventoryText = (& .native/collector.exe --inventory) -join "`n"
-        if ($LASTEXITCODE -ne 0) { throw 'The native read-only inventory failed to start.' }
+        if ($LASTEXITCODE -ne 0) { throw "The native read-only inventory failed to start ($LASTEXITCODE)." }
         $inventory = $inventoryText | ConvertFrom-Json
         if ($inventory.schemaVersion -lt 2 -or !$inventory.gamepads.wgiStatus -or !$inventory.gamepads.xinputStatus) {
             throw 'The native inventory did not emit its diagnostic contract.'
