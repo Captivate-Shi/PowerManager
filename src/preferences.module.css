@@ -39,9 +39,9 @@
 .notificationCard strong { color: var(--amber); font-weight: 450; white-space: nowrap; }
 .notificationCard strong[data-level="critical"] { color: var(--red); }
 .notificationCard > svg:last-child { align-self: flex-start; color: var(--muted); }
-.previewSwitch { display: flex; border: 1px solid #505258; border-radius: 30px; margin-top: 24px; padding: 2px; max-width: 340px; background: #1b1d22; }
+.previewSwitch { display: flex; border: 1px solid var(--line-strong); border-radius: 30px; margin-top: 24px; padding: 2px; max-width: 340px; background: var(--panel); }
 .previewSwitch button { border-radius: 25px; min-height: 38px; border: 1px solid transparent; background: transparent; flex: 1; }
-.previewSwitch button[aria-pressed="true"] { background: linear-gradient(#45474d, #303238); border-color: #8c8e91; box-shadow: inset 0 1px 1px #ffffff24; }
+.previewSwitch button[aria-pressed="true"] { background: var(--selected-surface); border-color: var(--selection-border); box-shadow: inset 0 1px 1px #ffffff24; }
 .morePreferences { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 15px; }
 .morePreferences summary { display: flex; justify-content: space-between; align-items: center; list-style: none; cursor: pointer; color: var(--muted); }
 .morePreferences summary::-webkit-details-marker { display: none; }
@@ -52,7 +52,7 @@
 .settingsNav button { text-align: left; align-self: start; border: 1px solid transparent; border-radius: 9px; padding: 10px 17px; color: var(--muted); background: none; font-size: clamp(15px, 1.5vw, 22px); }
 .settingsNav { grid-auto-rows: max-content; }
 .settingsNav button[aria-current] { background: linear-gradient(130deg, #414245, #303135); border-color: #ffffff0d; color: var(--ink); box-shadow: inset 0 1px 0 #ffffff0b; }
-.settingsNav button:hover { color: var(--ink); background-color: #ffffff07; }
+.settingsNav button:hover { color: var(--ink); background-color: var(--hover-surface); }
 .settingsSections { max-width: 850px; width: 100%; min-width: 0; }
 .settingsSections section { scroll-margin-top: 100px; padding-bottom: 30px; }
 .settingsSections section + section { border-top: 1px solid var(--line); padding-top: 30px; }
@@ -74,7 +74,7 @@
 .compatibility { display: grid; gap: 14px; padding-top: 20px; }
 .compatibility label { font-size: 18px; }
 .compatibility label small { color: var(--muted); font-size: 12px; margin-left: 8px; }
-.compatibility input { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #17191d; padding: 13px 15px; }
+.compatibility input { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 13px 15px; }
 .compatibility button { justify-self: end; }
 @media(max-width: 1000px) { .reminders { grid-template-columns: minmax(0, 1.3fr) minmax(290px, 1fr); gap: 22px; } .chargeDevice { grid-template-columns: 105px minmax(0, 1fr); padding-block: 15px; } .chargeActions { grid-column: 2; max-width: none; justify-content: start; } .deviceImage { grid-row: span 2; } .appearance form { grid-template-columns: 100px 1fr; gap: 10px; } .appearance form > div { gap: 6px; } }
 @media(max-width: 740px) { .reminders { grid-template-columns: 1fr; } .reminderSettings { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 24px; } .chargeDevice { grid-template-columns: 125px 1fr auto; } .chargeActions { grid-column: auto; } .deviceImage { grid-row: auto; } .settings { grid-template-columns: 110px minmax(0, 1fr); gap: 18px; } .settingsNav { padding-right: 10px; } .settingsNav button { padding-inline: 8px; font-size: 14px; } .appearance form { grid-template-columns: 1fr; } .appearance form > div { grid-column: 1; grid-row: 2; } .currentColor { flex-wrap: wrap; gap: 10px; padding-block: 15px; } .currentColor small { display: none; } }
@@ -93,22 +93,9 @@
 .toastSurface > span:last-child { background: #16181c; }
 .toastSurface { background-color: #181a1e; }
 
-/* The shell owns appearance; battery and alert colors are unchanged across palettes. */
-.mainPalette[data-view][data-theme="ice"] {
-  --window: #0b1119; --panel: #131e2b; --raised: #1c2a3b; --line: #2d3c4e;
-  --ink: #e6eef8; --muted: #a9b9cd; --quiet: #8598ad; --blue: #aecdf4;
-  --palette-header: #111a26; --palette-light: #708cb022; --palette-select: #6d92bd30;
-}
-.mainPalette[data-view][data-theme="warm"] {
-  --window: #141210; --panel: #1d1915; --raised: #2b251f; --line: #453b32;
-  --ink: #f5ece2; --muted: #c5b6a5; --quiet: #9d8e7e; --blue: #ddc3a9;
-  --palette-header: #1b1714; --palette-light: #b9947324; --palette-select: #b3917335;
-}
 .mainPalette[data-view][data-theme]:not([data-theme="graphite"]) {
   background: radial-gradient(ellipse at 14% 28%, var(--palette-light), transparent 62%), var(--window);
 }
-.mainPalette[data-theme]:not([data-theme="graphite"]) > header { background: var(--palette-header); border-color: var(--line); }
-.mainPalette[data-theme]:not([data-theme="graphite"]) > header button[aria-current] { background: var(--palette-select); }
 .mainPalette:is([data-view="overview"], [data-view="detail"], [data-view="devices"])[data-theme]:not([data-theme="graphite"])::before {
   background: radial-gradient(ellipse at 15% 25%, var(--palette-light), transparent 68%),
     linear-gradient(0deg, var(--window), transparent 28%), var(--studio-stage) center / cover no-repeat;
@@ -187,7 +174,7 @@
 }
 .settingsNav button { padding: 8px 11px; font-size: 14px; min-height: 36px; }
 .settingsNav button[aria-current] {
-  background: color-mix(in srgb, var(--ink) 8%, var(--window));
+  background: var(--selected-surface);
   box-shadow: none;
   font-weight: 600;
 }

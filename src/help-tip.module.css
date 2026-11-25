@@ -5,12 +5,12 @@
   background: transparent; color: var(--muted, #a8b1c1);
 }
 .button:hover, .button:focus-visible { color: var(--ink, #edf1f7); }
-.button:focus-visible { outline: 2px solid var(--blue, #a9c9ee); outline-offset: 1px; }
+.button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .tip {
   position: fixed; inset: auto; z-index: 1000; margin: 0;
   width: max-content; max-width: min(260px, calc(100vw - 16px));
-  padding: 7px 10px; border: 1px solid #576277; border-radius: 7px;
-  color: #edf1f7; background: #272c38; box-shadow: 0 4px 14px #0005;
+  padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 7px;
+  color: var(--ink); background: var(--raised); box-shadow: 0 4px 14px var(--ui-shadow);
   font: 12px/1.5 "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   white-space: normal;
 }

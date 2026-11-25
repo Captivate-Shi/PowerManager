@@ -1,0 +1,51 @@
+/* UI palettes, independent of device artwork and chart series. */
+:root {
+  --window: #15181e;
+  --panel: #1b2029;
+  --raised: #222833;
+  --line: #303744;
+  --line-strong: #465163;
+  --ink: #f0f3f7;
+  --muted: #a6afbf;
+  --quiet: #8792a4;
+  --blue: #a9c9ee;
+  --focus-ring: var(--blue);
+  --selected-surface: color-mix(in srgb, var(--blue) 18%, var(--raised));
+  --selection-border: color-mix(in srgb, var(--blue) 47%, var(--line));
+  --hover-surface: color-mix(in srgb, var(--blue) 8%, var(--raised));
+  --palette-header: #10131aed;
+  --palette-light: #262d3a77;
+  --ui-shadow: color-mix(in srgb, var(--window) 38%, #000 62%);
+  --backdrop: color-mix(in srgb, var(--ui-shadow) 77%, transparent);
+  --track-dormant: color-mix(in srgb, var(--line) 72%, var(--quiet));
+  --track-tick: color-mix(in srgb, var(--quiet) 78%, var(--panel));
+  --track-thumb: var(--ink);
+
+  --battery-critical-text: #ff9d96;
+  --battery-critical-fill: #f37870;
+  --battery-critical-subtle: #f378701d;
+  --battery-low-text: #efb76c;
+  --battery-low-fill: #dfa15c;
+  --battery-charged-text: #91d2b3;
+  --battery-charged-fill: #75c6a1;
+  --red: var(--battery-critical-text);
+  --amber: var(--battery-low-text);
+  --green: var(--battery-charged-text);
+}
+:root[data-main-theme="graphite"] {
+  --window: #0c0e14; --panel: #13161e; --raised: #1d222c;
+  --line: #2a303c; --line-strong: #465163;
+  --ink: #edf0f6; --muted: #a6afbe; --quiet: #858d9a; --blue: #a9bcd5;
+}
+:root[data-main-theme="ice"] {
+  --window: #0b1119; --panel: #131e2b; --raised: #1c2a3b;
+  --line: #2d3c4e; --line-strong: #435a73;
+  --ink: #e6eef8; --muted: #a9b9cd; --quiet: #8598ad; --blue: #aecdf4;
+  --palette-header: #111a26; --palette-light: #708cb022;
+}
+:root[data-main-theme="warm"] {
+  --window: #141210; --panel: #1d1915; --raised: #2b251f;
+  --line: #453b32; --line-strong: #645548;
+  --ink: #f5ece2; --muted: #c5b6a5; --quiet: #9d8e7e; --blue: #ddc3a9;
+  --palette-header: #1b1714; --palette-light: #b9947324;
+}

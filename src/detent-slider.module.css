@@ -6,7 +6,7 @@
 .rail {
   position: absolute; pointer-events: none; inset-inline: 0; top: calc(var(--track-y) - 2.5px);
   height: 5px; border-radius: 5px;
-  background: linear-gradient(to right, var(--blue, #acc0d9) var(--fill-stop), #303641 var(--fill-stop));
+  background: linear-gradient(to right, var(--blue, #acc0d9) var(--fill-stop), var(--track-dormant) var(--fill-stop));
 }
 .control .geometry > input[type="range"] {
   appearance: none; display: block; position: absolute; inset: 0 auto auto calc(var(--thumb) / -2);
@@ -17,7 +17,7 @@
 .control input::-webkit-slider-runnable-track { height: 5px; border: none; background: transparent; }
 .control input::-webkit-slider-thumb {
   appearance: none; width: var(--thumb); height: 17px; border-radius: 12px; margin-top: -6px;
-  border: 1px solid #ffffff9c; background: #e8eaee; box-shadow: 0 1px 3px #0005;
+  border: 1px solid var(--line-strong); background: var(--track-thumb); box-shadow: 0 1px 3px #0005;
 }
 .control input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--blue); outline-offset: 2px; }
 .detents { position: absolute; pointer-events: none; inset: calc(var(--track-y) + 6px) 0 auto; height: 22px; }
@@ -26,10 +26,10 @@
   display: grid; place-items: center; width: min(26px, var(--detent-gap)); height: 21px;
   border: none; padding: 0; background: none; border-radius: 6px; cursor: pointer;
 }
-.detents button::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #464c58; }
-.detents button[data-major]::after { background: #929aa7; }
-.detents button[aria-pressed="true"]::after { background: #a8b2c0; box-shadow: 0 0 0 2px #8493a435; }
-.detents button:hover::after, .detents button:focus-visible::after { background: #e8eaee; }
+.detents button::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--track-tick); }
+.detents button[data-major]::after { background: var(--muted); }
+.detents button[aria-pressed="true"]::after { background: var(--focus-ring); box-shadow: 0 0 0 2px var(--selected-surface); }
+.detents button:hover::after, .detents button:focus-visible::after { background: var(--track-thumb); }
 @media (forced-colors: active) {
   .rail { border: 1px solid CanvasText; forced-color-adjust: none; }
   .control input::-webkit-slider-thumb { forced-color-adjust: none; background: CanvasText; border-color: Canvas; }

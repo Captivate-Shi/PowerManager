@@ -16,6 +16,7 @@ function TrayDevice({ device, state, kind }: { device: Device; state: Snapshot; 
     : [connection, kind === 'offline' ? '未连接' : status].filter(Boolean).join(' · ');
   const display = reading ? readingLabel(reading) : '未知';
   return <button type="button" className={tray.row} data-kind={kind} data-alert={alert}
+    data-power={kind === 'live' && (reading?.power === 'charging' || reading?.power === 'full') ? reading.power : undefined}
     data-tray-device={device.id} title={device.name}
     aria-label={device.name + '，' + description + '，' + (kind === 'live' ? '电量' : '上次电量') + display}
     onClick={() => { void api.command({ type: 'open', id: device.id }); }}>
