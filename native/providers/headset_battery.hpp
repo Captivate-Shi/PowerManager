@@ -4,7 +4,7 @@
 
 namespace pm::headset_battery {
 
-enum class Lane { none, jbl350, jbl610, jbl650, nova7 };
+enum class Lane { none, jbl350, jbl610, jbl650, nova7, hyperxAlpha };
 
 constexpr Lane lane(unsigned vid, unsigned pid)
 {
@@ -13,6 +13,7 @@ constexpr Lane lane(unsigned vid, unsigned pid)
         if (pid == 0x205c) return Lane::jbl610;
         if (pid == 0x2125) return Lane::jbl650;
     }
+    if (vid == 0x03f0 && pid == 0x098d) return Lane::hyperxAlpha;
     return vid == 0x1038 && pid == 0x22a1 ? Lane::nova7 : Lane::none;
 }
 
@@ -23,6 +24,7 @@ constexpr const wchar_t* name(Lane type)
     case Lane::jbl610: return L"JBL Quantum 610 Wireless";
     case Lane::jbl650: return L"JBL Quantum 650 Wireless";
     case Lane::nova7: return L"SteelSeries Arctis Nova 7";
+    case Lane::hyperxAlpha: return L"HyperX Cloud Alpha Wireless";
     default: return L"";
     }
 }
@@ -34,6 +36,7 @@ constexpr bool collection(Lane type, unsigned mi, unsigned page, unsigned usage,
     case Lane::jbl350: return mi == 3 && page == 1 && usage == 0 && feat == 64;
     case Lane::jbl610: return mi == 5 && out <= 64 && feat >= 17 && feat <= 64;
     case Lane::jbl650: return page == 0xff12 && feat == 64 && in == 64;
+    case Lane::hyperxAlpha: return page == 0xff43 && usage == 0x0202 && in == out && (in == 31 || in == 32);
     case Lane::nova7: return mi == 3 && page == 0xffc0 && usage == 1 && in >= 4 && in <= 65 && out >= 2 && out <= 65;
     default: return false;
     }
@@ -42,6 +45,17 @@ constexpr bool collection(Lane type, unsigned mi, unsigned page, unsigned usage,
 constexpr int jblByte(std::span<const std::uint8_t> frame, std::uint8_t id)
 {
     return frame.size() >= 2 && frame[0] == id ? frame[1] : -1;
+}
+
+constexpr bool alphaQuery(std::uint8_t command)
+{
+    return command == 0x03 || command == 0x0b;
+}
+
+constexpr int alphaByte(std::span<const std::uint8_t> frame, std::uint8_t command)
+{
+    return alphaQuery(command) && frame.size() >= 4 && frame[0] == 0x21 && frame[1] == 0xbb
+        && frame[2] == command ? frame[3] : -1;
 }
 
 constexpr std::array<std::uint8_t, 64> jbl650Request()

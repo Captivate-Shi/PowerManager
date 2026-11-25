@@ -25,6 +25,23 @@ static std::vector<std::uint8_t> reply(std::uint8_t sequence, unsigned level,
 
 int main()
 {
+    static_assert(xm5SdpIdentity(2, 0x054c, 0x0df0));
+    static_assert(!xm5SdpIdentity(1, 0x054c, 0x0df0));
+    static_assert(!xm5SdpIdentity(2, 0x054c, 0x0d58)); // XM4
+    Xm5FastPairStream fastPair;
+    const std::array<std::uint8_t, 12> frames{3,1,0,3,0x10,0x20,0x30,3,3,0,1,0xd0};
+    assert(!fastPair.feed(std::span(frames).first(2)));
+    assert(!fastPair.feed(std::span(frames).subspan(2,7)));
+    assert((fastPair.feed(std::span(frames).subspan(9)) == Battery{80, true}));
+    Xm5FastPairStream wrongShape;
+    const std::array<std::uint8_t, 7> earbuds{3,3,0,3,15,10,23};
+    assert(!wrongShape.feed(earbuds) && wrongShape.invalid());
+    Xm5FastPairStream unknown;
+    const std::array<std::uint8_t, 10> unknownFirst{3,3,0,1,0x7f,3,3,0,1,0x32};
+    assert((unknown.feed(unknownFirst) == Battery{50, false}));
+    Xm5FastPairStream oversize;
+    assert(!oversize.feed(std::array<std::uint8_t,4>{3,3,1,0}) && oversize.invalid());
+
     static_assert(request[7] == 0x10 && request[8] == 0);
     static_assert(responseAck(1)[2] == 0 && responseAck(0)[2] == 1);
     for (const auto level : {0, 50, 60, 61, 62, 100}) {

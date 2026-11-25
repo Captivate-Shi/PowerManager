@@ -91,4 +91,39 @@ public:
     }
 };
 
+// XM5 declares the Sony USB VID/PID in SDP PnP ID, not the Sony SIG company ID.
+constexpr bool xm5SdpIdentity(unsigned vendorSource, unsigned vid, unsigned pid)
+{
+    return vendorSource == 2 && vid == 0x054c && pid == 0x0df0;
+}
+
+// The paired classic Bluetooth endpoint pushes its single battery (03/03)
+// on connection. No subscription, handshake or other packets are sent.
+class Xm5FastPairStream {
+    std::vector<std::uint8_t> bytes_;
+    bool invalid_{};
+public:
+    bool invalid() const { return invalid_; }
+
+    std::optional<Battery> feed(std::span<const std::uint8_t> chunk)
+    {
+        if (invalid_ || chunk.size() > 512 - bytes_.size()) { invalid_ = true; return {}; }
+        bytes_.insert(bytes_.end(), chunk.begin(), chunk.end());
+        while (bytes_.size() >= 4) {
+            const auto length = (static_cast<unsigned>(bytes_[2]) << 8) | bytes_[3];
+            if (length > 128) { invalid_ = true; return {}; }
+            if (bytes_.size() < 4 + length) return {};
+            if (bytes_[0] == 3 && bytes_[1] == 3) {
+                if (length != 1) { invalid_ = true; return {}; }
+                const auto encoded = bytes_[4];
+                const auto level = encoded & 0x7fu;
+                if (level <= 100) return Battery{level, (encoded & 0x80u) != 0};
+                // Values outside the 0..100 range include the unknown sentinel.
+            }
+            bytes_.erase(bytes_.begin(), bytes_.begin() + 4 + length);
+        }
+        return {};
+    }
+};
+
 } // namespace pm::sony_headphone

@@ -22,10 +22,18 @@ constexpr bool isX4(std::wstring_view name)
     return name == L"OPPO Enco X4";
 }
 
+constexpr bool isAir3Pro(std::wstring_view name) { return name == L"OPPO Enco Air3 Pro"; }
+constexpr bool isX3(std::wstring_view name) { return name == L"OPPO Enco X3"; }
+constexpr bool isBuds3Pro(std::wstring_view name) { return name == L"OPPO Enco Buds3 Pro"; }
+constexpr unsigned buds3ProProductId = 0x06a850;
+constexpr unsigned air3ProProductId = 0x065c10;
+constexpr unsigned x3ProductId = 0x067410;
 constexpr unsigned clip2ProductId = 0x06e010;
 constexpr unsigned x4ProductId = 0x06ec10;
 constexpr std::array<std::uint8_t, 9> productQuery{0xaa, 7, 0, 0, 3, 1, 1, 0, 0};
 constexpr std::array<std::uint8_t, 9> batteryQuery{0xaa, 7, 0, 0, 6, 1, 0xf0, 0, 0};
+
+constexpr std::array<std::uint8_t, 9> air3ProBatteryQuery{0xaa, 7, 0, 0, 6, 1, 3, 0, 0};
 
 struct Battery { unsigned percent; bool charging; };
 

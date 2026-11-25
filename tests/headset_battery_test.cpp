@@ -15,6 +15,17 @@ int main()
     static_assert(!collection(Lane::jbl610,4,1,0,16,64,64));
     static_assert(!collection(Lane::jbl650,3,1,0,64,64,64));
     static_assert(!collection(Lane::nova7,3,0xffc0,2,64,64,0));
+    static_assert(lane(0x03f0,0x098d) == Lane::hyperxAlpha);
+    static_assert(lane(0x03f0,0x08be) == Lane::none);
+    static_assert(collection(Lane::hyperxAlpha,2,0xff43,0x0202,31,31,0));
+    static_assert(!collection(Lane::hyperxAlpha,2,0xff43,0x0201,31,31,0));
+    static_assert(!collection(Lane::hyperxAlpha,2,0xff43,0x0202,31,64,0));
+    constexpr std::array<std::uint8_t,4> alphaOnline{0x21,0xbb,0x03,2}, alphaOff{0x21,0xbb,0x03,1};
+    constexpr std::array<std::uint8_t,4> alphaBattery{0x21,0xbb,0x0b,80}, alphaIndication{0x21,0xbb,0x24,2};
+    static_assert(alphaByte(alphaOnline,0x03) == 2 && alphaByte(alphaOff,0x03) == 1);
+    static_assert(alphaByte(alphaBattery,0x0b) == 80);
+    static_assert(alphaByte(alphaBattery,0x03) == -1 && alphaByte(alphaIndication,0x03) == -1);
+    static_assert(!alphaQuery(0x23) && !alphaQuery(0x0c)); // no microphone or charge status exchange
     constexpr std::array<std::uint8_t,2> live{0x68,1};
     constexpr std::array<std::uint8_t,2> pct{0x49,90};
     static_assert(jblByte(live,0x68) == 1);

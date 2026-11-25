@@ -21,6 +21,8 @@ namespace {
 using Clock = std::chrono::steady_clock;
 constexpr GUID sonyMdrV1{0x96cc203e, 0x50f8, 0x4944, {0x9c, 0x22, 0xed, 0xcb, 0x48, 0xf6, 0x21, 0x6f}};
 
+constexpr GUID fastPair{0xdf21fe2c, 0x2515, 0x4fdb, {0x88, 0x86, 0xf1, 0x2c, 0x4d, 0x67, 0x92, 0x7c}};
+
 constexpr GUID oppoElnk{0x0000079a, 0xd102, 0x11e1, {0x9b, 0x23, 0x00, 0x02, 0x5b, 0x00, 0xa5, 0xa5}};
 
 constexpr GUID huaweiSerialPort{0x00001101, 0, 0x1000, {0x80,0,0,0x80,0x5f,0x9b,0x34,0xfb}};
@@ -36,14 +38,15 @@ bool readBthIdentity(DEVINST node, ULONG field, DEVPROPTYPE expected, Value& val
         type == expected && size == sizeof(value);
 }
 
-bool isHuaweiEndpoint(DEVINST node)
+bool matchesPnpId(DEVINST node, Model model)
 {
     BYTE source{};
     USHORT vid{}, pid{};
     return readBthIdentity(node, 6, DEVPROP_TYPE_BYTE, source) &&
         readBthIdentity(node, 7, DEVPROP_TYPE_UINT16, vid) &&
         readBthIdentity(node, 8, DEVPROP_TYPE_UINT16, pid) &&
-        huawei_headphone::matchesIds(source, vid, pid);
+        (model == Model::sonyXm5FastPair ? sony_headphone::xm5SdpIdentity(source, vid, pid) :
+            model == Model::huaweiFreeClip2 && huawei_headphone::matchesIds(source, vid, pid));
 }
 
 struct Endpoint {
@@ -71,9 +74,7 @@ Endpoint resolve(std::wstring_view containerId, Model model)
     Endpoint result{Status::unknown_endpoint};
     do {
         const std::wstring_view name(info.szName);
-        const bool exact = model == Model::sonyXm4 ? name == sony_headphone::model :
-            model == Model::oppoClip2 ? oppo_headphone::isClip2(name) :
-            model == Model::oppoX4 ? oppo_headphone::isX4(name) : huawei_headphone::isFreeClip2(name);
+        const bool exact = matchModel(name) == model;
         if (!info.fAuthenticated || !exact ||
             info.Address.ullLong == 0 || info.Address.ullLong > 0xffffffffffffull) continue;
         wchar_t devId[32]{};
@@ -96,7 +97,8 @@ Endpoint resolve(std::wstring_view containerId, Model model)
             if (CM_Get_DevNode_PropertyW(node, &DEVPKEY_Device_ContainerId, &type,
                     reinterpret_cast<BYTE*>(&actual), &size, 0) != CR_SUCCESS || type != DEVPROP_TYPE_GUID ||
                 size != sizeof(actual) || !IsEqualGUID(wanted, actual)) continue;
-            if (model == Model::huaweiFreeClip2 && !isHuaweiEndpoint(node)) continue;
+            if ((model == Model::huaweiFreeClip2 || model == Model::sonyXm5FastPair) &&
+                !matchesPnpId(node, model)) continue;
             if (result.address && result.address != info.Address.ullLong) {
                 BluetoothFindDeviceClose(search);
                 return {Status::ambiguous};
@@ -162,6 +164,7 @@ Result read(std::wstring_view containerId, Model model)
     remote.addressFamily = AF_BTH;
     remote.btAddr = endpoint.address;
     remote.serviceClassId = model == Model::sonyXm4 ? sonyMdrV1 :
+        model == Model::sonyXm5FastPair ? fastPair :
         model == Model::huaweiFreeClip2 ? huaweiSerialPort : oppoElnk;
     // Huawei's documented SDP SPP service is only reachable after the exact
     // Windows hardware ID check. No scanning fixed channels or audio APIs.
@@ -196,7 +199,25 @@ Result read(std::wstring_view containerId, Model model)
         return {Status::protocol_invalid};
     }
 
-    if (model == Model::oppoClip2 || model == Model::oppoX4) {
+    if (model == Model::sonyXm5FastPair) {
+        // No writes or subscription. Consume only a fresh single-battery message
+        // during this connection to a paired, authenticated, exact SDP endpoint.
+        sony_headphone::Xm5FastPairStream replies;
+        std::array<std::uint8_t, 128> data{};
+        for (int i = 0; i < 8; ++i) {
+            const auto ready = waitSocket(socket.handle, false, deadline);
+            if (!ready) return {Status::timeout};
+            if (ready < 0) return {Status::system_error};
+            const auto count = recv(socket.handle, reinterpret_cast<char*>(data.data()), static_cast<int>(data.size()), 0);
+            if (count <= 0) return {Status::service_unavailable};
+            if (const auto battery = replies.feed({data.data(), static_cast<std::size_t>(count)}))
+                return {Status::success, Battery{battery->percent, battery->charging}};
+            if (replies.invalid()) return {Status::protocol_invalid};
+        }
+        return {Status::protocol_invalid};
+    }
+
+    if (const auto productId = oppoProductId(model)) {
         using namespace oppo_headphone;
         const auto query = [&](const auto& request, std::vector<std::uint8_t>& payload) {
             const auto status = writeAll(socket.handle, request, deadline);
@@ -219,9 +240,8 @@ Result read(std::wstring_view containerId, Model model)
         };
         std::vector<std::uint8_t> payload;
         if (const auto status = query(productQuery, payload); status != Status::success) return {status};
-        const auto productId = model == Model::oppoX4 ? x4ProductId : clip2ProductId;
         if (!matchesProduct(payload, productId)) return {Status::protocol_invalid};
-        if (const auto status = query(batteryQuery, payload); status != Status::success) return {status};
+        if (const auto status = query(model == Model::oppoAir3Pro ? air3ProBatteryQuery : batteryQuery, payload); status != Status::success) return {status};
         if (const auto battery = parseBattery(payload, productId)) return {Status::success, Battery{battery->percent, battery->charging}};
         return {Status::protocol_invalid};
     }

@@ -1,4 +1,5 @@
 #include "oppo_headphone_battery.hpp"
+#include "rfcomm_battery_transport.hpp"
 #include <cassert>
 
 int main()
@@ -43,6 +44,33 @@ int main()
     assert(!parseBattery(std::array<std::uint8_t,3>{1,1,101}));
     assert(!parseBattery(std::array<std::uint8_t,5>{2,1,55,1,55}));
     assert(!parseBattery(std::array<std::uint8_t,4>{3,1,30,2}));
+    using pm::rfcomm_battery::matchModel;
+    using pm::rfcomm_battery::Model;
+    using pm::rfcomm_battery::oppoProductId;
+    static_assert(matchModel(L"OPPO Enco Air3 Pro") == Model::oppoAir3Pro);
+    static_assert(matchModel(L"OPPO Enco X3") == Model::oppoX3);
+    static_assert(!matchModel(L"OPPO Enco Air3"));
+    static_assert(!matchModel(L"OPPO Enco X3s"));
+    static_assert(matchModel(L"OPPO Enco Buds3 Pro") == Model::oppoBuds3Pro);
+    static_assert(!matchModel(L"OPPO Enco Buds3 Pro+"));
+    assert(matchesProduct(std::array<std::uint8_t,4>{0,0x50,0xa8,6}, oppoProductId(Model::oppoBuds3Pro)));
+    assert(!matchesProduct(std::array<std::uint8_t,4>{0,0x10,0xa0,6}, oppoProductId(Model::oppoBuds3Pro)));
+    const std::array<std::uint8_t, 13> air3Identification{0xaa,11,0,0,3,0x81,1,4,0,0,0x10,0x5c,6};
+    ReplyStream air3Identity(productQuery);
+    const auto air3Product = air3Identity.feed(air3Identification);
+    assert(air3Product && matchesProduct(*air3Product, oppoProductId(Model::oppoAir3Pro)));
+    assert(!matchesProduct(*air3Product, oppoProductId(Model::oppoX3)));
+    const std::array<std::uint8_t,15> air3Capture{0xaa,0x0d,0,0,6,0x81,3,6,0,0,2,1,0x50,2,0x50};
+    ReplyStream air3Battery(air3ProBatteryQuery);
+    const auto air3Payload = air3Battery.feed(air3Capture);
+    assert(air3Payload);
+    const auto air3Reading = parseBattery(*air3Payload, air3ProProductId);
+    assert(air3Reading && air3Reading->percent == 80 && !air3Reading->charging);
+    ReplyStream rejectWrongSequence(batteryQuery);
+    assert(!rejectWrongSequence.feed(air3Capture));
+    assert(matchesProduct(std::array<std::uint8_t,4>{0,0x10,0x74,6}, oppoProductId(Model::oppoX3)));
+    assert(!matchesProduct(std::array<std::uint8_t,4>{1,0x10,0x74,6}, oppoProductId(Model::oppoX3)));
+
     auto bad = fresh;
     bad[7] = 9;
     ReplyStream corrupt(batteryQuery);

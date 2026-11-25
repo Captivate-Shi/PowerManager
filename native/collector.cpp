@@ -352,7 +352,8 @@ const char* art(const Device& device)
         device.transport == Transport::rapoo_receiver ||
         device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver ||
         device.transport == Transport::mchose_g3v2_receiver || device.transport == Transport::mchose_a7v2pro_usb ||
-        device.transport == Transport::aula_sc580_receiver) return "mouse";
+        device.transport == Transport::aula_sc580_receiver || device.transport==Transport::verified_mouse_usb ||
+        device.transport==Transport::verified_mouse_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {
         if (device.kind == 0 || device.kind == 2) return "keyboard";
         if (device.kind >= 3 && device.kind <= 5) return "mouse";
@@ -363,11 +364,7 @@ const char* art(const Device& device)
 std::optional<rfcomm_battery::Model> vendorHeadphone(const FoundDevice& device)
 {
     if (!device.connected || !device.knownBluetooth) return {};
-    if (device.name == sony_headphone::model) return rfcomm_battery::Model::sonyXm4;
-    if (oppo_headphone::isClip2(device.name)) return rfcomm_battery::Model::oppoClip2;
-    if (oppo_headphone::isX4(device.name)) return rfcomm_battery::Model::oppoX4;
-    if (huawei_headphone::isFreeClip2(device.name)) return rfcomm_battery::Model::huaweiFreeClip2;
-    return {};
+    return rfcomm_battery::matchModel(device.name);
 }
 
 class Collector {
@@ -714,6 +711,8 @@ private:
             const auto vendorModel = vendorDevices.find(container);
             const bool sony = vendorModel != vendorDevices.end() &&
                 vendorModel->second == rfcomm_battery::Model::sonyXm4;
+            const bool sonyFastPair = vendorModel != vendorDevices.end() &&
+                vendorModel->second == rfcomm_battery::Model::sonyXm5FastPair;
             const bool huawei = vendorModel != vendorDevices.end() &&
                 vendorModel->second == rfcomm_battery::Model::huaweiFreeClip2;
             const bool completed = vendorCompleted && vendorCompleted->first == container;
@@ -754,7 +753,7 @@ private:
                             default: return "receiver_unavailable";
                             }
                         }();
-                        record(diagnostic, sample(vendor), started, target, huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : "oppo-elnk", reason);
+                        record(diagnostic, sample(vendor), started, target, huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : sonyFastPair ? "sony-fast-pair" : "oppo-elnk", reason);
                     } else {
                         // Sampling is asynchronous and capped at one private
                         // connection in the process; cached values are never republished.
