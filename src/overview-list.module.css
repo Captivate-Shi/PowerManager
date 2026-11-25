@@ -43,10 +43,18 @@
   border: 1px solid transparent;
   border-radius: 10px;
 }
-.entry[data-list-selected] {
-  background: linear-gradient(108deg, color-mix(in srgb, var(--blue) 17%, transparent), transparent 80%), var(--panel);
-  border-color: color-mix(in srgb, var(--blue) 22%, transparent);
+.entry:has(> [data-liquid-selection]) { position: relative; }
+.entry:has(> [data-liquid-selection]) > button { position: relative; z-index: 1; }
+/* Selection spans the row, including its separate detail action. Keep the
+   primary keyboard focus on that same perimeter instead of outlining its cell. */
+.entry > .selectRow:focus-visible { outline: none; }
+.entry:has(> .selectRow:focus-visible):not(:has(> [data-liquid-selection])),
+.entry:has(> .selectRow:focus-visible) > [data-liquid-selection] {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
+.entry > .details:focus-visible { outline-offset: -2px; }
+
 .entry .selectRow, .entry .selectRow[aria-pressed="true"] {
   background: transparent;
   box-shadow: none;
@@ -55,10 +63,6 @@
   min-height: clamp(60px, 7.2vh, 80px);
 }
 .modeDesk[data-mode="stage"] .entry > .selectRow:hover { background: color-mix(in srgb, var(--blue) 5%, transparent); }
-.modeDesk[data-mode="stage"] .entry:has(> .selectRow[aria-pressed="true"]) {
-  background: radial-gradient(ellipse at 21% 10%, color-mix(in srgb, var(--blue) 21%, transparent), transparent 76%),
-    radial-gradient(ellipse at 42% 80%, color-mix(in srgb, var(--blue) 6%, transparent), transparent 80%);
-}
 .modeDesk[data-mode="stage"] .selectRow[aria-pressed="true"] b {
   text-shadow: 0 1px 8px color-mix(in srgb, var(--blue) 30%, transparent);
 }

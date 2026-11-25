@@ -498,19 +498,104 @@
 .chartGuide .thresholdKey { height: 1px; border-top: 1px dashed var(--amber); }
 .chartNotice { color: var(--muted); gap: 6px; font-size: 12px; }
 .chartNotice button { padding: 3px 4px; min-height: auto; }
-.graph { position: relative; isolation: isolate; width: 100%; height: 100%; border-radius: 5px; touch-action: pan-y; }
+.graph {
+  --lane-row: 27px;
+  position: relative; isolation: isolate; width: 100%; height: 100%;
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  border-radius: 5px; touch-action: pan-y;
+}
+.graphCanvas { flex: 1 1 auto; min-height: 84px; position: relative; }
 .graphSvg { display: block; color: var(--muted); overflow: hidden; }
 .graphGrid { stroke: var(--line); }
 .graphLabel { fill: currentColor; font-size: 11px; font-variant-numeric: tabular-nums; }
 .graphThreshold { stroke: var(--battery-low-fill); opacity: .72; }
-.graphCursor { stroke: #c6d5e6; stroke-dasharray: 3 4; pointer-events: none; }
-.graphTooltip { position: absolute; inset: 8px 12px auto auto; max-width: calc(100% - 24px); min-width: 140px; max-height: calc(100% - 20px); overflow: hidden; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 6px 9px; font-size: 12px; pointer-events: none; z-index: 1; }
-.graphTooltip[data-side="start"] { inset-inline: 12px auto; }
-.graphTooltip > span, .graphTooltip small { color: var(--muted); }
-.graphTooltip > div { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; padding-block-start: 4px; }
-.graphTooltip b { word-break: break-word; }
-.graphTooltip > div > i { width: 6px; height: 6px; background: var(--series); border-radius: 10px; }
-.graphTooltip > div > span { font-variant-numeric: tabular-nums; }
+.sharedPlotCursor, .sharedLaneCursor {
+  position: absolute; z-index: 1; left: var(--cursor-x);
+  border-left: 1px dashed var(--focus-ring); pointer-events: none;
+}
+.sharedPlotCursor { top: var(--plot-top); bottom: var(--plot-bottom); }
+.sharedLaneCursor { inset-block: 2px; }
+.sharedPlotCursor small {
+  position: absolute; bottom: -23px; left: 0; translate: -50% 0;
+  padding: 2px 6px; border: 1px solid var(--selection-border);
+  border-radius: 5px; color: var(--ink); background: var(--selected-surface);
+  white-space: nowrap; font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.eventLanes {
+  position: relative; flex: none; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); cursor: crosshair;
+  margin-inline: 1px; padding-block: 2px;
+}
+.eventLane {
+  height: var(--lane-row); display: flex; align-items: center; position: relative;
+}
+.eventLane + .eventLane { border-top: 1px solid var(--line); }
+.eventLaneLabel {
+  width: calc(var(--plot-left) - 6px); padding-inline: 5px 1px;
+  min-width: 0; color: var(--muted); font-size: 10px;
+  text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+}
+.eventLaneLabel i {
+  background: var(--series); width: 5px; height: 5px;
+  display: inline-block; border-radius: 50%; margin-inline-end: 4px;
+}
+.eventLaneTrack, .eventGuides {
+  position: absolute; inset-inline: calc(var(--plot-left) - 2px) calc(var(--plot-right) - 2px);
+}
+.eventLaneTrack { height: 1px; top: 50%; background: color-mix(in srgb, var(--line) 80%, transparent); }
+.eventGuides { inset-block: 2px; pointer-events: none; opacity: .42; }
+.eventGuides i { position: absolute; inset-block: 0; border-left: 1px solid var(--line); }
+.sharedLaneCursor { left: calc(var(--cursor-x) - 2px); }
+.laneEvent {
+  position: absolute; top: 0; translate: 0 -50%; z-index: 1;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid var(--line-strong); background: var(--raised); color: var(--muted);
+  padding: 0; border-radius: 4px; height: 17px; cursor: help;
+  min-width: 8px; width: var(--event-width);
+}
+.laneEvent:not([data-event="charging"]) i {
+  min-width: 4px; width: 11px; margin-inline: 1px; border-top: 1px dashed currentColor;
+}
+.laneEvent[data-event="invalid"] i { border-top-style: solid; }
+.laneEvent span { display: none; font-size: 10px; white-space: nowrap; }
+.laneEvent[data-event-wide] span { display: inline; }
+.laneEvent[data-event="charging"] {
+  translate: -50% -50%; width: 19px; height: 19px; border-radius: 50%;
+  color: var(--battery-charged-text);
+  background: color-mix(in srgb, var(--battery-charged-fill) 15%, var(--panel));
+  border-color: color-mix(in srgb, var(--battery-charged-fill) 46%, var(--line));
+}
+.laneEvent[data-staggered]:not([data-event="charging"]) {
+  top: -6px; height: 8px;
+}
+.laneEvent[data-staggered] span { display: none; }
+.laneEvent[data-staggered][data-event="charging"] { top: 4px; height: 15px; width: 15px; }
+.laneEvent[data-staggered][data-event="charging"] svg { width: 9px; height: 9px; }
+.laneEvent:is(:hover, :focus-visible) { z-index: 3; border-color: var(--focus-ring); }
+.graphTooltip {
+  position: absolute; top: 8px; left: clamp(8px, var(--tip-x), max(8px, 100% - 240px));
+  width: min(232px, calc(100% - 16px)); background: var(--raised);
+  border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink);
+  padding: 7px 10px; font-size: 12px; pointer-events: none; z-index: 4;
+  box-shadow: 0 5px 16px var(--ui-shadow);
+}
+.graphTooltip > span { color: var(--muted); display: block; }
+.graphTooltip > div { display: flex; align-items: center; gap: 5px; padding-block-start: 4px; }
+.graphTooltip b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.graphTooltip > div > i { flex: 0 0 6px; height: 6px; background: var(--series); border-radius: 10px; }
+.graphTooltip > div > span { margin-inline-start: auto; color: var(--series, var(--muted)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.graphTooltip > div > svg { color: var(--battery-charged-text); }
+.graphTooltip[data-compare-tooltip] > span { padding-bottom: 3px; border-bottom: 1px solid var(--line); }
+.rangeMidline { fill: none; stroke-width: 1.35px; stroke-dasharray: 3 5; stroke-opacity: .91; }
+.rangeWhisker { fill: none; stroke-width: 1px; stroke-opacity: .56; }
+.rangeSample { fill: none; stroke-width: 5px; stroke-linecap: round; stroke-opacity: .49; }
+.chartGuide .rangeMidKey { border-top: 1px dashed #cbbbf1; height: 0; }
+@container (max-width: 620px) {
+  .graph { --lane-row: 22px; }
+  .eventLaneLabel { font-size: 9px; }
+  .graphTooltip { width: min(187px, calc(100% - 16px)); left: clamp(8px, var(--tip-x), max(8px, 100% - 195px)); padding-block: 4px; font-size: 11px; }
+  .laneEvent[data-event="charging"] { width: 17px; height: 17px; }
+}
 .chartSrOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .historyChoices { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 3px; max-height: 86px; overflow-y: auto; }
 .historyChoice { min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: transparent; }
@@ -572,7 +657,8 @@
 .graphReadMarker path { fill: none; stroke-width: 1.4px; stroke-linecap: round; }
 .endpointValue { font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 580; paint-order: stroke; stroke: var(--window); stroke-width: 3px; }
 .chartEvent { cursor: help; }
-.graphTooltip[data-kind] { display: grid; gap: 4px; }
+.graphTooltip[data-kind] { display: grid; gap: 4px; top: auto; bottom: calc(var(--lane-count) * var(--lane-row) + 17px); }
+.graphTooltip > div > [data-no-reading] { color: var(--muted); }
 .chartFrame { container-type: inline-size; }
 .chartMeta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 290px); align-items: center; gap: 6px 16px; min-height: 32px; padding: 4px 0; }
 .chartStatusSlot { min-width: 0; height: 24px; display: flex; align-items: center; justify-content: flex-end; }
@@ -634,6 +720,12 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* The settings pane scrolls inside the first track; the app footer owns
+   its own viewport-sized track and never becomes part of the scroll content. */
+.shell[data-view="settings"] > .content {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 .pageBody > :is(.heading, .notice, .deviceToolbar, .fullHeader) { flex: none; }
 .shell[data-view]:not([data-view="settings"]) .heading { margin-bottom: clamp(5px, 2vh, 22px); }
@@ -701,7 +793,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.history .chartPlot[data-large="true"] { height: auto; }
+.history .chartPlot[data-large="true"] { height: auto; min-height: 168px; }
 .history .chartSummarySlot {
   --summary-row: clamp(23px, 4.6vh, 38px);
   --summary-heading: clamp(22px, 4.1vh, 34px);

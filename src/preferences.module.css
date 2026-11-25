@@ -164,6 +164,7 @@
   min-height: 0;
   width: 100%;
   grid-template-columns: clamp(116px, 13vw, 144px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: clamp(18px, 3.2vw, 32px);
 }
 .settingsNav {
@@ -246,3 +247,4 @@
   .settingsSections .appearance form > div { grid-column: 1; grid-row: 2; width: 100%; }
   .settingsSections .compatibility button, .settingsSections .appearance form > [role="alert"] { grid-column: 1; }
 }
+

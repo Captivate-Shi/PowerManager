@@ -1,0 +1,108 @@
+const { chromium,expect } = require('@playwright/test');
+const { pathToFileURL } = require('node:url');
+const { resolve } = require('node:path');
+const { mkdirSync } = require('node:fs');
+const { installMock } = require('./studio-review-mock.cjs');
+const app=pathToFileURL(resolve('dist/ui/index.html')).href;
+const out=process.env.LIQUID_REVIEW_OUT;
+const b=(q,name)=>q.getByRole('button',{name,exact:true});
+(async()=>{
+ if(out)mkdirSync(out,{recursive:true});
+ const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH,args:['--allow-file-access-from-files','--no-sandbox']});
+ try {
+  for(const [w,h] of [[1440,900],[520,540]]){
+   const p=await browser.newPage({viewport:{width:w,height:h},locale:'zh-CN',reducedMotion:'reduce'});
+   const errors=[];p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error'&&m.text().includes('Content Security Policy'))errors.push(m.text())});
+   await p.addInitScript(installMock,{portable:false});
+   await p.goto(app);await p.evaluate(async()=>{await document.fonts.ready;studioReview.ready();});
+   const nav=p.getByRole('navigation',{name:'主导航'});
+   const go=async name=>{await b(nav,name).click();await expect(b(nav,name)).toHaveAttribute('aria-current','page');};
+   const active=p.locator('main');
+   const glass=(scope,kind)=>scope.locator('[data-liquid-selection="'+kind+'"]');
+   const valid=async x=>{
+    await expect(x).toHaveCount(1);await expect(x).toHaveAttribute('data-refracting','true');
+    const proof=await x.evaluate(el=>{
+      const css=getComputedStyle(el), id=el.style.getPropertyValue('--lens').match(/#([^")]+)/)?.[1];
+      const filter=id&&document.getElementById(id);
+      return {applied:css.backdropFilter.includes(id),passedThrough:css.pointerEvents==='none',map:filter?.querySelector('feImage')?.getAttribute('href')?.startsWith('data:image/png;base64,'),w:el.offsetWidth};
+    });
+    expect(proof).toMatchObject({applied:true,passedThrough:true,map:true});expect(proof.w).toBeGreaterThan(20);
+   };
+   const shot=async name=>{if(out&&w===1440){await p.mouse.move(w-5,5);await p.screenshot({path:resolve(out,name+'.png')});}};
+   await valid(glass(nav,'tab'));
+   const rail=p.getByRole('region',{name:'切换设备'});
+   await valid(glass(rail,'row'));
+   await shot('01-总览展台-玻璃选中');
+   await b(rail,'列表模式').click();
+   await b(rail,'头戴耳机').click();
+   const chosen=b(rail,'头戴耳机');await expect(chosen).toHaveAttribute('aria-pressed','true');
+   await valid(glass(rail,'row'));
+   await shot('02-总览列表-玻璃选中');
+   await go('设备');
+   const row=p.locator('tr[data-selected="true"]');
+   const layer=glass(row,'row');await valid(layer);
+   const [a,s]=await Promise.all([row.boundingBox(),layer.boundingBox()]);
+   expect(Math.abs(a.x-s.x)).toBeLessThan(2);expect(Math.abs(a.width-s.width)).toBeLessThan(2);
+   await shot('03-设备表格-玻璃选中');
+   const mouse=b(active.getByRole('table'),'无线鼠标');await mouse.focus();await mouse.press('Enter');
+   await expect(mouse).toHaveAttribute('aria-pressed','true');
+   await valid(glass(row,'row'));
+   await go('提醒');
+   const queue=active.getByRole('region',{name:'待充电'});
+   await expect(glass(queue,'card')).toHaveCount(0);
+   await expect(queue.locator('[data-liquid-selection]')).toHaveCount(0);
+   const preview=active.getByRole('group',{name:'通知预览级别'});
+   await b(preview,'电量告急').click();
+   await expect(queue.locator('[data-liquid-selection]')).toHaveCount(0);
+   await b(active,'发送电量告急测试通知').click();
+   expect(await p.evaluate(()=>studioReview.commands.findLast(c=>c.type==='preview'))).toMatchObject({id:'headset',severity:'critical'});
+   await expect(queue.getByRole('button',{name:/分钟后提醒/})).toHaveCount(2);
+   const name=b(queue,'查看详情 · 头戴耳机');await name.click();await expect(b(active,'返回提醒')).toBeFocused();
+   await p.keyboard.press('Escape');await expect(name).toBeFocused();
+   await p.emulateMedia({forcedColors:'active'});
+   const navLens=glass(nav,'tab');
+   await expect(navLens).not.toHaveAttribute('data-refracting','true');
+   expect(await navLens.evaluate(el=>getComputedStyle(el).backdropFilter)).toBe('none');
+   expect(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+   const pill=nav.locator('[data-nav-indicator]');
+   expect(await pill.evaluate(el=>getComputedStyle(el).borderTopLeftRadius)).toBe('9px');
+   await go('总览');
+   expect(await pill.evaluate(el=>el.getAnimations().length)).toBe(0);
+   await p.emulateMedia({forcedColors:'none',reducedMotion:'no-preference'});
+   const target=b(nav,'设备');
+   const targetBox=await target.boundingBox();
+   await p.mouse.move(targetBox.x+targetBox.width*.72,targetBox.y+targetBox.height/2);
+   await p.mouse.down();
+   expect(await target.evaluate(el=>parseFloat(el.style.getPropertyValue('--nav-press-x')))).toBeGreaterThan(65);
+   expect(await target.evaluate(el=>getComputedStyle(el,'::before').opacity)).toBe('1');
+   await p.mouse.up();
+   await expect(target).toHaveAttribute('aria-current','page');
+   const motion=await pill.evaluate(el=>{
+    const animation=el.getAnimations().at(-1);
+    animation.pause();
+    const sample=t=>{animation.currentTime=t;const r=el.getBoundingClientRect();return {x:r.x,w:r.width,h:r.height};};
+    const d=animation.effect.getTiming().duration;
+    const start=sample(0),str=sample(d*.43),overshoot=sample(d*.76),end=sample(d);
+    sample(d*.36);return {start,str,overshoot,end};
+   });
+   expect(motion.str.w / motion.end.w).toBeGreaterThan(1.065);
+   expect(motion.str.w / motion.end.w).toBeLessThan(1.15);
+   expect(motion.str.h / motion.end.h).toBeGreaterThan(.95);
+   const recoil=motion.overshoot.x+motion.overshoot.w/2-(motion.end.x+motion.end.w/2);
+   expect(recoil).toBeGreaterThan(.5);expect(recoil).toBeLessThan(3.2);
+   const before=await pill.boundingBox();
+   await go('总览');
+   const reversed=await pill.evaluate(el=>{
+    const animation=el.getAnimations().at(-1);animation.pause();animation.currentTime=0;
+    const r=el.getBoundingClientRect();return {x:r.x,width:r.width};
+   });
+   expect(Math.abs(reversed.x-before.x)).toBeLessThan(1);
+   expect(Math.abs(reversed.width-before.width)).toBeLessThan(1);
+   await p.emulateMedia({reducedMotion:'reduce'});
+   await expect.poll(()=>pill.evaluate(el=>el.getAnimations().length)).toBe(0);
+   expect(errors).toEqual([]);
+   console.log(w+'px: lens scope, reminder action, keyboard focus, forced colors, stretch, overshoot and live retarget passed.');
+   await p.close();
+  }
+ } finally {await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});

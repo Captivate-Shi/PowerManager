@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type PointerEvent, type ReactNode } from 'react';
+import { LiquidSelection } from './liquid-selection';
 import scene from './scene.module.css';
 
 type Target = { x: number; y: number; width: number; height: number };
@@ -10,6 +11,8 @@ const pose = (x: number, y: number, sx = 1, sy = 1) =>
 export function JellyNav({ current, children }: { current: string; children: ReactNode }) {
   const nav = useRef<HTMLElement>(null);
   const pill = useRef<HTMLSpanElement>(null);
+  const sheen = useRef<HTMLSpanElement>(null);
+  const gleam = useRef<Animation>(null);
   const resting = useRef<Target>(null);
   const motion = useRef<Animation>(null);
   useLayoutEffect(() => {
@@ -38,22 +41,40 @@ export function JellyNav({ current, children }: { current: string; children: Rea
       indicator.dataset.ready = '';
       resting.current = next;
       if (!previous || !animate || reduced.matches || typeof indicator.animate !== 'function') return;
-      const shift = next.x - startX;
-      const direction = Math.sign(shift);
-      const stretch = Math.min(.21, Math.abs(shift) / next.width * .15);
+      // Retarget from the actual painted pill on rapid reversals, not the old tab.
+      const fromCenter = startX + live.width / 2;
+      const toCenter = next.x + next.width / 2;
+      const distance = toCenter - fromCenter;
+      const sign = Math.sign(distance);
+      const stretch = Math.min(.13, Math.abs(distance) / next.width * .11);
+      const overshoot = Math.min(2.6, Math.abs(distance) * .036);
+      const centerY = next.y + next.height / 2;
+      const at = (center: number, sx: number, sy: number) =>
+        pose(center - next.width * sx / 2, centerY - next.height * sy / 2, sx, sy);
+      // Keep the silhouette almost stable. A small traveling highlight carries
+      // most of the feedback, with one damped settle instead of a bounce cycle.
       motion.current = indicator.animate([
-        { offset: 0, transform: pose(startX, startY, live.width / next.width, live.height / next.height) },
-        { offset: .42, transform: pose(startX + shift * .75 - next.width * stretch / 2, next.y + 1, 1 + stretch, .94), easing: 'cubic-bezier(.2,.55,.26,1)' },
-        { offset: .7, transform: pose(next.x + direction * Math.min(4, Math.abs(shift) * .09), next.y - .4, .98, 1.025) },
-        { offset: .88, transform: pose(next.x - direction * 1.3, next.y, 1.008, 1) },
+        { offset: 0, transform: pose(startX, startY, live.width / next.width, live.height / next.height),
+          easing: 'cubic-bezier(.18,.64,.29,1)' },
+        { offset: .43, transform: at(fromCenter + distance * .73, 1 + stretch, .97),
+          easing: 'cubic-bezier(.22,.61,.36,1)' },
+        { offset: .76, transform: at(toCenter + sign * overshoot, .994, 1.025), easing: 'ease-out' },
         { offset: 1, transform: pose(next.x, next.y) },
-      ], { duration: 345, easing: 'cubic-bezier(.22,.61,.34,1)' });
+      ], { duration: Math.abs(distance) > next.width * 2.1 ? 300 : 265 });
+      const optical = sheen.current;
+      if (!optical) return;
+      gleam.current?.cancel();
+      gleam.current = optical.animate([
+        { opacity: 0, transform: `translateX(${-sign * 24}%)` },
+        { offset: .48, opacity: .72, transform: `translateX(${sign * 9}%)` },
+        { opacity: 0, transform: `translateX(${sign * 30}%)` },
+      ], { duration: 245, easing: 'ease-out' });
     }
     fit(true);
     const observer = new ResizeObserver(() => fit(false));
     observer.observe(container);
     observer.observe(button);
-    const onPreference = () => { if (reduced.matches) motion.current?.cancel(); };
+    const onPreference = () => { if (reduced.matches) { motion.current?.cancel(); gleam.current?.cancel(); } };
     reduced.addEventListener('change', onPreference);
     return () => {
       observer.disconnect();
@@ -61,8 +82,14 @@ export function JellyNav({ current, children }: { current: string; children: Rea
     };
   }, [current]);
 
-  return <nav ref={nav} className={scene.jellyNav} aria-label="主导航">
-    <span className={scene.jellyGlass} ref={pill} data-nav-indicator="" aria-hidden="true" />
+  function markPress(event: PointerEvent<HTMLElement>) {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
+    if (!button || event.button !== 0 || !event.currentTarget.contains(button)) return;
+    const bounds = button.getBoundingClientRect();
+    button.style.setProperty('--nav-press-x', `${Math.round((event.clientX - bounds.left) / bounds.width * 100)}%`);
+  }
+  return <nav onPointerDownCapture={markPress} ref={nav} className={scene.jellyNav} aria-label="主导航">
+    <span className={scene.jellyGlass} ref={pill} data-nav-indicator="" aria-hidden="true"><LiquidSelection kind="tab" /><span ref={sheen} className={scene.navSheen} /></span>
     {children}
   </nav>;
 }

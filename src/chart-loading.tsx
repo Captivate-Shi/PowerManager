@@ -20,10 +20,10 @@ export function ChartSkeleton({ large = true }: { large?: boolean }) {
   </div>;
 }
 
-export function ChartFrame({ large, pending, threshold, children, notice, summary, reserveRows, range = 'day', view = 'trend', onView }: {
+export function ChartFrame({ large, pending, threshold, children, notice, summary, reserveRows, range = 'day', view = 'trend', onView, hasIntervals = false }: {
   large: boolean; pending: boolean; threshold?: number; children: ReactNode; notice?: ReactNode;
   summary: ReactNode; reserveRows: 1 | 3; range?: HistoryRange;
-  view?: ChartView; onView?: (value: ChartView) => void;
+  view?: ChartView; hasIntervals?: boolean; onView?: (value: ChartView) => void;
 }) {
   return <div className={s.chartFrame} data-large={large} data-scroll-pane="">
     <div className={s.chartPlot} data-large={large} aria-busy={pending}>{children}</div>
@@ -34,8 +34,8 @@ export function ChartFrame({ large, pending, threshold, children, notice, summar
             <button type="button" aria-pressed={view === 'trend'} disabled={!onView} onClick={() => onView?.('trend')}>趋势</button>
             <button type="button" aria-pressed={view === 'samples'} disabled={!onView} onClick={() => onView?.('samples')}>原始采样</button>
           </div>
-          <span><i className={s.rangeKey} />上报区间</span><span><Zap size={13} />充电采样</span>
-          <span><i className={s.gapKey} />缺测</span>
+          {hasIntervals && <span><i className={view === 'trend' ? s.rangeMidKey : s.rangeKey} />{view === 'trend' ? '区间中点（估算）' : '上报区间'}</span>}<span><Zap size={13} />充电采样</span>
+          <span><i className={s.gapKey} />无数据</span>
         </> : <span>每日最低读数 · 空白日期无有效采样</span>}
         {threshold !== undefined && <span><i className={s.thresholdKey} />提醒阈值 {threshold}%</span>}
       </div>

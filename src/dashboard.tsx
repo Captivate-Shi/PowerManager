@@ -10,6 +10,7 @@ import s from './panel.module.css';
 import look from './scene.module.css';
 import listLook from './overview-list.module.css';
 import { allowOverviewMotion, OverviewModeMotion } from './overview-mode-motion';
+import { LiquidSelection } from './liquid-selection';
 import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
 import { DeviceThreshold } from './device-threshold';
@@ -717,6 +718,7 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
           const facts = overviewListFacts(device, state, inventory === 'ready');
           return <div key={device.id} className={listLook.entry} data-mode-row=""
           data-list-selected={mode === 'list' && device.id === featured?.id ? '' : undefined}>
+          {device.id === featured?.id && <LiquidSelection />}
           <button className={look.railRow + ' ' + listLook.selectRow} aria-label={device.name}
             aria-description={mode === 'list' ? facts.description : undefined}
             aria-pressed={device.id === featured?.id} disabled={initial}
@@ -792,7 +794,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, sort, setSor
             const alert = level(device, state);
             return <tr key={device.id} data-selected={device.id === detail?.id}
             onClick={() => pick(device.id)} onDoubleClick={() => openPreview(device)}>
-            <td><button className={s.deviceName} type="button" aria-pressed={device.id === detail?.id} title={device.name}
+            <td>{device.id === detail?.id && <LiquidSelection />}<button className={s.deviceName} type="button" aria-pressed={device.id === detail?.id} title={device.name}
               aria-description="选择后在右侧预览，可用查看详情按钮打开完整页面"
               onClick={event => { event.stopPropagation(); pick(device.id); }}>
               <Art device={device} /><b>{device.name}</b>
@@ -1122,15 +1124,16 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
   return <div className={preferences.settings} data-page="settings">
     <nav className={preferences.settingsNav} aria-label="设置分类">{[['appearance', '外观'], ['runtime', '运行与托盘'], ['history', '记录'], ['diagnostics', '诊断']].map(([id, title]) =>
       <button type="button" key={id} aria-controls={'settings-' + id} aria-current={active === id ? 'location' : undefined} onClick={() => {
-        const heading = document.querySelector<HTMLElement>('#settings-' + id + ' h2');
-        if (!heading) return;
+        const pane = sections.current;
+        const heading = pane?.querySelector<HTMLElement>('#settings-' + id + ' h2');
+        if (!pane || !heading) return;
         requested.current = id;
         position.current.category = id;
         setActive(id);
         heading.focus({ preventScroll: true });
-        heading.scrollIntoView({
-          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start', inline: 'nearest',
-        });
+        const top = pane.scrollTop + heading.getBoundingClientRect().top -
+          pane.getBoundingClientRect().top - pane.clientTop - (parseFloat(getComputedStyle(pane).scrollPaddingTop) || 0);
+        pane.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
       }}>{title}</button>)}</nav>
     <div className={preferences.settingsSections} ref={sections} data-scroll-pane="" role="region" aria-label="设置内容" tabIndex={0}>
       <section id="settings-appearance" className={preferences.appearance} aria-labelledby="appearance-heading">
