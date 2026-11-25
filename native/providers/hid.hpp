@@ -103,6 +103,7 @@ private:
     };
     RapooBatteryReader rapoo_;
     std::map<std::wstring, Receiver> receivers_;
+    std::map<std::wstring, std::chrono::steady_clock::time_point> dualSenseFullRequestDue_;
     unsigned logitechRequestId_{};
     unsigned atkV75XSequence_{};
     std::map<std::wstring,std::chrono::steady_clock::time_point> hasteReady_;
