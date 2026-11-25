@@ -107,3 +107,15 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 当 Windows 与标准蓝牙电量都无读数时，仅对已经配对并连接、同一 Windows 设备容器、型号名匹配且蓝牙 SIG 身份为 `027D:4113` 的设备，按 SDP 公布的 SPP 服务发一次电量查询。通道忙、无响应或格式无效时关闭连接，不抢占，不修改音频或耳机设置。双耳都有效时采用较低值，不用充电盒代替耳机；暂不推断充电状态。
 
 协议依据：[FreeClip 2 同型号 Windows 真机记录](https://github.com/whisperers26/BatteryInfo/blob/main/docs/protocols/huawei.md)。余电仍需用真机对照电量，并验证与音乐、通话及其他管理软件的共存。
+
+## 后续接入顺序
+
+| 顺序 | 范围 | 开源依据与接入门槛 |
+| --- | --- | --- |
+| 1 · 本批 | OPPO Enco X4，经典蓝牙 | [EncoDeck 真机记录](https://github.com/TIANLI0/EncoDeck/blob/main/docs/PROTOCOL_FINDINGS.md)：同一 ELNK 服务，但先确认独立产品 ID `06EC10`。兼容 X4 已观测的盒内、取出两种电量回复；不开放 LE Audio、不订阅事件、不更改设置。 |
+| 2 · 本批 | 雷柏 VT2S Air Max，原装 2.4G 接收器 | [VigilWatt 真机记录](https://github.com/evren-oct/vigil-watt/blob/main/docs/hardware/rapoo.md)：仅认 `24AE:1B13` 和已验证布局，不把有线 `4B13` 或底座 `4827` 当电量端点。沿用被动监听，不发命令。 |
+| 3 · 待接入 | Nintendo Switch Pro 原生蓝牙；GameSir Super Nova 原装 2.4G | [SDL](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_switch.c)、[HaloBattery](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md)、[Wireless Device Battery Monitor](https://github.com/notjiccu/wireless-device-battery-monitor#supported-devices)。先区分 Switch 原始报文是否已由游戏开启、GameSir 共用接收器能否核对型号。 |
+| 4 · 待接入 | 其他罗技办公键鼠、达尔优／迈从等有协议线索的候选 | [Solaar](https://github.com/pwr-Solaar/Solaar)、[VigilWatt](https://github.com/evren-oct/vigil-watt/tree/main/docs/hardware)。按接收器、接口、模式和型号证据分批，不按品牌放开。 |
+| 5 · 等设备身份 | 用户反馈的雷柏通用键盘及其他仅见通用名称的设备 | 不套用鼠标报文；先核对设备型号及接收器接口，再排期。 |
+
+“本批”只表示代码进入兼容草稿。真机和并行音频仍需验证。

@@ -72,7 +72,8 @@ Endpoint resolve(std::wstring_view containerId, Model model)
     do {
         const std::wstring_view name(info.szName);
         const bool exact = model == Model::sonyXm4 ? name == sony_headphone::model :
-            model == Model::oppoClip2 ? oppo_headphone::isClip2(name) : huawei_headphone::isFreeClip2(name);
+            model == Model::oppoClip2 ? oppo_headphone::isClip2(name) :
+            model == Model::oppoX4 ? oppo_headphone::isX4(name) : huawei_headphone::isFreeClip2(name);
         if (!info.fAuthenticated || !exact ||
             info.Address.ullLong == 0 || info.Address.ullLong > 0xffffffffffffull) continue;
         wchar_t devId[32]{};
@@ -161,7 +162,7 @@ Result read(std::wstring_view containerId, Model model)
     remote.addressFamily = AF_BTH;
     remote.btAddr = endpoint.address;
     remote.serviceClassId = model == Model::sonyXm4 ? sonyMdrV1 :
-        model == Model::oppoClip2 ? oppoElnk : huaweiSerialPort;
+        model == Model::huaweiFreeClip2 ? huaweiSerialPort : oppoElnk;
     // Huawei's documented SDP SPP service is only reachable after the exact
     // Windows hardware ID check. No scanning fixed channels or audio APIs.
     remote.port = 0;
@@ -195,7 +196,7 @@ Result read(std::wstring_view containerId, Model model)
         return {Status::protocol_invalid};
     }
 
-    if (model == Model::oppoClip2) {
+    if (model == Model::oppoClip2 || model == Model::oppoX4) {
         using namespace oppo_headphone;
         const auto query = [&](const auto& request, std::vector<std::uint8_t>& payload) {
             const auto status = writeAll(socket.handle, request, deadline);
@@ -218,9 +219,10 @@ Result read(std::wstring_view containerId, Model model)
         };
         std::vector<std::uint8_t> payload;
         if (const auto status = query(productQuery, payload); status != Status::success) return {status};
-        if (!matchesProduct(payload)) return {Status::protocol_invalid};
+        const auto productId = model == Model::oppoX4 ? x4ProductId : clip2ProductId;
+        if (!matchesProduct(payload, productId)) return {Status::protocol_invalid};
         if (const auto status = query(batteryQuery, payload); status != Status::success) return {status};
-        if (const auto battery = parseBattery(payload)) return {Status::success, Battery{battery->percent, battery->charging}};
+        if (const auto battery = parseBattery(payload, productId)) return {Status::success, Battery{battery->percent, battery->charging}};
         return {Status::protocol_invalid};
     }
 

@@ -17,6 +17,7 @@ constexpr const wchar_t* rapooReceiverName(unsigned vid, unsigned pid)
     case 0x1411: return L"Rapoo VT3S";
     case 0x1412: return L"Rapoo VT3 双8K";
     case 0x14a1: return L"Rapoo VT0 Air MAX";
+    case 0x1b13: return L"Rapoo VT2S Air Max";
     default: return nullptr;
     }
 }

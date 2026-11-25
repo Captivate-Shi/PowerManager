@@ -7,6 +7,17 @@ int main()
     static_assert(isClip2(L"OPPO Enco Clip2"));
     static_assert(!isClip2(L"OPPO Enco Clip"));
     static_assert(!isClip2(L"Nearby OPPO Enco Clip2"));
+    static_assert(isX4(L"OPPO Enco X4"));
+    static_assert(!isX4(L"OPPO Enco X4s"));
+    const std::array<std::uint8_t,4> x4id{0,0x10,0xec,6};
+    assert(matchesProduct(x4id, x4ProductId));
+    assert(!matchesProduct(x4id, clip2ProductId));
+    const std::array<std::uint8_t,8> x4Charging{0,3,1,0xc6,2,0xc6,3,0x46};
+    const auto charging = parseBattery(x4Charging, x4ProductId);
+    assert(charging && charging->percent == 70 && charging->charging);
+    const std::array<std::uint8_t,6> x4OutOfCase{1,2,1,0x5a,2,0x5a};
+    assert(parseBattery(x4OutOfCase, x4ProductId)->percent == 90);
+    assert(!parseBattery(x4OutOfCase, clip2ProductId));
     const std::array<std::uint8_t, 13> id{0xaa,11,0,0,3,0x81,1,4,0,0,0x10,0xe0,6};
     ReplyStream identities(productQuery);
     assert(!identities.feed(std::span(id).first(4)));

@@ -17,7 +17,13 @@ constexpr bool isClip2(std::wstring_view name)
     return name == L"OPPO Enco Clip2" || name == L"OPPO Enco Clip 2";
 }
 
-constexpr unsigned productId = 0x06e010;
+constexpr bool isX4(std::wstring_view name)
+{
+    return name == L"OPPO Enco X4";
+}
+
+constexpr unsigned clip2ProductId = 0x06e010;
+constexpr unsigned x4ProductId = 0x06ec10;
 constexpr std::array<std::uint8_t, 9> productQuery{0xaa, 7, 0, 0, 3, 1, 1, 0, 0};
 constexpr std::array<std::uint8_t, 9> batteryQuery{0xaa, 7, 0, 0, 6, 1, 0xf0, 0, 0};
 
@@ -61,19 +67,21 @@ private:
     std::vector<std::uint8_t> bytes_;
 };
 
-inline bool matchesProduct(std::span<const std::uint8_t> payload)
+inline bool matchesProduct(std::span<const std::uint8_t> payload, unsigned productId = clip2ProductId)
 {
     return payload.size() >= 4 && payload[0] == 0 &&
         (static_cast<unsigned>(payload[1]) | (static_cast<unsigned>(payload[2]) << 8) |
             (static_cast<unsigned>(payload[3]) << 16)) == productId;
 }
 
-inline std::optional<Battery> parseBattery(std::span<const std::uint8_t> payload)
+inline std::optional<Battery> parseBattery(std::span<const std::uint8_t> payload, unsigned productId = clip2ProductId)
 {
     // The wire layout may include or omit a zero result byte. Length and
     // count disambiguate; no other status, duplicate ID or invalid level.
     if (payload.empty()) return {};
-    if (payload[0] == 0) payload = payload.subspan(1);
+    if (payload[0] == 0 || (productId == x4ProductId && payload[0] == 1 &&
+        payload.size() >= 4 && payload.size() == 2u + 2u * payload[1]))
+        payload = payload.subspan(1);
     if (payload.empty() || !payload[0] || payload[0] > 3 ||
         payload.size() != 1u + 2u * payload[0]) return {};
     unsigned seen = 0;

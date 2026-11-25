@@ -338,6 +338,7 @@ std::optional<rfcomm_battery::Model> vendorHeadphone(const FoundDevice& device)
     if (!device.connected || !device.knownBluetooth) return {};
     if (device.name == sony_headphone::model) return rfcomm_battery::Model::sonyXm4;
     if (oppo_headphone::isClip2(device.name)) return rfcomm_battery::Model::oppoClip2;
+    if (oppo_headphone::isX4(device.name)) return rfcomm_battery::Model::oppoX4;
     if (huawei_headphone::isFreeClip2(device.name)) return rfcomm_battery::Model::huaweiFreeClip2;
     return {};
 }
