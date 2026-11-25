@@ -65,6 +65,11 @@ jobs:
           $files = @(Get-Item "out/${version}/PowerManager-Setup-${version}-x64.exe", "out/${version}/PowerManager-Portable-${version}-x64.zip")
           $files | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content "out/${version}/SHA256SUMS.txt"
           "PM_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Smoke test system installer
+        if: github.event_name == 'pull_request'
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-system-installer.ps1 -SetupPath "out/${{ env.PM_VERSION }}/PowerManager-Setup-${{ env.PM_VERSION }}-x64.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-x64
