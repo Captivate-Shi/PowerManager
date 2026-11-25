@@ -167,6 +167,71 @@ Sample parseDualSenseReport(std::span<const std::uint8_t> report, bool bluetooth
             id, status};
 }
 
+Sample parseSwitchProBluetoothReport(std::span<const std::uint8_t> report)
+{
+    if (report.empty()) return {Status::bad_report};
+    if (report[0] == 0x3f) return {Status::basic_bluetooth, {}, 0x3f};
+    // Only the full input-state report, never command response or NFC data.
+    // HidClass can pad this 49-byte Bluetooth report to the largest report.
+    if (report[0] != 0x30 || report.size() < 49)
+        return {Status::bad_report, {}, report[0], static_cast<unsigned>(report.size())};
+    const unsigned state = report[2];
+    const unsigned level = state >> 5;
+    if (level > 4) return {Status::bad_report, {}, 0x30, state};
+    const auto power = state & 0x10 ? Power::charging : Power::discharging;
+    // UI bands for the five discrete levels; not a calibrated percentage.
+    const int upper = static_cast<int>(level) * 25;
+    return {Status::current, Reading{upper ? upper - 24 : 0, upper, power, static_cast<int>(level)},
+        0x30, state};
+}
+
+Sample parse8BitDoBatteryReport(std::span<const std::uint8_t> report, unsigned reportId)
+{
+    if ((reportId != 1 && reportId != 4) || report.size() < 15 || report[0] != reportId) {
+        return {Status::bad_report, {}, report.empty() ? 0u : unsigned(report[0]), unsigned(report.size())};
+    }
+    // Verified by HaloBattery on real Pro 3 DInput Bluetooth with Steam closed.
+    // Refuse zero to avoid turning a padded/incomplete packet into a low alert.
+    const int encoded = report[14];
+    const int percent = encoded & 0x7f;
+    if (percent == 0 || percent > 100) return {Status::bad_report, {}, reportId, unsigned(encoded)};
+    return {Status::current, Reading{percent, percent, encoded & 0x80 ? Power::charging : Power::discharging,
+                                    percent}, reportId, unsigned(encoded)};
+}
+
+Sample parse8BitDoPro3BluetoothReport(std::span<const std::uint8_t> report)
+{
+    return parse8BitDoBatteryReport(report, 4);
+}
+
+Sample parseDualShock4Report(std::span<const std::uint8_t> report, bool bluetooth)
+{
+    // DS4 CUH-ZCT1/ZCT2 full input layout, as documented by Linux hid-playstation.
+    // A Windows Bluetooth basic (0x01) frame may be zero-padded; never sample it.
+    if (report.empty()) return {Status::bad_report};
+    const auto id = report.front();
+    if (bluetooth && id == 1) return {Status::basic_bluetooth, {}, id};
+    const unsigned length = bluetooth ? 78 : 64;
+    if (id != (bluetooth ? 0x11 : 1) || report.size() < length) {
+        return {Status::bad_report, {}, id, static_cast<unsigned>(report.size())};
+    }
+    if (bluetooth) {
+        std::uint32_t crc = 0;
+        for (unsigned i = 0; i < 4; ++i) {
+            crc |= static_cast<std::uint32_t>(report[length - 4 + i]) << (8 * i);
+        }
+        if (dualSenseCrc(0xa1, report.first(length - 4)) != crc) return {Status::bad_report, {}, id};
+    }
+    const unsigned status = report[bluetooth ? 32 : 30];
+    const int level = status & 0x0f;
+    const bool cable = (status & 0x10) != 0;
+    if (cable && level == 11) return {Status::current, Reading{100, 100, Power::full, level}, id, status};
+    if (cable && level >= 14) return {Status::charging_error, {}, id, status};
+    if (level > 10) return {Status::bad_report, {}, id, status};
+    return {Status::current, Reading{10 * level, std::min(10 * level + 9, 100),
+                                    cable ? Power::charging : Power::discharging, level}, id, status};
+}
+
 std::optional<Reading> windowsReading(std::optional<int> percent, std::optional<int> charging)
 {
     if (!percent || *percent < 0 || *percent > 100) {

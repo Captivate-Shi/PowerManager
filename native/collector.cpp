@@ -1,8 +1,12 @@
 #include "hid.hpp"
+#include "diagnostic_scope.hpp"
+#include "razer_pro_receiver.hpp"
 #include "peripheral_protocol.hpp"
 #include "device_search.hpp"
 #include "ble_battery.hpp"
+#include "battery_fallback.hpp"
 #include "gamepad_battery.hpp"
+#include "rfcomm_battery_transport.hpp"
 #include "json.hpp"
 
 #include <windows.h>
@@ -17,6 +21,7 @@
 #include <chrono>
 #include <iostream>
 #include <deque>
+#include <future>
 #include <stdexcept>
 #include <set>
 #include <cwctype>
@@ -67,7 +72,9 @@ json reading(const std::optional<Reading>& value)
     const char* power[] = {"discharging", "charging", "full", "unknown"};
     return {{"low", value->low}, {"high", value->high}, {"raw", value->raw},
             {"power", power[static_cast<int>(value->power)]},
-            {"source", value->source == ReadingSource::hid ? "hid" : value->source == ReadingSource::ble ? "ble" : "windows"}};
+            {"source", value->source == ReadingSource::hid ? "hid" : value->source == ReadingSource::ble ? "ble" :
+                value->source == ReadingSource::hid_voltage ? "hid_voltage" :
+                value->source == ReadingSource::bluetooth_vendor ? "bluetooth_vendor" : "windows"}};
 }
 
 json sample(const Sample& value)
@@ -76,8 +83,10 @@ json sample(const Sample& value)
                             "unavailable", "basic_bluetooth", "charging_error"};
     return {{"status", status[static_cast<int>(value.status)]}, {"reading", reading(value.reading)},
             {"reason", value.millivolts && !value.reading ? "仅上报电压，暂无可靠百分比" :
-                value.feature == 0x1000 && value.status == Status::unavailable &&
-                (value.detail == 1 || value.detail == 2 || value.detail == 4) ?
+                value.status == Status::unavailable &&
+                ((value.feature == 0x1000 && (value.detail == 1 || value.detail == 2 || value.detail == 4)) ||
+                 (value.feature == 0x0a && value.report == 6 && value.detail == 255) ||
+                 (value.feature == 0x30 && value.report == 0x30 && value.detail == 1)) ?
                 "设备充电中，未上报实时百分比" : utf8(statusName(value.status))},
             {"reportId", value.report}, {"detail", value.detail}, {"feature", value.feature},
             {"millivolts", value.millivolts ? json(*value.millivolts) : json(nullptr)}};
@@ -241,6 +250,20 @@ std::set<std::wstring> claimedContainers(const std::vector<Device>& endpoints)
     return seen;
 }
 
+// Only an endpoint's own container can provide a Windows/BAS fallback.
+// Shared receiver parents cannot attribute battery to an individual child.
+std::map<std::wstring, std::wstring> nativeContainerOwners(const std::vector<Device>& endpoints)
+{
+    std::map<std::wstring, std::wstring> owners;
+    for (const auto& endpoint : endpoints) {
+        const auto container = endpointContainer(endpoint.endpointKey);
+        if (container.empty()) continue;
+        auto [it, inserted] = owners.try_emplace(container, endpoint.key);
+        if (!inserted && it->second != endpoint.key) it->second.clear();
+    }
+    return owners;
+}
+
 using ReportTargets = std::map<std::wstring, std::string>;
 
 std::string reportTarget(ReportTargets& targets, const std::wstring& id)
@@ -273,20 +296,35 @@ json gamepadInventory()
         {"windowsGamingInput", serialize(pads.windowsGamingInput)}, {"xinput", serialize(pads.xinput)}};
 }
 
-json inventory(ReportTargets& targets)
+json inventory(ReportTargets& targets, const std::vector<Device>& endpoints = {})
 {
     std::vector<HidInterface> descriptors;
     HidMonitor monitor;
     monitor.enumerate(false, &descriptors);
+    const auto devices = findWindowsDevices();
+    const auto owners = nativeContainerOwners(endpoints);
+    std::set<std::wstring> sharedReceivers;
+    for (const auto& endpoint : endpoints) {
+        const auto id = endpointContainer(endpoint.parentEndpoint);
+        if (!id.empty()) sharedReceivers.insert(id);
+    }
+    std::set<std::wstring> discovered;
+    if (devices) for (const auto& device : *devices) discovered.insert(device.id);
+    const auto scopedTarget = [&](const std::wstring& id) -> std::string {
+        const auto key = diagnosticScopeKey(id, owners, sharedReceivers, discovered);
+        return key.empty() ? std::string{} : reportTarget(targets, key);
+    };
     json hid = json::array();
     for (const auto& item : descriptors) {
-        hid.push_back({{"vid", item.vid}, {"pid", item.pid}, {"revision", item.revision},
-            {"interfaceNumber", item.interfaceNumber}, {"usagePage", item.page}, {"usage", item.usage},
+        const auto descriptorState = !item.descriptorAvailable ? "unavailable" :
+            item.provider ? "candidate" : item.providerRecognized ? "descriptor_mismatch" : "no_provider";
+        hid.push_back({{"target", scopedTarget(item.physicalContainer)}, {"vid", item.vid}, {"pid", item.pid},
+            {"revision", item.revision}, {"interfaceNumber", item.interfaceNumber},
+            {"usagePage", item.page}, {"usage", item.usage},
             {"inputBytes", item.inputLength}, {"outputBytes", item.outputLength}, {"featureBytes", item.featureLength},
-            {"descriptorAvailable", item.descriptorAvailable},
+            {"descriptorAvailable", item.descriptorAvailable}, {"descriptorState", descriptorState},
             {"candidateProvider", item.provider ? json(utf8(providerName(*item.provider))) : json(nullptr)}});
     }
-    const auto devices = findWindowsDevices();
     const auto ble = inspectBleBatteryServices();
     json windows = json::array();
     if (devices) {
@@ -295,16 +333,19 @@ json inventory(ReportTargets& targets)
             const Sample observed{Status::unavailable, device.battery, 0, static_cast<unsigned>(device.batteryDetail)};
             const auto found = ble.counts.find(device.id);
             const auto services = found == ble.counts.end() ? 0u : found->second;
-            windows.push_back({{"target", reportTarget(targets, device.id)}, {"connection", utf8(device.connection)},
+            windows.push_back({{"target", scopedTarget(device.id)}, {"connection", utf8(device.connection)},
                 {"connected", device.connected}, {"battery", reading(device.battery)},
+                {"inputOrHeadset", device.inputOrHeadset}, {"knownBluetooth", device.knownBluetooth},
                 {"reasonCode", windowsBatteryReason(observed)},
-                {"bleBasListed", services == 1},
+                {"bleBasListed", ble.complete && services == 1},
+                {"bleServiceCount", ble.complete && device.knownBluetooth ? json(services) : json(nullptr)},
                 {"bleReasonCode", !ble.complete ? "ble_interface_enumeration_failed" :
                     services > 1 ? "ble_multiple_battery_services" : services == 1 ? "ble_candidate" :
                     device.connection == L"蓝牙" ? "ble_no_battery_service" : "ble_not_bluetooth"}});
         }
     }
-    return {{"schemaVersion", 2}, {"hidInterfaces", hid}, {"windowsDevices", windows},
+    return {{"schemaVersion", 3}, {"hidInterfaces", hid}, {"windowsDevices", windows},
+        {"bleQuerySucceeded", ble.complete},
         {"windowsQuerySucceeded", devices.has_value()}, {"bleEnumerationError", ble.error}, {"gamepads", gamepadInventory()}};
 }
 
@@ -316,13 +357,33 @@ const wchar_t* label(const Device& device)
 const char* art(const Device& device)
 {
     if (isDualSense(device.transport)) return "dualsense";
-    if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard) return "keyboard";
-    if (device.transport == Transport::razer_receiver) return "mouse";
+    if (device.transport == Transport::sony_gamepad_usb || device.transport == Transport::sony_gamepad_bluetooth)
+        return device.pid == 0x0df2 ? "dualsense" : "controller";
+    if (isEightBitDoHid(device.transport) || isSwitchHid(device.transport) ||
+        device.transport == Transport::gamesir_super_nova_receiver || device.transport == Transport::gamepad_flydigi ||
+        device.transport == Transport::gamepad_nova2_lite_usb) return "controller";
+    if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard ||
+        device.transport == Transport::aula_f87v2d_receiver || device.transport == Transport::atk_v75x_usb ||
+        device.transport == Transport::rog_keyboard_receiver) return "keyboard";
+    if (device.transport == Transport::razer_pro_receiver && razerKeyboardReceiver(device.vid, device.pid)) return "keyboard";
+    if (device.transport == Transport::usb_wireless_headset) return "headset";
+    if (device.transport == Transport::razer_receiver || device.transport == Transport::razer_pro_receiver ||
+        device.transport == Transport::rapoo_receiver ||
+        device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver ||
+        device.transport == Transport::mchose_g3v2_receiver || device.transport == Transport::mchose_a7v2pro_usb ||
+        device.transport == Transport::aula_sc580_receiver || device.transport==Transport::verified_mouse_usb ||
+        device.transport==Transport::verified_mouse_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {
         if (device.kind == 0 || device.kind == 2) return "keyboard";
         if (device.kind >= 3 && device.kind <= 5) return "mouse";
     }
     return "unknown";
+}
+
+std::optional<rfcomm_battery::Model> vendorHeadphone(const FoundDevice& device)
+{
+    if (!device.connected || !device.knownBluetooth) return {};
+    return rfcomm_battery::matchModel(device.name);
 }
 
 class Collector {
@@ -338,7 +399,6 @@ public:
         if (action == "compatibility") return compatibility();
         if (action == "diagnostic_devices") return diagnosticDevices();
         if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("id").get<std::string>()));
-        if (action == "bluetooth") return bluetooth(wide(request.at("key").get<std::string>()));
         if (action == "poll") return poll(request);
         throw std::runtime_error("Unknown action");
     }
@@ -352,6 +412,20 @@ private:
     std::chrono::steady_clock::time_point windowsRefresh_{};
     std::vector<FoundDevice> windowsDevices_;
     std::map<std::wstring, std::wstring> diagnosticFirmwareTargets_;
+    using Time = std::chrono::steady_clock::time_point;
+    struct VendorAttempt {
+        rfcomm_battery::Result result;
+        Time started;
+        Time finished;
+    };
+    struct VendorTask {
+        std::wstring container;
+        rfcomm_battery::Model model;
+        std::future<VendorAttempt> result;
+        bool stillConnected{true};
+    };
+    std::optional<VendorTask> vendorTask_;
+    std::map<std::wstring, Time> vendorDue_;
 
     const std::vector<FoundDevice>& defaultWindowsDevices(bool force)
     {
@@ -430,7 +504,7 @@ private:
 
     json compatibility()
     {
-        auto report = inventory(targets_);
+        auto report = inventory(targets_, endpoints_);
         json scans = json::array();
         for (const auto& attempt : monitor_.receiverAttempts()) {
             scans.push_back({{"vid", attempt.vid}, {"pid", attempt.pid}, {"slot", attempt.slot},
@@ -453,16 +527,34 @@ private:
     }
 
     void record(const Device& device, const json& measured, std::chrono::steady_clock::time_point start,
-        const std::string& target = {}, const char* route = nullptr, const std::string& reason = {})
+        const std::string& target = {}, const char* route = nullptr, const std::string& reason = {},
+        std::optional<Time> finish = {})
     {
         if (recent_.size() == 160) recent_.pop_front();
         const auto now = std::chrono::system_clock::now().time_since_epoch();
+        const auto routeName = route ? std::string_view(route) : std::string_view{};
+        const char* stage = "sample";
+        if (routeName == "ble-bas")
+            stage = "ble-level";
+        else if (reason.starts_with("windows_"))
+            stage = "windows-property";
+        else if (reason.find("identity") != std::string::npos || reason.find("mismatch") != std::string::npos)
+            stage = "identity";
+        else if (reason == "receiver_no_battery_message")
+            stage = "reply";
+        else if (reason == "receiver_protocol_invalid")
+            stage = "decode";
+        else if (reason == "receiver_service_unavailable")
+            stage = "service";
+        else if (reason == "receiver_unknown_endpoint" || reason == "receiver_ambiguous" || reason == "receiver_disconnected")
+            stage = "identity";
         recent_.push_back({{"unixMs", std::chrono::duration_cast<std::chrono::milliseconds>(now).count()},
             {"vid", device.vid}, {"pid", device.pid}, {"revision", device.revision}, {"slot", device.slot},
             {"transport", utf8(transportName(device.transport))},
             {"provider", route ? std::string(route) : utf8(providerName(device.transport))},
-            {"target", target}, {"reasonCode", !reason.empty() ? reason : "hid_" + measured.value("status", std::string("unavailable"))},
-            {"elapsedMs", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()},
+            {"target", target}, {"stage", stage},
+            {"reasonCode", !reason.empty() ? reason : "hid_" + measured.value("status", std::string("unavailable"))},
+            {"elapsedMs", std::chrono::duration_cast<std::chrono::milliseconds>(finish.value_or(std::chrono::steady_clock::now()) - start).count()},
             {"outcome", measured}});
     }
     std::vector<Device> endpoints_;
@@ -481,7 +573,7 @@ private:
             if (claimed.contains(device.id)) continue;
             const bool bas = device.knownBluetooth && bleCandidates.contains(device.id);
             result.push_back({{"id", utf8(device.id)}, {"name", utf8(device.name)}, {"connection", utf8(device.connection)},
-                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false)},
+                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, false) || vendorHeadphone(device).has_value()},
                 {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading},
                 {"batteryCandidate", device.connected && device.inputOrHeadset && !device.battery && bas ?
                     json("ble_bas") : json(nullptr)}});
@@ -496,22 +588,9 @@ private:
             result.push_back({{"id", utf8(key)}, {"name", utf8(label(*endpoint))},
                 {"connection", utf8(transportName(endpoint->transport))}, {"connected", true},
                 {"automatic", true}, {"reading", nullptr},
-                {"offerBluetooth", endpoint->transport == Transport::dualsense_bluetooth}});
+                {"offerBluetooth", false}});
         }
         return result;
-    }
-
-    json bluetooth(const std::wstring& key)
-    {
-        const auto links = bluetoothConnections();
-        for (const auto& endpoint : monitor_.enumerate()) {
-            if (endpoint.transport == Transport::dualsense_bluetooth &&
-                (key == endpoint.key || key == endpoint.endpointKey)) {
-                if (bluetoothDisconnected(endpoint, links)) return sample({Status::offline});
-                return sample(monitor_.requestBluetoothReadingOnce(endpoint));
-            }
-        }
-        return sample({Status::offline});
     }
 
     json poll(const json& request)
@@ -536,12 +615,39 @@ private:
         const auto shouldRead = [&](const std::string& key) {
             return request.value("force", false) || !due.contains(key) || due.at(key) == true;
         };
+        const bool force = request.value("force", false);
+        const auto& basCandidates = refreshBleCandidates(force);
+        const auto& windows = defaultWindowsDevices(force);
+        const auto containerOwners = nativeContainerOwners(endpoints);
+        unsigned basBudget = 2;
+        // A null result means a standard BLE read is due but deferred by the
+        // shared budget, not that all sources have failed.
+        const auto standardBattery = [&](const std::wstring& container, const std::wstring& deviceKey, bool vendorReady = false) -> std::optional<Sample> {
+            const auto started = std::chrono::steady_clock::now();
+            const auto measured = readWindowsDevice(container);
+            const auto target = reportTarget(targets_, deviceKey);
+            const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
+            record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
+            const auto detail = static_cast<WindowsBatteryDetail>(measured.detail);
+            const bool useBas = !hasBatteryReading(measured) && basCandidates.contains(container) &&
+                (detail == WindowsBatteryDetail::missingProperty || detail == WindowsBatteryDetail::invalidPercent);
+            if (!useBas) return measured;
+            if (basBudget == 0) return vendorReady ? std::optional<Sample>(measured) : std::nullopt;
+            --basBudget;
+            const auto attempt = std::chrono::steady_clock::now();
+            const auto ble = readBleBattery(container);
+            auto report = sample(ble);
+            report.erase("reportId");
+            if (ble.report) report["errorCode"] = ble.report;
+            record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(ble.detail)));
+            return batteryFallback(measured, ble);
+        };
         json rows = json::array();
         for (const auto& [key, group] : groups) {
             const auto id = utf8(key);
             auto* source = group.front();
             const auto usb = std::ranges::find_if(group, [](const auto* item) {
-                return item->transport == Transport::dualsense_usb;
+                return item->transport == Transport::dualsense_usb || item->transport == Transport::logitech_usb;
             });
             if (usb != group.end()) source = *usb;
             json aliases = json::array();
@@ -556,17 +662,31 @@ private:
                 record(*source, sample(measured), started, reportTarget(targets_, key));
                 const auto* preferred = source;
                 for (const auto* endpoint : group) {
-                    if (measured.reading) break;
+                    if (hasBatteryReading(measured)) break;
                     if (endpoint == preferred || disconnected(*endpoint)) continue;
                     const auto attempt = std::chrono::steady_clock::now();
                     const auto alternate = monitor_.sample(*endpoint);
                     record(*endpoint, sample(alternate), attempt, reportTarget(targets_, key));
-                    if (alternate.reading || (measured.status == Status::offline && alternate.status != Status::offline)) {
-                        source = endpoint;
-                        measured = alternate;
+                    if (hasBatteryReading(alternate) ||
+                        (measured.status == Status::offline && alternate.status != Status::offline)) source = endpoint;
+                    measured = batteryFallback(measured, alternate);
+                }
+                bool deferred = false;
+                if (!hasBatteryReading(measured)) {
+                    std::set<std::wstring> tried;
+                    for (const auto* endpoint : group) {
+                        if (disconnected(*endpoint)) continue;
+                        const auto container = endpointContainer(endpoint->endpointKey);
+                        const auto owner = containerOwners.find(container);
+                        if (owner == containerOwners.end() || owner->second != key || !tried.insert(container).second) continue;
+                        const auto fallback = standardBattery(container, key);
+                        if (!fallback) { deferred = true; continue; }
+                        if (hasBatteryReading(*fallback)) source = endpoint;
+                        measured = batteryFallback(measured, *fallback);
+                        if (hasBatteryReading(measured)) break;
                     }
                 }
-                value = sample(measured);
+                if (!deferred || hasBatteryReading(measured)) value = sample(batteryFallback(measured, {Status::offline}));
                 const auto now = std::chrono::steady_clock::now();
                 const auto last = voltageTimes_.find(key);
                 if (voltageEnabled && measured.status != Status::offline && isDualSense(source->transport) &&
@@ -586,9 +706,27 @@ private:
         }
 
         const auto claimed = claimedContainers(endpoints);
-        const bool force = request.value("force", false);
-        const auto& basCandidates = refreshBleCandidates(force);
-        const auto& windows = defaultWindowsDevices(force);
+        std::map<std::wstring, rfcomm_battery::Model> vendorDevices;
+        for (const auto& candidate : windows) {
+            if (const auto model = vendorHeadphone(candidate); model && !claimed.contains(candidate.id))
+                vendorDevices.try_emplace(candidate.id, *model);
+        }
+        const auto now = std::chrono::steady_clock::now();
+        std::optional<std::pair<std::wstring, VendorAttempt>> vendorCompleted;
+        if (vendorTask_) {
+            const auto found = vendorDevices.find(vendorTask_->container);
+            vendorTask_->stillConnected = vendorTask_->stillConnected &&
+                found != vendorDevices.end() && found->second == vendorTask_->model;
+            if (vendorTask_->result.wait_for(0ms) == std::future_status::ready) {
+                auto attempt = vendorTask_->result.get();
+                if (vendorTask_->stillConnected) {
+                    if (now - attempt.started > 8s) attempt.result = {rfcomm_battery::Status::timeout};
+                    vendorCompleted.emplace(vendorTask_->container, std::move(attempt));
+                }
+                vendorTask_.reset();
+            }
+        }
+        std::erase_if(vendorDue_, [&](const auto& entry) { return !vendorDevices.contains(entry.first); });
         struct GenericTarget { std::string id, name, connection; bool automatic; };
         std::map<std::wstring, GenericTarget> targets;
         for (const auto& device : request.at("watched")) {
@@ -599,41 +737,86 @@ private:
                 device.at("connection").get<std::string>(), false});
         }
         unsigned automaticCount = 0;
-        for (const auto& device : windows) {
-            if (automaticCount >= 32) break;
-            if (!defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
-            targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
-            ++automaticCount;
+        for (bool vendorPass : {true, false}) {
+            for (const auto& device : windows) {
+                if (automaticCount >= 32) break;
+                const bool vendor = vendorDevices.contains(device.id);
+                if (vendor != vendorPass || (!vendor && !defaultPeripheralMonitoring(device, claimed.contains(device.id)))) continue;
+                targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
+                ++automaticCount;
+            }
         }
-        // Deferred endpoints remain due. A bounded batch protects the collector
-        // from many connected BLE devices multiplying latency.
-        unsigned basBudget = 2;
         for (const auto& [container, device] : targets) {
             const auto& id = device.id;
             json value = nullptr;
-            if (shouldRead(id)) {
-                const auto started = std::chrono::steady_clock::now();
-                auto measured = readWindowsDevice(container);
+            const auto vendorModel = vendorDevices.find(container);
+            const bool sony = vendorModel != vendorDevices.end() &&
+                rfcomm_battery::sonyMdrV1ProductId(vendorModel->second) != 0;
+            const bool sonyFastPair = vendorModel != vendorDevices.end() &&
+                rfcomm_battery::isSonyFastPair(vendorModel->second);
+            const bool huawei = vendorModel != vendorDevices.end() &&
+                vendorModel->second == rfcomm_battery::Model::huaweiFreeClip2;
+            const bool completed = vendorCompleted && vendorCompleted->first == container;
+            if (shouldRead(id) || completed) {
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
-                record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
-                const auto windowsDetail = static_cast<WindowsBatteryDetail>(measured.detail);
-                // These two statuses are returned only after Windows confirms
-                // Connected. A failed property query is not connection evidence.
-                const bool useBas = (windowsDetail == WindowsBatteryDetail::missingProperty ||
-                    windowsDetail == WindowsBatteryDetail::invalidPercent) &&
-                    basCandidates.contains(container);
-                if (useBas && basBudget > 0) {
-                    --basBudget;
-                    const auto attempt = std::chrono::steady_clock::now();
-                    measured = readBleBattery(container);
-                    auto report = sample(measured);
-                    report.erase("reportId");
-                    if (measured.report) report["errorCode"] = measured.report;
-                    record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(measured.detail)));
-                    value = sample(measured);
-                } else if (!useBas) {
-                    value = sample(measured);
+                const auto measured = standardBattery(container, container, completed);
+                if (measured) value = sample(batteryFallback(*measured, {Status::offline}));
+                const auto windowsDetail = measured
+                    ? static_cast<WindowsBatteryDetail>(measured->detail) : WindowsBatteryDetail::none;
+                // Only an eligible local Bluetooth endpoint can reach a
+                // vendor service; finish the standard sources first.
+                if (vendorModel != vendorDevices.end() && measured && !hasBatteryReading(*measured) &&
+                    windowsDetail != WindowsBatteryDetail::disconnected) {
+                    if (completed) {
+                        const auto& attempt = vendorCompleted->second;
+                        const auto& fresh = attempt.result;
+                        Sample vendor{Status::unavailable};
+                        if (fresh.battery) {
+                            const int level = static_cast<int>(fresh.battery->percent);
+                            vendor = {Status::current, Reading{level, level,
+                                fresh.battery->charging.has_value()
+                                    ? (*fresh.battery->charging ? Power::charging : Power::discharging) : Power::unknown, level,
+                                ReadingSource::bluetooth_vendor}};
+                        }
+                        value = sample(batteryFallback(*measured, vendor));
+                        const auto reason = [&] {
+                            using R = rfcomm_battery::Status;
+                            switch (fresh.status) {
+                            case R::success: return "receiver_current";
+                            case R::unknown_endpoint: return "receiver_unknown_endpoint";
+                            case R::identity_unverified: return "receiver_identity_unverified";
+                            case R::disconnected: return "receiver_disconnected";
+                            case R::ambiguous: return "receiver_ambiguous";
+                            case R::service_unavailable: return "receiver_service_unavailable";
+                            case R::busy: return "receiver_busy";
+                            case R::timeout: return "receiver_timeout";
+                            case R::protocol_invalid: return "receiver_protocol_invalid";
+                            case R::no_battery_message: return "receiver_no_battery_message";
+                            default: return "receiver_unavailable";
+                            }
+                        }();
+                        record(diagnostic, sample(vendor), attempt.started, target,
+                            huawei ? "huawei-spp" : sony ? "sony-mdr-v1" : sonyFastPair ? "sony-fast-pair" : "oppo-elnk",
+                            reason, attempt.finished);
+                    } else {
+                        // Sampling is asynchronous and capped at one private
+                        // connection in the process; cached values are never republished.
+                        if (!vendorTask_ && (!vendorDue_.contains(container) || now >= vendorDue_.at(container))) {
+                            vendorDue_[container] = now + 60s;
+                            const auto model = vendorModel->second;
+                            vendorTask_.emplace(VendorTask{container, model, std::async(std::launch::async, [container, model] {
+                                const auto started = std::chrono::steady_clock::now();
+                                auto result = rfcomm_battery::Result{rfcomm_battery::Status::system_error};
+                                try { result = rfcomm_battery::read(container, model); } catch (...) {}
+                                return VendorAttempt{std::move(result), started, std::chrono::steady_clock::now()};
+                            })});
+                        }
+                        // In flight or deliberately rate-limited is not a
+                        // failed read. The completed attempt publishes either
+                        // a new value or no data, never a cached sample.
+                        value = nullptr;
+                    }
                 }
             }
             rows.push_back({{"id", id}, {"name", device.name}, {"connection", device.connection},

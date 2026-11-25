@@ -1,13 +1,23 @@
 #include "battery.hpp"
+#include "razer_pro_receiver.hpp"
 #include "dashboard.hpp"
 #include "device_identity.hpp"
 #include "device_transport.hpp"
+#include "logitech_named_identity.hpp"
 #include <cassert>
 
 #include <cstdlib>
 #include <iostream>
 
 using namespace pm;
+
+static_assert(pm::tryLogitechBatteryFeature(0x1004, pm::named_legacy_1000, true, true));
+static_assert(pm::tryLogitechBatteryFeature(0x1000, pm::named_percent_1004, true, true));
+static_assert(!pm::tryLogitechBatteryFeature(0x1000, pm::named_percent_1004, true, false));
+static_assert(!pm::tryLogitechBatteryFeature(0x1001, pm::named_percent_1004, true, true));
+static_assert(pm::tryLogitechBatteryFeature(0x1001, pm::named_voltage_1001, true, true));
+static_assert(pm::tryLogitechBatteryFeature(0x1004, 0, false, true));
+static_assert(!pm::tryLogitechBatteryFeature(0x1002, 0, false, true));
 
 void require(bool condition, const char* message)
 {
@@ -24,6 +34,89 @@ Sample level(int low, int high, Power power = Power::discharging)
 
 int main()
 {
+    std::array<std::uint8_t, 64> enhanced{};
+    enhanced[0] = 1;
+    assert(!pm::parse8BitDoBatteryReport(enhanced, 1).reading);
+    enhanced[14] = 0xa5;
+    auto enhancedReading = pm::parse8BitDoBatteryReport(enhanced, 1);
+    assert(enhancedReading.reading && enhancedReading.reading->low == 37 &&
+           enhancedReading.reading->power == pm::Power::charging);
+    assert(!pm::parse8BitDoBatteryReport(enhanced, 4).reading);
+    assert(!pm::parse8BitDoBatteryReport(std::span(enhanced).first(14), 1).reading);
+    static_assert(razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x00b7, 0, 1, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x00ab, 0, 1, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x0094, 0, 1, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x0296, 2, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0296, 2, 1, 6, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0296, 1, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0094, 1, 1, 2, 91));
+    static_assert(razerKeyboardBatteryCollection(0x1532, 0x0290, 2, 91));
+    static_assert(razerKeyboardBatteryCollection(0x1532, 0x02d5, 2, 91));
+    static_assert(razerKeyboardBatteryCollection(0x1532, 0x0271, 3, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x0271, 2, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x0290, 255, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x02d5, 2, 90));
+    static_assert(!razerKeyboardBatteryCollection(0x1533, 0x02d5, 2, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x0292, 2, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x0258, 3, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x02d7, 2, 91));
+    static_assert(!razerKeyboardBatteryCollection(0x1532, 0x0296, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x0290, 2, 0xff00, 1, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x02d5, 2, 0xff00, 1, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x0271, 3, 0xff00, 1, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x02d5, 2, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0271, 0, 1, 2, 91));
+    static_assert(razerKeyboardReceiver(0x1532, 0x0271));
+    static_assert(razerKeyboardReceiver(0x1532, 0x0290));
+    static_assert(razerKeyboardReceiver(0x1532, 0x02d5));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0290, 2, 1, 6, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0271, 3, 1, 6, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x02d5, 2, 1, 6, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0298, 3, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x0095, 0, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00e0, 0, 1, 2, 91));
+    static_assert(razerKeyboardReceiver(0x1532, 0x0296) && !razerKeyboardReceiver(0x1532, 0x0094));
+    static_assert(razerBatch13Product(0x1532, 0x0296, L" dsv2pro tkl "));
+    static_assert(razerBatch13Product(0x1532, 0x0094, L"orochi v2"));
+    static_assert(!razerBatch13Product(0x1532, 0x0296, L"deathstalker v2 pro"));
+    auto tklReply = makeRazerQuery(RazerQuery::keyboardBattery);
+    assert(tklReply[2] == 0x9f && tklReply[7] == 7 && tklReply[8] == 0x80);
+    tklReply[1] = 2; tklReply[10] = 0x6c; tklReply[89] ^= 0x6c;
+    const auto tklBattery = parseRazerReport(tklReply, RazerQuery::keyboardBattery);
+    assert(tklBattery.reading && tklBattery.reading->low == 42 && tklBattery.reading->power == Power::unknown);
+    assert(!parseRazerReport(tklReply, RazerQuery::mouseBattery).reading);
+    tklReply[1] = 4;
+    assert(parseRazerReport(tklReply, RazerQuery::keyboardBattery).status == Status::no_radio_reply);
+
+    static_assert(!razerProBatteryCollection(0x1532, 0x00b7, 1, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00ab, 0, 1, 6, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00c1, 0, 0xff00, 1, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 90));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 92));
+    static_assert(!razerProReceiverName(0x0500, 0x00c1));
+    static_assert(!razerProReceiverName(0x1532, 0x00c0)); // Viper cable
+    static_assert(!razerProReceiverName(0x1532, 0x00c3)); // Different DeathAdder receiver
+    static_assert(!razerProReceiverName(0x1532, 0x00b3)); // Generic HyperPolling
+    static_assert(!razerProReceiverName(0x1532, 0x00b8)); // Existing Viper V3 HyperSpeed
+    static_assert(!razerProReceiverName(0x1532, 0x00cd)); // Basilisk 35K
+
+    std::array<std::uint8_t, 49> switchFull{0x30, 0, 0x8e};
+    const auto fullBand = parseSwitchProBluetoothReport(switchFull);
+    assert(fullBand.reading && fullBand.reading->low == 76 && fullBand.reading->high == 100);
+    switchFull[2] = 0x31;
+    const auto chargingBand = parseSwitchProBluetoothReport(switchFull);
+    assert(chargingBand.reading && chargingBand.reading->low == 1 && chargingBand.reading->high == 25);
+    assert(chargingBand.reading->power == Power::charging);
+    switchFull[2] = 0x00;
+    assert(parseSwitchProBluetoothReport(switchFull).reading->high == 0);
+    switchFull[2] = 0xa0;
+    assert(!parseSwitchProBluetoothReport(switchFull).reading);
+    assert(!parseSwitchProBluetoothReport(std::span(switchFull).first(48)).reading);
+    switchFull[0] = 0x21;
+    assert(!parseSwitchProBluetoothReport(switchFull).reading);
+    switchFull[0] = 0x3f;
+    assert(parseSwitchProBluetoothReport(switchFull).status == Status::basic_bluetooth);
     using pm::WindowsBus;
     const std::wstring_view usbIds[] = {L"USB\\VID_1234&PID_2345"};
     const std::wstring_view ble[] = {L"BTHLEDEVICE\\{SERVICE}", L"USB\\VID_0000"};
@@ -51,6 +144,47 @@ int main()
     voltageReply[5] = 0;
     require(parseDualSenseVoltageReply(voltageReply).status == VoltageStatus::invalid_reply,
             "Invalid millivolt reading rejected");
+
+    std::array<std::uint8_t, 64> ds4usb{};
+    ds4usb[0] = 1;
+    ds4usb[30] = 0x05;
+    require(parseDualShock4Report(ds4usb, false).reading == Reading{50, 59, Power::discharging, 5},
+            "DS4 USB uses its own battery field and range");
+    ds4usb[30] = 0x1b;
+    require(parseDualShock4Report(ds4usb, false).reading == Reading{100, 100, Power::full, 11},
+            "DS4 USB full flag");
+    ds4usb[30] = 0x1e;
+    require(parseDualShock4Report(ds4usb, false).status == Status::charging_error, "DS4 charge error");
+    ds4usb[30] = 0x0c;
+    require(parseDualShock4Report(ds4usb, false).status == Status::bad_report, "DS4 reserved level rejected");
+    require(parseDualShock4Report(std::span(ds4usb).first(63), false).status == Status::bad_report,
+            "DS4 truncated USB rejected");
+    std::array<std::uint8_t, 80> ds4bt{};
+    ds4bt[0] = 1;
+    require(parseDualShock4Report(ds4bt, true).status == Status::basic_bluetooth,
+            "DS4 padded basic Bluetooth never becomes a reading");
+    ds4bt[0] = 0x11;
+    ds4bt[32] = 0x26;
+    ds4bt[74] = 0x96;
+    ds4bt[75] = 0xdc;
+    ds4bt[76] = 0x1a;
+    ds4bt[77] = 0xcf;
+    require(parseDualShock4Report(ds4bt, true).reading == Reading{60, 69, Power::discharging, 6},
+            "DS4 full Bluetooth uses shifted field and CRC; permit Windows padding");
+    ds4bt[32] ^= 1;
+    require(parseDualShock4Report(ds4bt, true).status == Status::bad_report, "DS4 Bluetooth CRC required");
+
+    std::array<std::uint8_t, 15> pro3{4, 15, 128, 127, 127, 128, 0, 0, 0, 0, 0, 0, 9, 96, 20};
+    require(parse8BitDoPro3BluetoothReport(pro3).reading == Reading{20, 20, Power::discharging, 20},
+            "Pro 3 captured DInput Bluetooth snapshot");
+    pro3[14] = 0x80 | 100;
+    require(parse8BitDoPro3BluetoothReport(pro3).reading == Reading{100, 100, Power::charging, 100},
+            "Pro 3 preserves the charge flag independently of percent");
+    pro3[14] = 0;
+    require(!parse8BitDoPro3BluetoothReport(pro3).reading, "Pro 3 padded zero ignored");
+    pro3[14] = 101;
+    require(!parse8BitDoPro3BluetoothReport(pro3).reading, "Pro 3 impossible percent rejected");
+    require(!parse8BitDoPro3BluetoothReport(std::span(pro3).first(14)).reading, "Pro 3 truncated report rejected");
 
     auto razer = makeRazerQuery();
     require(razer[2] == 0x1f && razer[7] == 0x07 && razer[8] == 0x80 && razer[89] == 0x85,

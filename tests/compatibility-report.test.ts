@@ -13,8 +13,9 @@ const ble: Reading = { low: 8, high: 8, raw: 8, power: 'unknown', source: 'ble' 
 const rawReport = {
   schemaVersion: 1, windowsQuerySucceeded: true, bleEnumerationError: 5, context: 'unsafe override', appVersion: 'unsafe override',
   windowsDevices: [{ target: 'W1', connection: '蓝牙', connected: true, battery: null, reasonCode: 'windows_no_battery', bleBasListed: false, bleReasonCode: 'multiple_battery_services',
+    inputOrHeadset: true, knownBluetooth: true, bleServiceCount: 2,
     serial: 'mysn1', name: 'Alice in private Bluetooth', macAddress: '00:11:22:33:44:55' }],
-  hidInterfaces: [{ vid: 0x1532, pid: 0xb8, interfaceNumber: -1, inputBytes: 91, descriptorAvailable: true,
+  hidInterfaces: [{ target: 'W1', descriptorState: 'candidate', vid: 0x1532, pid: 0xb8, interfaceNumber: -1, inputBytes: 91, descriptorAvailable: true,
     path: denied, candidateProvider: 'razer-1532-00b8' }],
   recentSamples: [{ target: 'W1', provider: 'ble-bas', status: 'current', elapsedMs: 5, reasonCode: 'gatt_read_failed', serial: 'hiddenSerial',
     outcome: { status: 'current', reading: ble, detail: 1, reason: denied, rawReport: [1, 2, 3] } }],
@@ -91,6 +92,13 @@ test('实机采集模拟：预览不落盘，明确确认后文件与屏幕内�
     assert.ok(!first.json.includes('sensitive-interface') && !first.json.includes(device.key) && !first.json.includes('W1'));
     assert.equal(firstReport.gamepads.xinput.length, 0);
     assert.equal(firstReport.windowsDevices.length, 1);
+    assert.equal(firstReport.windowsDevices[0].knownBluetooth, true);
+    assert.equal(firstReport.windowsDevices[0].inputOrHeadset, true);
+    assert.equal(firstReport.windowsDevices[0].bleServiceCount, 2);
+    assert.equal(firstReport.hidInterfaces[0].descriptorState, 'candidate');
+    assert.deepEqual(firstReport.selectedEvidence, {
+      scope: 'selected_device_only', hidInterfaceCount: 1, batteryAttemptCount: 2,
+    });
     const file = join(dir, 'compatibility-report.json');
     assert.equal(existsSync(file), false);
     assert.throws(() => monitor.exportCompatibility('bad token'), /预览已失效/);
@@ -104,8 +112,32 @@ test('实机采集模拟：预览不落盘，明确确认后文件与屏幕内�
     assert.equal(manual.selectedDevice.evidence, 'not_correlated');
     assert.equal(manual.windowsDevices.length, 0);
     assert.equal(manual.recentSamples.length, 0);
+    assert.equal(manual.hidInterfaces.length, 0);
+    assert.equal(manual.selectedEvidence.scope, 'device_not_linked');
   } finally { monitor.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+test('通用名称选中后仍保留所选接口；无关联时不导出其他外设', () => {
+  const selected = { model: '未识别键盘', modelSource: 'manual', target: 'W2' } as const;
+  const mixed = { ...rawReport, hidInterfaces: [
+    ...rawReport.hidInterfaces,
+    { target: 'W2', vid: 0x1234, pid: 0x5678, inputBytes: 64, descriptorAvailable: true,
+      descriptorState: 'no_provider', usagePage: 0xff01, rawInput: [1, 2, 3], instanceId: 'private-container' },
+    { target: 'W3', vid: 0x9999, pid: 0x9999 },
+  ] };
+  const json = compatibilityJson(metadata, mixed, new Date(0), selected);
+  const selectedOnly = JSON.parse(json);
+  assert.deepEqual(selectedOnly.hidInterfaces, [{ vid: 0x1234, pid: 0x5678, usagePage: 0xff01, inputBytes: 64,
+    descriptorAvailable: true, descriptorState: 'no_provider', candidateProvider: null }]);
+  assert.equal(selectedOnly.recentSamples.length, 0);
+  assert.deepEqual(selectedOnly.selectedEvidence, {
+    scope: 'selected_device_only', hidInterfaceCount: 1, batteryAttemptCount: 0,
+  });
+  for (const secret of ['W2', 'private-container', 'rawInput', '39221', '39321']) assert.ok(!json.includes(secret));
+  const inventoryOnly = JSON.parse(compatibilityJson({ ...metadata, capture: 'inventory' }, mixed, new Date(0), selected));
+  assert.equal(inventoryOnly.hidInterfaces.length, 0);
+  assert.equal(inventoryOnly.selectedEvidence.scope, 'inventory_not_linked');
+});
+
 test('只允许关联已连接的 BAS 候选；有效的新采样前不触发提醒', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'power-compat-bas-'));
   const candidate: Found = { id: 'ble-keyboard', name: '蓝牙键盘', connection: '蓝牙', connected: true,

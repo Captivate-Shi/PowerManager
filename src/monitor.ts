@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { release } from 'node:os';
 
-import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type CompatibilitySelection, type CommandResult, type DiagnosticDevice, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
+import { isDualSenseBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type CompatibilitySelection, type CommandResult, type DiagnosticDevice, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 import { accumulateHistoryDay, historyStart } from './history-plot';
 
@@ -19,7 +19,7 @@ function validReading(reading: Reading | null | undefined): reading is Reading {
   return !!reading && Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
     reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
     ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
-    ['hid', 'windows', 'ble'].includes(reading.source);
+    ['hid', 'windows', 'ble', 'hid_voltage', 'bluetooth_vendor'].includes(reading.source);
 }
 
 // A local reading is only a last-known value. Never restore a live status from disk.
@@ -335,7 +335,6 @@ export class Monitor {
       const row = this.rows.get(item.id)?.device;
       if (row && item.automatic) {
         item.reading = row.status === 'current' ? row.reading : null;
-        item.offerBluetooth &&= row.status === 'basic_bluetooth';
         item.connected = !['offline', 'no_radio_reply', 'stale'].includes(row.status);
       }
     }
@@ -360,17 +359,6 @@ export class Monitor {
     delete this.data.alerts[id];
     this.persist();
     this.publish();
-  }
-  async bluetooth(id: string) {
-    const row = this.rows.get(id);
-    if (!row || !canProbeBluetooth(row.device)) throw new Error('请先通过蓝牙连接 DualSense');
-    const result = await this.collector.request<Sample>('bluetooth', { key: id });
-    if (this.rows.get(id) === row) {
-      this.setSample(row, result, Date.now());
-      this.publish();
-    }
-    return result.status === 'current' ? '已读取蓝牙电量' :
-      result.status === 'offline' ? '蓝牙未连接，请唤醒手柄后重试' : result.reason;
   }
   async resourceSample() {
     // Skip native sampling when it would compete with device IO.
@@ -548,7 +536,7 @@ export class Monitor {
     this.dirty = true;
     const device = row.device;
     row.failures = sample.reading || sample.status === 'basic_bluetooth' ? 0 : row.failures + 1;
-    const unresponsive = sample.status === 'timeout' && row.failures >= 2 && canProbeBluetooth(device);
+    const unresponsive = sample.status === 'timeout' && row.failures >= 2 && isDualSenseBluetooth(device);
     const status = unresponsive ? 'unreachable' : sample.status;
     if (device.status !== status) this.log(device.name + ' ' + sample.reason);
     device.status = status;

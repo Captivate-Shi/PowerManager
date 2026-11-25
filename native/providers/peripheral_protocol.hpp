@@ -1,6 +1,9 @@
 #pragma once
 
 #include "hid.hpp"
+#include "logitech_office12.hpp"
+#include "lightspeed12.hpp"
+#include "supported_mouse_battery.hpp"
 
 #include <algorithm>
 #include <cwctype>
@@ -9,8 +12,24 @@
 
 namespace pm {
 
+// Wired identities only. Never infer a mouse model from a receiver PID.
+constexpr const wchar_t* logitechUsbName(unsigned vid, unsigned pid)
+{
+    if (vid != 0x046d) return nullptr;
+    switch (pid) {
+    case 0xc088: return L"Logitech G PRO Wireless";
+    case 0xc08d: return L"G502 LIGHTSPEED Wireless Gaming Mouse";
+    case 0xc094: return L"Logitech PRO X SUPERLIGHT";
+    case 0xc095: return L"Logitech G502 X PLUS";
+    default: return nullptr;
+    }
+}
+
 inline std::optional<Transport> peripheralTransport(unsigned vid, unsigned pid)
 {
+    if (logitechUsbName(vid, pid)) return Transport::logitech_usb;
+    if (supportedMouse(vid, pid)) return Transport::supported_mouse_receiver;
+    if (isRapooReceiver(vid, pid)) return Transport::rapoo_receiver;
     if (vid == 0x320f && pid == 0x5055) return Transport::vgn_usb;
     if (vid == 0x320f && pid == 0x5088) return Transport::vgn_receiver;
     if (vid == 0x258a && pid == 0x024e) return Transport::vgn_v3_usb;
@@ -110,25 +129,144 @@ inline std::optional<Sample> parseVgn(Transport transport, std::span<const std::
 struct LogitechReply {
     std::span<const std::uint8_t> params;
     unsigned error{};
+    unsigned errorFrame{};
 };
 
 inline std::optional<LogitechReply> parseLogitechReply(std::span<const std::uint8_t> bytes,
                                                        unsigned slot, unsigned index, unsigned function)
 {
-    if (bytes.size() < 4 || (bytes[0] != 0x10 && bytes[0] != 0x11) || bytes[1] != slot) return {};
-    if (bytes.size() >= 6 && (bytes[2] == 0x8f || bytes[2] == 0xff) &&
-        bytes[3] == index && bytes[4] == function) return LogitechReply{{}, bytes[5]};
+    if (bytes.empty()) return {};
+    const auto length = bytes[0] == 0x10 ? 7u : bytes[0] == 0x11 ? 20u : 0u;
+    if (!length || bytes.size() < length || bytes[1] != slot) return {};
+    // HIDClass can pad a short reply to the collection's maximum length.
+    bytes = bytes.first(length);
+    if ((bytes[2] == 0x8f || bytes[2] == 0xff) &&
+        bytes[3] == index && bytes[4] == function) return LogitechReply{{}, bytes[5], bytes[2]};
     if (bytes[2] == index && bytes[3] == function) return LogitechReply{bytes.subspan(4)};
     return {};
 }
 
-inline Sample logitechBattery(unsigned feature, bool percentage, std::span<const std::uint8_t> data, bool coarse = false)
+// Error values overlap across HID++ generations; the response frame decides
+// whether the slot is gone (1.0 UnknownDevice) or only busy (2.0 Busy).
+constexpr Status logitechErrorStatus(unsigned errorFrame, unsigned error)
+{
+    if (errorFrame == 0x8f) {
+        if (error == 8) return Status::offline;
+        if (error == 7) return Status::busy;
+        if (error == 4 || error == 9) return Status::no_radio_reply;
+    } else if (errorFrame == 0xff && error == 8) {
+        return Status::busy;
+    }
+    return Status::unavailable;
+}
+
+struct BoltOfficeIdentity { const wchar_t* label; unsigned kind; };
+
+inline std::optional<BoltOfficeIdentity> boltOfficeIdentity(unsigned receiverVid, unsigned receiverPid,
+                                                           std::wstring_view pairedLabel)
+{
+    if (receiverVid != 0x046d || receiverPid != 0xc548) return {};
+    std::wstring name(pairedLabel);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    if (name == L"mx keys s" || name == L"logitech mx keys s") return BoltOfficeIdentity{L"MX Keys S", 0};
+    if (name == L"mx master 3s" || name == L"logitech mx master 3s") return BoltOfficeIdentity{L"MX Master 3S", 3};
+    return {};
+}
+
+// The first two bytes of the six-byte HID++ Device FW Version model ID
+// distinguish these Bolt models. They all report four trailing zero bytes.
+inline unsigned boltOfficeModel(std::span<const std::uint8_t> deviceInfo)
+{
+    if (deviceInfo.size() < 13 || (deviceInfo[6] & 0x07) != 0x02 ||
+        !std::ranges::all_of(deviceInfo.subspan(9, 4), [](auto b) { return b == 0; })) return 0;
+    return (static_cast<unsigned>(deviceInfo[7]) << 8) | deviceInfo[8];
+}
+
+inline std::optional<BoltOfficeIdentity> boltBatch11Identity(unsigned receiverVid, unsigned receiverPid,
+                                                              unsigned model, std::wstring_view pairedLabel,
+                                                              unsigned kind)
+{
+    if (receiverVid != 0x046d || receiverPid != 0xc548) return {};
+    std::wstring name(pairedLabel);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    if (model == 0xb369 && (kind == 0 || kind == 255) && name == L"mx keys mini")
+        return BoltOfficeIdentity{L"MX Keys Mini", 0};
+    if (kind != 3 && kind != 255) return {};
+    if (model == 0xb042 && name == L"mx master 4") return BoltOfficeIdentity{L"MX Master 4", 3};
+    if (model == 0xb037 && name == L"mx anywhere 3s") return BoltOfficeIdentity{L"MX Anywhere 3S", 3};
+    if (model == 0xb031 && name == L"lift vertical ergonomic mouse")
+        return BoltOfficeIdentity{L"Lift Vertical Ergonomic Mouse", 3};
+    // The M650 and M650 L can share the model ID. Only the plain unit's
+    // DEVICE NAME value counts here; neither the codename nor a prefix does.
+    if (model == 0xb02a && name == L"signature m650 mouse")
+        return BoltOfficeIdentity{L"Signature M650", 3};
+    return {};
+}
+
+inline std::optional<LogitechNamedIdentity> logitechNamedIdentity(unsigned vid, unsigned pid,
+                                                                 unsigned model, std::wstring_view label,
+                                                                 unsigned kind)
+{
+    if (logitechBolt(vid, pid) && model == 0xb36f && (kind == 0 || kind == 255)) {
+        std::wstring name(label);
+        std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+        if (name == L"signature k650" || name == L"signature k650 keyboard")
+            return LogitechNamedIdentity{L"Signature K650", 0, model, named_percent_1004 | named_legacy_1000};
+    }
+    if (auto office = office12Identity(vid, pid, model, label, kind)) return office;
+    if (auto lightspeed = lightspeed12Identity(vid, pid, model, label, kind)) return lightspeed;
+    if (const auto bolt = boltBatch11Identity(vid, pid, model, label, kind))
+        return LogitechNamedIdentity{bolt->label, bolt->kind, model, named_percent_1004};
+    return {};
+}
+
+// Restrict the empirical 0x1001 curve to the paired product name, not the
+// receiver PID (the same receiver may serve multiple devices). Never apply it
+// to ADC features, keyboards or unverified generations.
+inline bool logitechVoltageProfile(std::wstring_view label)
+{
+    std::wstring name(label);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    return name == L"g502 lightspeed wireless gaming mouse" || name == L"g502 lightspeed" ||
+        name == L"g pro wireless gaming mouse" || name == L"logitech g pro wireless";
+}
+
+inline std::optional<bool> namedLegacyCoarse(std::span<const std::uint8_t> capabilities)
+{
+    if (capabilities.size() < 2 || capabilities[0] < 2 || capabilities[0] > 100) return {};
+    // The draft HID++ 0x1000 specification assigns four ranges if the
+    // firmware exposes fewer than ten levels or disables the mileage bit.
+    return capabilities[0] < 10 || !(capabilities[1] & 2);
+}
+
+inline Sample logitechBattery(unsigned feature, bool percentage, std::span<const std::uint8_t> data,
+                              bool coarse = false, bool estimateVoltage = false)
 {
     if (data.size() < 3) return {Status::bad_report, {}, 0x11, 0, feature};
     if (feature == 0x1001) {
         const unsigned millivolts = (data[0] << 8) | data[1];
         if (millivolts < 2000 || millivolts > 5000) return {Status::bad_report, {}, 0x11, data[2], feature};
-        return {Status::unavailable, {}, 0x11, data[2], feature, millivolts};
+        const auto unavailable = Sample{Status::unavailable, {}, 0x11, data[2], feature, millivolts};
+        if (!estimateVoltage || millivolts < 3500 || millivolts > 4400) return unavailable;
+        // Prefer the explicit charge-complete bit. While attached otherwise,
+        // voltage is not comparable to the on-battery curve: keep the last
+        // valid reading and do not trigger a new low-power notification.
+        const auto flags = data[2];
+        if (flags & 0x80) {
+            if ((flags & 7) == 1) return {Status::current,
+                Reading{100, 100, Power::full, static_cast<int>(millivolts), ReadingSource::hid_voltage},
+                0x11, flags, feature, millivolts};
+            return unavailable;
+        }
+        // Ten-point cuts from the public Logitech/Linux 0x1001 reference
+        // curve. Expose bands, not one-percent precision; real discharge
+        // varies by load and battery condition.
+        constexpr std::array decadeCuts{3671u, 3717u, 3751u, 3778u, 3811u,
+                                        3859u, 3922u, 3989u, 4067u};
+        const int low = 10 * static_cast<int>(std::upper_bound(decadeCuts.begin(), decadeCuts.end(), millivolts)
+            - decadeCuts.begin());
+        return {Status::current, Reading{low, low + 10, Power::discharging,
+                    static_cast<int>(millivolts), ReadingSource::hid_voltage}, 0x11, flags, feature, millivolts};
     }
     if (!percentage) return {Status::unavailable, {}, 0x11, data[1], feature};
     if (data[0] > 100) return {Status::bad_report, {}, 0x11, data[0], feature};

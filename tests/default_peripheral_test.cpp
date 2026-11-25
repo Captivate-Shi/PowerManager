@@ -1,23 +1,33 @@
 #include "device_search.hpp"
+#include "windows_bt_peripherals.hpp"
 #include <cassert>
 
 int main()
 {
     using namespace pm;
+    static_assert(knownBluetoothPeripheral(L"keychron k2 pro"));
+    static_assert(knownBluetoothPeripheral(L"gamesir cyclone pro"));
+    static_assert(knownBluetoothPeripheral(L"dell kb7221w"));
+    static_assert(!knownBluetoothPeripheral(L"keychron k2"));
+    static_assert(!knownBluetoothPeripheral(L"iphone"));
+    static_assert(!knownBluetoothPeripheral(L"jbl tour pro 3 case"));
+    static_assert(!knownBluetoothPeripheral(L"g915"));
+
     FoundDevice candidate{L"{container}", L"keyboard", L"蓝牙", true, false, {}};
-    assert(!defaultPeripheralMonitoring(candidate, true, false)); // not a peripheral category
+    assert(!defaultPeripheralMonitoring(candidate, false)); // not a peripheral
     candidate.inputOrHeadset = true;
-    assert(!defaultPeripheralMonitoring(candidate, true, false)); // BLE transport not verified
+    assert(!defaultPeripheralMonitoring(candidate, false)); // don't enroll wired devices with no data
     candidate.knownBluetooth = true;
-    assert(!defaultPeripheralMonitoring(candidate, false, false)); // no unique battery service
-    assert(defaultPeripheralMonitoring(candidate, true, false)); // standard BAS candidate
-    assert(!defaultPeripheralMonitoring(candidate, true, true)); // claimed by vendor path
-    candidate.automaticallyMonitored = true;
-    assert(defaultPeripheralMonitoring(candidate, true, false)); // OS heuristic alone does not prove a vendor path
-    candidate.automaticallyMonitored = false;
+    assert(defaultPeripheralMonitoring(candidate, false)); // connected peripheral, even with no data yet
+    assert(!defaultPeripheralMonitoring(candidate, true)); // no duplicate native row
     candidate.battery = Reading{0, 0, Power::unknown, 0, ReadingSource::windows};
     candidate.knownBluetooth = false;
-    assert(defaultPeripheralMonitoring(candidate, false, false)); // actual Windows value, including zero
+    assert(defaultPeripheralMonitoring(candidate, false)); // actual Windows value, including zero
     candidate.connected = false;
-    assert(!defaultPeripheralMonitoring(candidate, true, false)); // stale/offline never enroll
+    assert(!defaultPeripheralMonitoring(candidate, false)); // stale/offline never enroll
+    FoundDevice rapoo{L"{receiver}", L"Rapoo 2.4G Wireless Device", L"USB", true, false, {}};
+    assert(defaultPeripheralMonitoring(rapoo, false));
+    assert(!defaultPeripheralMonitoring(rapoo, true));
+    rapoo.connected = false;
+    assert(!defaultPeripheralMonitoring(rapoo, false));
 }

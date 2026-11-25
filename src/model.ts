@@ -1,6 +1,6 @@
 import type { CompatibilityPreview } from './compatibility-report';
 export type Power = 'discharging' | 'charging' | 'full' | 'unknown';
-export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' | 'ble' };
+export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' | 'ble' | 'hid_voltage' | 'bluetooth_vendor' };
 export type Status = 'current' | 'offline' | 'no_radio_reply' | 'busy' | 'timeout' | 'bad_report' |
   'unavailable' | 'basic_bluetooth' | 'charging_error' | 'stale' | 'unreachable';
 export type Sample = { status: Status; reason: string; reading: Reading | null };
@@ -72,7 +72,7 @@ export type Command =
   | { type: 'compatibility'; selection: CompatibilitySelection }
   | { type: 'compatibility'; reportToken: string }
   | { type: 'history'; id: string; range?: HistoryRange }
-  | { type: 'add' | 'remove' | 'bluetooth' | 'snooze' | 'ignore'; id: string }
+  | { type: 'add' | 'remove' | 'snooze' | 'ignore'; id: string }
   | { type: 'settings'; patch: Partial<Settings>; confirmHistoryShorten?: boolean }
   | { type: 'toggleAlertSetting'; key: AlertSwitch }
   | { type: 'deviceSettings'; id: string; patch: DeviceSettings }
@@ -103,7 +103,7 @@ export const midpoint = (reading: Reading) => Math.ceil((reading.low + reading.h
 export const percent = (reading: Reading | null) =>
   reading ? (reading.low === reading.high ? '' : '约 ') + midpoint(reading) + '%' : '—';
 export const isConnected = (device: Device) => !['offline', 'no_radio_reply', 'stale', 'unreachable'].includes(device.status);
-export const canProbeBluetooth = (device: Device) => device.art === 'dualsense' && /蓝牙|bluetooth/i.test(device.connection);
+export const isDualSenseBluetooth = (device: Device) => device.art === 'dualsense' && /蓝牙|bluetooth/i.test(device.connection);
 export const threshold = (settings: Settings, deviceSettings?: DeviceSettings) =>
   Math.max(deviceSettings?.low ?? settings.low, settings.critical);
 export function severity(device: Device, settings: Settings, rules?: DeviceSettings): Severity | undefined {

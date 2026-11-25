@@ -1,11 +1,11 @@
 import type { CompatibilityPreview } from './compatibility-report';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { canProbeBluetooth, defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -820,8 +820,6 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
   const [alias, setAlias] = useState(state.deviceSettings[device.id]?.alias ?? '');
   const aliasTooLong = [...alias.trim()].length > 50;
   const [confirmRemove, setRemove] = useState(false);
-  const [confirmBluetooth, setConfirmBluetooth] = useState(false);
-  const [probing, setProbing] = useState(false);
   const rules = state.deviceSettings[device.id];
   const savedLimit = deviceLowThreshold(device, state);
   useEffect(() => { if (!full) prepareHero(device); }, [device.art, full]);
@@ -838,11 +836,11 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <SceneStage device={device} detail />
         <button className={s.iconButton} aria-label="编辑设备备注" onClick={() => { setAlias(rules?.alias ?? ''); edit(true); }}><Pencil size={17} /></button></div>
       <div className={s.detailReadout + (full ? ' ' + look.detailReadout : '')} data-scroll-pane=""><div className={s.batteryPanel} data-tone={tone(device, state)}>
-        <div className={s.readoutLabel}><span>{!device.reading ? '暂无电量读数' : device.status === 'current' ? '当前电量' : '上次有效电量'}</span>{full && <span className={s.readingState}>{batteryState(device, state)}</span>}</div>
+        <div className={s.readoutLabel}><span>{!device.reading ? '无数据' : device.status === 'current' ? '当前电量' : '上次有效电量'}</span>{full && <span className={s.readingState}>{batteryState(device, state)}</span>}</div>
         <SceneBattery state={state} device={device} phase={state.refreshing ? "refreshing" : "ready"} /></div>
         <dl className={s.detailsFacts}>
           <div><ShieldCheck size={21} /><div><dt>读取状态</dt><dd>{device.reason}</dd></div></div>
-          <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? { hid: '设备 HID', windows: 'Windows 电量属性', ble: '蓝牙电池服务' }[device.reading.source] : '—'}</dd></div></div>
+          <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? { hid: '设备 HID', windows: 'Windows 电量属性', ble: '蓝牙电池服务', hid_voltage: '设备电压估算', bluetooth_vendor: '厂商蓝牙协议' }[device.reading.source] : '—'}</dd></div></div>
           <div><Zap size={21} /><div><dt>{device.status === 'current' ? '充电状态' : '上次充电状态'}</dt><dd>{device.reading ? powerLabels[device.reading.power] : '—'}</dd></div></div>
           <div><Clock size={21} /><div><dt>上次读数</dt><dd>{dateLabel(device.lastRead)}</dd></div></div>
         </dl>
@@ -858,12 +856,6 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
             onChange={value => send({ type: 'deviceSettings', id: device.id, patch: { muted: value } })} /></SettingRow>
           </Collapsible.Content>
         </Collapsible.Root>
-        {canProbeBluetooth(device) && <div className={s.bluetoothOption}>
-          <SettingRow title="DualSense 蓝牙电量" hint={!isConnected(device) ? '唤醒手柄并连接蓝牙。' : undefined}>
-            <button className={s.button} disabled={probing || device.status === 'offline' || device.status === 'stale'}
-              onClick={() => setConfirmBluetooth(true)}><Bluetooth size={16} aria-hidden="true" />{probing ? '正在读取…' : '读取蓝牙电量'}</button>
-          </SettingRow>
-        </div>}
         <footer className={s.detailActions}>{openFull && <button className={s.primary} onClick={() => { if (detailRef.current) openFull(detailRef.current); }}>查看详情 <ChevronRight size={16} aria-hidden="true" /></button>}<button className={s.button} onClick={() => send({ type: 'preview', severity: low ?? 'low', id: device.id })}><Bell size={19} />提醒测试</button>
           <Menu.Root><Menu.Trigger asChild><button className={s.button}><Ellipsis size={20} />更多操作</button></Menu.Trigger>
             <Menu.Portal><Menu.Content align="end" sideOffset={5} className={s.popover}>
@@ -880,17 +872,6 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         </section>}
       </div>
     </div>
-    {confirmBluetooth && <Modal title="启用 DualSense 蓝牙增强读取？"
-      description="手柄会在本次连接发送完整报告，部分 DirectInput 游戏可能受影响。关机重连可恢复。"
-      onClose={() => { if (!probing) setConfirmBluetooth(false); }}>
-      <button className={s.primary} disabled={probing} onClick={() => {
-        setProbing(true);
-        void run({ type: 'bluetooth', id: device.id }).then(reply => {
-          setProbing(false);
-          if (reply.ok) setConfirmBluetooth(false);
-        });
-      }}>{probing ? '正在读取…' : '确认读取蓝牙电量'}</button>
-    </Modal>}
     {editing && <Modal title="编辑设备备注" description={'识别名称：' + (device.recognizedName ?? device.name)} hint="备注可填 1–50 个字符，清空后保存可恢复原名。" onClose={() => edit(false)}>
       <form className={s.modalForm} onSubmit={event => {
         event.preventDefault();
@@ -1283,7 +1264,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
   const inputStyle: CSSProperties = { minWidth: 0, width: '100%', background: 'var(--panel)', border: '1px solid var(--line)',
     borderRadius: 8, padding: '8px 10px' };
   return <Modal title={preview ? '兼容性报告预览' : '选择要诊断的设备'}
-    description={preview ? '只保存到本地，不会自动发送。' : '请选择遇到问题的设备；只在系统未识别时填写。'}
+    description={preview ? '只保存到本地，不会自动发送。' : '请选择遇到问题的设备。只显示通用名称时，也请先选中，再填写型号。'}
     onClose={() => { if (!working) close(); }}>
     {preview ? <>
       <pre tabIndex={0} aria-label="兼容性报告内容" style={{ maxHeight: 'min(45vh, 430px)', overflow: 'auto',
@@ -1308,7 +1289,8 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
           <button className={s.button} type="button" disabled={scanning || working} onClick={() => { void scan(); }}>重新扫描</button>
         </div>
       </div>
-      {!scanning && devices.length === 0 && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
+      {!scanning && devices.length === 0 && !manual && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
+      {manual && <small role="status">手动补录不关联接口。若列表中有对应的通用设备，请选中它。</small>}
       {(manual || (selected && !selected.model)) && <label style={fieldStyle}>填写设备型号
         <input maxLength={80} autoComplete="off" style={inputStyle} required value={model} disabled={working}
           onChange={event => setModel(event.target.value)} placeholder="例如 V98 Pro V3" />

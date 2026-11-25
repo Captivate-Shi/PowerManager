@@ -19,19 +19,20 @@ function selectFlags(value: Bag, keys: readonly string[]): Record<string, boolea
 }
 const statuses = new Set(['current', 'offline', 'no_radio_reply', 'busy', 'timeout', 'bad_report',
   'unavailable', 'basic_bluetooth', 'charging_error', 'stale', 'unreachable']);
-const batterySources = new Set(['hid', 'windows', 'ble', 'ble-bas', 'xinput', 'wgi', 'gameinput']);
+const batterySources = new Set(['hid', 'hid_voltage', 'bluetooth_vendor', 'windows', 'ble', 'ble-bas', 'xinput', 'wgi', 'gameinput']);
 const power = new Set(['charging', 'discharging', 'full', 'unknown']);
 const gamepadStates = new Set(['ok', 'current', 'ready', 'unknown', 'not_available', 'unsupported', 'unavailable', 'no_battery', 'no_controller', 'not_connected', 'disconnected', 'wired', 'failed', 'error', 'access_denied', 'timeout', 'not_supported', 'not_attempted', 'api_unavailable', 'runtime_unavailable', 'invalid_report', 'no_report', 'sdk_headers_unavailable', 'enumeration_failed', 'activation_failed', 'string_error',
   'truncated', 'not_reported', 'api_error']);
 const gamepadLevels = new Set(['empty', 'low', 'medium', 'full', 'unknown']);
 const firmwareKind = new Set(['number', 'exact', 'range', 'coarse', 'unknown']);
+const descriptorStates = new Set(['unavailable', 'candidate', 'descriptor_mismatch', 'no_provider']);
 const connections = new Set(['USB', 'USB（直连或接收器）', 'USB（直连）', '蓝牙', 'Windows 外设', 'Windows 电量',
-  '2.4 GHz', '2.4 GHz 共享接收器', 'Bluetooth LE', '蓝牙 LE', 'XInput', 'Windows 游戏手柄', 'Windows 手柄']);
+  '2.4 GHz', 'USB / 2.4 GHz', '2.4 GHz 共享接收器', 'Bluetooth LE', '蓝牙 LE', 'XInput', 'Windows 游戏手柄', 'Windows 手柄']);
 function from(value: unknown, values: Set<string>) {
   return typeof value === 'string' && values.has(value) ? value : undefined;
 }
 const provider = (value: unknown) =>
-  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
+  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo|mouse|sony|oppo|huawei|nintendo|gamesir|flydigi|mchose|aula|headset|atk|ajazz|dareu|rog|8bitdo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
 // A diagnostic target is a short ephemeral label, never an enumerator ID.
 const target = (value: unknown) => typeof value === 'string' && /^[A-Z]{1,3}[1-9][0-9]{0,3}$/.test(value) ? value : undefined;
 const bleReasons = new Set(['candidate', 'not_bluetooth', 'invalid_container', 'platform_unavailable', 'interface_enumeration_failed',
@@ -139,11 +140,13 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     hidInterfaces: scoped(raw.hidInterfaces, 256, a => ({
       ...hardware(a), ...selectInts(a, ['usagePage', 'usage', 'inputBytes', 'outputBytes', 'featureBytes'], 0, 0xffff),
       ...selectInts(a, ['interfaceNumber'], -1, 0xffff),
-      ...selectFlags(a, ['descriptorAvailable']), candidateProvider: provider(a.candidateProvider) ?? null,
+      ...selectFlags(a, ['descriptorAvailable']), descriptorState: from(a.descriptorState, descriptorStates),
+      candidateProvider: provider(a.candidateProvider) ?? null, target: target(a.target),
     })),
     nativeDevices: scoped(raw.nativeDevices, 256, sample),
     windowsDevices: scoped(raw.windowsDevices, 256, a => ({
-      ...hardware(a), ...selectFlags(a, ['connected', 'bleBasListed']), connection: from(a.connection, connections),
+      ...hardware(a), ...selectFlags(a, ['connected', 'bleBasListed', 'inputOrHeadset', 'knownBluetooth']),
+      ...selectInts(a, ['bleServiceCount'], 0, 255), connection: from(a.connection, connections),
       battery: reading(a.battery), status: from(a.status, statuses), code: from(a.code, results),
       provider: provider(a.provider), transport: from(a.transport, connections), target: target(a.target), reasonCode: reasonCode(a.reasonCode), bleReasonCode: reasonCode(a.bleReasonCode),
     })),
@@ -161,7 +164,14 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     connection: from(subject.connection, connections), connected: subject.connected,
     evidence: matchingRows ? 'matched' : 'not_correlated',
   };
-  return JSON.stringify({ ...details, selectedDevice }, null, 2) + '\n';
+  const selectedEvidence = subject && {
+    scope: metadata.capture !== 'live' ? 'inventory_not_linked'
+      : !subjectTag ? 'device_not_linked'
+      : matchingRows ? 'selected_device_only' : 'device_not_in_snapshot',
+    hidInterfaceCount: details.hidInterfaces.length,
+    batteryAttemptCount: details.recentSamples.length + details.providerAttempts.length,
+  };
+  return JSON.stringify({ ...details, selectedDevice, selectedEvidence }, null, 2) + '\n';
 }
 
 export type CompatibilityPreview = { token: string; json: string };
