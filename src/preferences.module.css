@@ -14,8 +14,8 @@
 .deviceInfo strong { font-size: clamp(22px, 2vw, 32px); font-weight: 450; }
 .deviceInfo [data-battery-track] { margin-top: 8px; max-width: 180px; }
 .deviceInfo small { display: block; color: var(--muted); font-size: 12px; margin-top: 7px; min-height: 17px; }
-.chargeActions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: end; max-width: 140px; }
-.chargeActions > button { font-size: 14px; padding: 9px 14px; white-space: nowrap; }
+.chargeActions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: end; max-width: 158px; }
+.chargeActions > button { font-size: 13px; padding: 8px 10px; white-space: nowrap; }
 .chargeActions > button:last-child { min-height: 26px; width: 26px; padding: 2px; background: transparent; border-color: transparent; color: var(--muted); }
 .empty { min-height: 300px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px; color: var(--muted); text-align: center; }
 .empty h3 { color: var(--ink); font-size: 20px; font-weight: 450; }
@@ -130,7 +130,7 @@
 .mainPalette [data-page-heading="alerts"] p { font-size: 14px; }
 .mainPalette [data-page-heading="settings"] { position: absolute; width: 1px; height: 1px; padding: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
 .reminders h2, .settings h2 { font-size: clamp(18px, 1.45vw, 20px); }
-.deviceInfo > button { font-size: clamp(16px, 1.35vw, 20px); }
+.deviceInfo > button { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; max-width: 100%; font-size: clamp(16px, 1.35vw, 20px); }
 .deviceInfo strong { font-size: clamp(20px, 1.7vw, 25px); }
 .repeat b, .notificationPreview h3, .notificationCard > span > span { font-size: 15px; }
 .settingsNav button, .appearance form > label, .settingsSection b, .compatibility label, .currentColor { font-size: 15px; }
@@ -169,4 +169,93 @@
   .deviceImage > div { height: clamp(45px, 12vh, 88px); }
   .chargeActions { justify-content: flex-start; }
   .empty { min-height: 125px; }
+}
+
+/* The category rail shares the app edge; the reading column stays compact. */
+.settings {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  grid-template-columns: clamp(116px, 13vw, 144px) minmax(0, 1fr);
+  gap: clamp(18px, 3.2vw, 32px);
+}
+.settingsNav {
+  position: static;
+  min-height: auto;
+  gap: 4px;
+  padding-right: 14px;
+}
+.settingsNav button { padding: 8px 11px; font-size: 14px; min-height: 36px; }
+.settingsNav button[aria-current] {
+  background: color-mix(in srgb, var(--ink) 8%, var(--window));
+  box-shadow: none;
+  font-weight: 600;
+}
+.settingsSections {
+  max-width: none;
+  min-height: 0;
+  align-self: stretch;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 8px;
+  padding: 4px 8px 10px 3px;
+}
+.settingsSections:focus-visible { outline-offset: -2px; }
+.settingsSections > section {
+  max-width: 654px;
+  margin-inline-start: clamp(0px, calc((100% - 654px) * .34), 150px);
+  scroll-margin-top: 0;
+  padding-bottom: 4px;
+}
+.settingsSections > section + section { padding-top: 29px; }
+.settingsSections h2 {
+  border: 0;
+  padding-bottom: 0;
+  margin: 0 0 4px;
+  font-weight: 620;
+}
+.settingsSections { --settings-row-height: 50px; --settings-row-inset: 8px; }
+.settingsSections [data-setting-row] {
+  min-block-size: var(--settings-row-height);
+  padding-block: var(--settings-row-inset);
+  flex-wrap: nowrap;
+}
+.settingsSections [data-setting-description] { flex: 1 1 0; }
+.settingsSections [data-setting-control] { display: flex; align-items: center; justify-content: flex-end; flex: 0 0 auto; }
+.settingsSections :is([data-setting-label] > b, .appearance form > label, .currentColor > span, .compatibility label) {
+  margin: 0;
+  line-height: 1.4;
+  font-weight: 450;
+}
+.settingsSections .appearance form { padding-block: max(5px, calc(var(--settings-row-inset) / 2)); }
+.settingsSections .currentColor { min-block-size: var(--settings-row-height); padding-block: var(--settings-row-inset); }
+.compatibility { gap: 10px; padding-top: 14px; }
+@media (max-width: 740px) {
+  .settings { grid-template-columns: minmax(94px, 20%) minmax(0, 1fr); gap: 14px; }
+  .settingsNav { padding-right: 7px; }
+  .settingsNav button { padding-inline: 8px; }
+  .currentColor { gap: 8px; }
+}
+
+/* A common right-aligned control column, capped so sliders and text inputs
+   do not stretch into disconnected blanks on wide windows. */
+.settingsSections .appearance form, .settingsSections .currentColor {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) minmax(0, 390px);
+  align-items: center;
+  gap: 8px 18px;
+}
+.settingsSections .currentColor > span:first-child { min-width: 0; }
+.settingsSections .currentColor > div { gap: 8px 16px; }
+.settingsSections .appearance form > div { grid-column: 2; grid-row: 1; min-width: 0; align-items: center; }
+.settingsSections .appearance form > [role="alert"] { grid-column: 2; margin-block: 0; }
+.settingsSections .appearance form [data-zoom-number] { font-variant-numeric: tabular-nums; }
+.settingsSections .compatibility { grid-template-columns: minmax(88px, 1fr) minmax(0, 390px); align-items: center; gap: 8px 18px; }
+.settingsSections .compatibility button { grid-column: 2; }
+.settingsSections .compatibility input { padding: 9px 10px; }
+@media (max-width: 660px) {
+  .settingsSections :is(.appearance form, .currentColor, .compatibility) { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .settingsSections .appearance form > div { grid-column: 1; grid-row: 2; width: 100%; }
+  .settingsSections .compatibility button, .settingsSections .appearance form > [role="alert"] { grid-column: 1; }
 }

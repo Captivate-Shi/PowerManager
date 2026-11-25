@@ -166,6 +166,7 @@
 .overviewRow .rowReading { text-align: right; }
 .overviewRow .rowReading strong { font-size: clamp(20px, 2.6vw, 40px); font-weight: 650; letter-spacing: -.035em; }
 .rowReading strong { color: var(--reading, var(--ink)); white-space: nowrap; }
+.rowReading .compactReadingStatus { display: none; }
 :global([data-tone="amber"]) { --reading: var(--amber); }
 :global([data-tone="red"]) { --reading: var(--red); }
 :global([data-tone="green"]) { --reading: var(--green); }
@@ -347,6 +348,7 @@
 .chartLegend { color: var(--muted); text-align: right; font-size: 12px; }
 .detailHistory :is(.chart, .chartEmpty)[data-large="true"] { height: clamp(180px, 26vh, 286px); }
 .chartEmpty { display: grid; place-items: center; color: var(--muted); text-align: center; }
+.chartEmpty > div { display: grid; justify-items: center; gap: 6px; }
 .chartTip { display: grid; gap: 4px; padding: 7px 10px; background: var(--raised); border: 1px solid var(--line); border-radius: 7px; color: var(--ink); font-size: 12px; }
 
 .select { min-width: 0; max-width: min(100%, 264px); justify-content: space-between; padding-inline: 10px 8px; }
@@ -566,6 +568,8 @@
 .chartPlot[data-large="true"], .chartSkeleton[data-large="true"] { height: clamp(265px, 49vh, 515px); }
 .detailHistory .chartPlot[data-large="true"], .detailHistory > .chartSkeleton { height: clamp(225px, 38vh, 360px); }
 .graphGrid { stroke: color-mix(in srgb, var(--muted) 18%, transparent); }
+.graphSvg:not([data-chart-range="day"]) .graphGrid { stroke: color-mix(in srgb, var(--muted) 11%, transparent); }
+.graphDailyRange { fill: none; stroke-width: 2px; stroke-linecap: round; stroke-opacity: .96; }
 .graphAxis { stroke: color-mix(in srgb, var(--muted) 34%, transparent); stroke-width: 1; }
 .graphLabel { fill: var(--muted); font-size: clamp(11px, .94vw, 13px); }
 .graphDate { fill: var(--quiet); font-size: 10px; }
@@ -620,7 +624,7 @@
 .placeholderThumb { width: 64%; height: 23px; margin-inline: auto; }
 
 /* Window-sized pages hand overflow to the panes that own it. */
-.shell[data-view]:not([data-view="settings"]) {
+.shell[data-view] {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -628,15 +632,15 @@
   min-height: 0;
   overflow: clip;
 }
-.shell[data-view]:not([data-view="settings"]) > .topbar { flex: none; }
-.shell[data-view]:not([data-view="settings"]) > .content {
+.shell[data-view] > .topbar { flex: none; }
+.shell[data-view] > .content {
   flex: 1;
   width: 100%;
   min-height: 0;
   gap: clamp(4px, 1.4vh, 16px);
   padding-block: clamp(5px, 2vh, 25px) 0;
 }
-.shell[data-view]:not([data-view="settings"]) .pageBody {
+.shell[data-view] .pageBody {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -644,8 +648,18 @@
 }
 .pageBody > :is(.heading, .notice, .deviceToolbar, .fullHeader) { flex: none; }
 .shell[data-view]:not([data-view="settings"]) .heading { margin-bottom: clamp(5px, 2vh, 22px); }
+.shell[data-view] :is(.heading[data-page-heading="devices"], .heading[data-page-heading="alerts"], .heading[data-page-heading="history"]) h1 {
+  font-size: clamp(23px, 2.25vw, 32px);
+  font-weight: 620;
+}
 .shell[data-view="overview"] .heading { margin: 0; }
-.shell[data-view] .appFooter { flex: none; padding-block: clamp(3px, 1.2vh, 10px); gap: 3px 14px; }
+.shell[data-view] .appFooter {
+  --footer-inset: clamp(3px, 1.2vh, 10px);
+  flex: none;
+  min-block-size: calc(25px + 2 * var(--footer-inset));
+  padding-block: var(--footer-inset);
+  gap: 3px 14px;
+}
 .pageBody > .deviceSplit {
   flex: 1;
   min-height: 0;
@@ -717,6 +731,7 @@
 }
 @media (max-width: 620px) {
   .deviceTable :is(td, th):nth-child(4) { display: none; }
+  .deviceTable .rowReading .compactReadingStatus { display: block; color: var(--reading, var(--muted)); white-space: nowrap; }
   .deviceTable td:first-child { width: auto; }
   .deviceTable .rowReading strong { font-size: 13px; }
   .historyToolbar { gap: 5px; }
@@ -730,7 +745,7 @@
 @media (max-height: 465px) {
   .pageBody .heading h1 { font-size: 20px; }
   .pageBody > .notice { padding-block: 3px; margin-block: 2px; }
-  .shell[data-view] .appFooter { font-size: 10px; }
+  .shell[data-view] .appFooter { font-size: 10px; min-block-size: calc(19px + 2 * var(--footer-inset)); }
   .shell[data-view] .appFooter > button { min-height: 18px; padding-block: 1px; }
   .deviceToolbar .select { min-height: 26px; }
   .deviceToolbar .filters button { min-height: 25px; padding-block: 2px; }
@@ -770,3 +785,18 @@
 @media (prefers-reduced-motion: reduce) {
   .initialArt::after, .overviewTop[data-load-state="refreshing"] .heroReadout .track::after { animation: none; }
 }
+
+.historyRangeGroup { display: inline-flex; align-items: center; gap: 6px; }
+.option[data-disabled] { color: var(--muted); opacity: .48; cursor: not-allowed; }
+.confirmActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.deleteAction { min-height: 34px; padding: 5px 11px; border-radius: 7px; color: var(--red);
+  background: color-mix(in srgb, var(--red) 11%, var(--panel)); border: 1px solid color-mix(in srgb, var(--red) 32%, transparent); }
+.deleteAction:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 18%, var(--panel)); }
+
+.option[data-with-detail] {
+  display: grid;
+  grid-template-columns: minmax(max-content,1fr) max-content 15px;
+  column-gap: 16px;
+  min-block-size: 36px;
+}
+.optionDetail { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }

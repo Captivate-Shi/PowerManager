@@ -14,7 +14,7 @@ function buildInstaller(root, output, folder) {
     '/DAppVersion=' + manifest.version, '/DAppSource=' + folder, '/O' + output,
     join(root, 'installer', 'PowerManager.iss'),
   ], { stdio: 'inherit', windowsHide: true });
-  console.log(join(output, 'PowerManager-Setup-x64.exe'));
+  console.log(join(output, `PowerManager-Setup-${manifest.version}-x64.exe`));
 }
 
 async function build() {
@@ -40,11 +40,10 @@ async function build() {
     const target = realpathSync(stage);
     if (dirname(target) === realpathSync(staging)) rmSync(target, { recursive: true });
   }
-  if (process.argv.includes('--installer')) {
-    buildInstaller(root, output, folder);
-    return;
-  }
-  const zip = join(output, 'PowerManager-H5-win32-x64.zip');
+  const installer = process.argv.includes('--installer');
+  if (installer || process.argv.includes('--all')) buildInstaller(root, output, folder);
+  if (installer) return;
+  const zip = join(output, `PowerManager-Portable-${manifest.version}-x64.zip`);
   execFileSync('tar.exe', ['-a', '-cf', zip, '-C', output, 'PowerManager-H5-win32-x64'], { stdio: 'inherit' });
   console.log(folder);
   console.log(zip);

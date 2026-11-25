@@ -309,11 +309,11 @@ async function main() {
     await expect(page.getByRole('switch', { name: '全屏提示音' })).toBeVisible();
     await fullScreenshot('14-提醒-展开通知与静音');
     const commands = command => expect.poll(() => page.evaluate(() => window.studioReview.commands)).toContainEqual(command);
-    await page.getByRole('slider', { name: '全局紧急阈值' }).fill('23');
+    await page.getByRole('slider', { name: '全局告急阈值' }).fill('23');
     await expect(button(page, '应用阈值')).toBeDisabled();
-    await expect(page.getByRole('alert').getByText('紧急阈值需低于低电量阈值。')).toBeVisible();
+    await expect(page.getByRole('alert').getByText('告急阈值需低于低电量阈值。')).toBeVisible();
     expect(await page.evaluate(() => window.studioReview.commands.filter(item => item.type === 'settings'))).toEqual([]);
-    await page.getByRole('slider', { name: '全局紧急阈值' }).fill('11');
+    await page.getByRole('slider', { name: '全局告急阈值' }).fill('11');
     await button(page, '应用阈值').click();
     await commands({ type: 'settings', patch: { low: 20, critical: 11 } });
     await go('设置');

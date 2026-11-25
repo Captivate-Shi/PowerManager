@@ -83,7 +83,7 @@ const { performance } = require('node:perf_hooks');
         });
         await page.evaluate(() => window.publish());
         await expect(page.locator('[data-cold-reveal]')).toHaveCount(1);
-        await expect(page.getByRole('button', { name: '查看详情' })).toBeEnabled();
+        await expect(page.getByRole('button', { name: '查看详情', exact: true })).toBeEnabled();
         const exit = await page.locator('[data-cold-copy][data-exiting]').evaluate(node => ({
           name: getComputedStyle(node).animationName, hidden: node.getAttribute('aria-hidden'),
         }));

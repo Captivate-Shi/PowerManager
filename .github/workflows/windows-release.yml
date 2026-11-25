@@ -1,0 +1,116 @@
+name: Windows release
+
+on:
+  pull_request:
+    branches: [main]
+  create:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'pull_request' || (startsWith(github.ref, 'refs/heads/release/') && (github.event_name != 'create' || github.event.ref_type == 'branch'))
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install project dependencies
+        run: |
+          npm install --global pnpm@11.25.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Provision Windows build tools
+        run: |
+          $dev = Join-Path $env:RUNNER_TEMP 'w64devkit-x64-2.5.0.7z.exe'
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup-6.4.3.exe'
+          Invoke-WebRequest 'https://github.com/skeeto/w64devkit/releases/download/v2.5.0/w64devkit-x64-2.5.0.7z.exe' -OutFile $dev
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_4_3/innosetup-6.4.3.exe' -OutFile $setup
+          if ((Get-FileHash $dev).Hash -ne '7AC8F55BEFB93720F048F2C788704543FBC632C0164A8239ECBDEFC9559481C5') { throw 'Unexpected w64devkit SHA-256' }
+          if ((Get-FileHash $setup).Hash -ne 'F3C42116542C4CC57263C5BA6C4FEABFC49FE771F2F98A79D2F7628B8762723B') { throw 'Unexpected Inno Setup SHA-256' }
+          & 'C:\Program Files\7-Zip\7z.exe' x -y "-o$env:RUNNER_TEMP" $dev
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $compiler = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'w64devkit') -Filter g++.exe -Recurse | Select-Object -First 1
+          if (!$compiler) { throw 'g++.exe not found' }
+          "POWER_MANAGER_TOOLCHAIN_BIN=$($compiler.DirectoryName)" >> $env:GITHUB_ENV
+          $inno = Join-Path $env:RUNNER_TEMP 'InnoSetup'
+          $process = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$inno`"" -PassThru -Wait
+          if ($process.ExitCode -ne 0 -or !(Test-Path (Join-Path $inno 'ISCC.exe'))) { throw 'Inno Setup installation failed' }
+          "POWER_MANAGER_ISCC=$(Join-Path $inno 'ISCC.exe')" >> $env:GITHUB_ENV
+      - name: Test and build
+        run: |
+          pnpm exec tsc --noEmit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $suites = Get-ChildItem tests -Filter '*.test.ts' | ForEach-Object FullName
+          node --import tsx --test @suites
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1 -Test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm build:web
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/package.cjs --all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = node -p "require('./package.json').version"
+          $files = @(Get-Item "out/${version}/PowerManager-Setup-${version}-x64.exe", "out/${version}/PowerManager-Portable-${version}-x64.zip")
+          $files | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content "out/${version}/SHA256SUMS.txt"
+          "PM_VERSION=$version" >> $env:GITHUB_ENV
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-x64
+          if-no-files-found: error
+          path: |
+            out/${{ env.PM_VERSION }}/PowerManager-Setup-*-x64.exe
+            out/${{ env.PM_VERSION }}/PowerManager-Portable-*-x64.zip
+            out/${{ env.PM_VERSION }}/SHA256SUMS.txt
+
+  publish:
+    if: startsWith(github.ref, 'refs/heads/release/') && (github.event_name != 'create' || github.event.ref_type == 'branch')
+    needs: build
+    permissions:
+      contents: write
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-x64
+          path: release-artifacts
+      - name: Publish internal build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF -ne "refs/heads/release/$version") { throw 'Release branch and manifest version do not match' }
+          $tag = "v$version"
+          $base = gh api --method GET "repos/$env:GITHUB_REPOSITORY/compare/$env:GITHUB_SHA...main" --jq '.status'
+          if ($LASTEXITCODE -ne 0 -or $base -notin 'identical','ahead') { throw 'Release commit must be on main' }
+          $raw = gh api --method GET "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to verify tag' }
+          $existing = ($raw | ConvertFrom-Json) | Where-Object ref -eq "refs/tags/$tag"
+          if ($existing -and ($existing.object.type -ne 'commit' -or $existing.object.sha -ne $env:GITHUB_SHA)) { throw 'Tag already points to another object' }
+          $existingRelease = gh release list --limit 100 --json tagName,isDraft --jq ".[] | select(.tagName == `"$tag`") | .isDraft"
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to verify existing release' }
+          if ($existingRelease) { throw 'Release already exists; no files overwritten' }
+
+          $setup = Get-ChildItem release-artifacts -Recurse -Filter "PowerManager-Setup-$version-x64.exe" | Select-Object -ExpandProperty FullName
+          $portable = Get-ChildItem release-artifacts -Recurse -Filter "PowerManager-Portable-$version-x64.zip" | Select-Object -ExpandProperty FullName
+          $checksums = Get-ChildItem release-artifacts -Recurse -Filter SHA256SUMS.txt | Select-Object -ExpandProperty FullName
+          if (!$setup -or !$portable -or !$checksums) { throw 'Release assets are incomplete' }
+          $notes = ".github/release-notes/$version.md"
+          if (!(Test-Path $notes)) { throw 'Release notes are missing' }
+          gh release create $tag $setup $portable $checksums --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --prerelease --title "$version" --notes-file $notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

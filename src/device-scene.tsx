@@ -17,8 +17,8 @@ const reflectionGeometry = {
   stylus: [796 / 265, '89.6%'],
 } satisfies Record<Exclude<Device['art'], 'unknown'>, [number, string]>;
 
-export function SceneStage({ device, loading = false, detail = false, reflect = false, revealPhoto = false }: {
-  device?: Device; loading?: boolean; detail?: boolean; reflect?: boolean; revealPhoto?: boolean;
+export function SceneStage({ device, loading = false, detail = false, reflect = false, revealPhoto = false, onArtReady }: {
+  device?: Device; loading?: boolean; detail?: boolean; reflect?: boolean; revealPhoto?: boolean; onArtReady?: () => void;
 }) {
   const reflected = reflect && device && device.art !== 'unknown' && !loading ? device.art : undefined;
   const geometry = reflected && reflectionGeometry[reflected];
@@ -27,7 +27,7 @@ export function SceneStage({ device, loading = false, detail = false, reflect = 
       '--reflection-image': `url("${studioPath(reflected + '-hero.webp')}")`,
       '--reflection-aspect': geometry[0], '--reflection-contact': geometry[1],
     } as CSSProperties} />}
-    {device ? <Art device={device} variant={detail ? 'detail' : 'stage'} loading={loading} revealPhoto={revealPhoto} /> :
+    {device ? <Art device={device} variant={detail ? 'detail' : 'stage'} loading={loading} revealPhoto={revealPhoto} onReady={onArtReady} /> :
       <i className={view.emptyStage} aria-hidden="true" />}
   </div>;
 }
