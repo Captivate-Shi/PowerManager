@@ -51,6 +51,8 @@ export function animateDetailPhoto(origin: Photo, to: HTMLImageElement, duration
   const { box } = target;
   const proxy = new Image();
   proxy.src = src;
+  // Do not hide a real decoded layer for a proxy which cannot paint yet.
+  if (!proxy.complete || !proxy.naturalWidth) return;
   proxy.alt = '';
   proxy.setAttribute('aria-hidden', 'true');
   proxy.dataset.detailPhotoFlight = '';
@@ -70,7 +72,13 @@ export function animateDetailPhoto(origin: Photo, to: HTMLImageElement, duration
     proxy.remove();
     delete to.dataset.detailPhotoHidden;
   };
-  return { finished: animation.finished, cleanup };
+  const read = (): Photo => {
+    const style = getComputedStyle(proxy);
+    return { image: proxy, box: proxy.getBoundingClientRect(), clip: style.clipPath,
+      feather: style.getPropertyValue('--detail-feather').trim() || '100%',
+      edge: style.getPropertyValue('--detail-edge').trim() || '100%', opacity: Number(style.opacity), filter: style.filter };
+  };
+  return { finished: animation.finished, cleanup, read };
 }
 
 export function detailPhoto(image?: HTMLImageElement) {
@@ -96,11 +104,11 @@ export function freezeReflection(layer?: HTMLElement) {
   return copy;
 }
 
-export function fadeReflection(layer: HTMLElement, entering: boolean, duration: number, delay = 0) {
+export function fadeReflection(layer: HTMLElement, entering: boolean, duration: number, delay = 0, fromOpacity = 0) {
   if (entering) layer.dataset.reflectionEntering = '';
   else document.body.append(layer);
   const animation = layer.animate(
-    entering ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: Number(layer.style.opacity) }, { opacity: 0 }],
+    entering ? [{ opacity: fromOpacity }, { opacity: 1 }] : [{ opacity: Number(layer.style.opacity) }, { opacity: 0 }],
     { duration, delay, fill: 'both', easing: 'ease-in-out' },
   );
   const cleanup = () => {

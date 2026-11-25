@@ -538,6 +538,10 @@ async function verifyReduced(browser){
 }
 
 async function captureClip(page){
+  // The route check above intentionally preserves list mode and Xbox.
+  // Set the clip's initial scene explicitly rather than expecting a reset.
+  if (await mode(page).getAttribute('data-mode') !== 'stage') await userSwitch(page,'stage');
+  await railButton(page,dual.name).click();
   await isSettled(page,'stage',dual);
   return (await record(page,async mark=>{
     mark('DualSense · 展台往返清单');

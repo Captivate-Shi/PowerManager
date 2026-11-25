@@ -201,7 +201,7 @@ async function main() {
       await slider.scrollIntoViewIfNeeded();
       await expect(slider).toBeVisible();
       const presets = detail.getByRole('group',{name:'快速选择低电量阈值'});
-      const labels = await presets.getByRole('button').allTextContents();
+      const labels = await presets.getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')));
       expect(labels).toEqual(Array.from({length:10},(_,i)=>`${5*(i+1)}%`));
       const box = await slider.boundingBox();
       const cp = (await thresholdWrites(page)).length;
@@ -304,10 +304,21 @@ async function main() {
       await button(picker,'移除对比：机械键盘').click();
       await expect(chart.locator('path[data-trace=exact]:not([d=""])')).toHaveCount(1);
       await delay(page,680);
+      await page.getByRole('combobox',{name:'记录范围'}).click();
+      await page.getByRole('option',{name:'7 天',exact:true}).click();
+      await expect(page.getByLabel(/近 7 天每日最低读数。/)).toBeVisible();
+      await delay(page,1100);
+      await snapshot(page,'17b-记录-七天日期轴');
 
       mark('设置 · 缩放预设、暖钛灰与回到总览');
       await enter('设置','settings');
       const settings = page.locator('[data-page=settings]');
+      const settingsNav = settings.getByRole('navigation', { name: '设置分类' });
+      await button(settingsNav, '运行与托盘').click();
+      await delay(page,730);
+      await expect(button(settingsNav, '运行与托盘')).toHaveAttribute('aria-current', 'location');
+      await button(settingsNav, '外观').click();
+      await delay(page,440);
       const zoom = settings.getByRole('spinbutton',{name:'主界面缩放百分比'});
       await zoom.fill('110');
       await button(zoom.locator('xpath=ancestor::form'),'应用').click();

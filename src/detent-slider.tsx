@@ -13,7 +13,7 @@ export function DetentSlider({ min, max, value, detents, detentLabel, selectedDe
   const gap = Math.min(max - min, ...detents.slice(1).map((point, i) => point.value - detents[i].value));
   return <div className={styles.control} data-detent-slider data-inline={inline || undefined}>
     <div className={styles.geometry} style={{ '--fill-stop': percent(value), '--detent-gap': percent(min + gap) } as CSSProperties}>
-      <span className={styles.rail} aria-hidden="true" />
+      <span className={styles.rail} data-detent-rail="" aria-hidden="true" />
       <input {...inputProps} type="range" min={min} max={max} step={1} value={value} aria-valuetext={value + '%'}
         onChange={event => onValue(event.currentTarget.valueAsNumber)} />
       <div className={styles.detents} role="group" aria-label={detentLabel}>

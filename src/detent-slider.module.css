@@ -1,6 +1,7 @@
 /* One axis for the rail, native thumb centers, fill end and pointer/key detents. */
 .control { --thumb: 29px; --track-y: 15px; flex: 1; min-width: 112px; height: 52px; padding-inline: 2px; }
-.control[data-inline] { padding-inline: 14.5px; }
+/* The zoom row aligns to the thumb and rail, not the whitespace under the detents. */
+.control[data-inline] { --track-y: 50%; padding-inline: 14.5px; }
 .geometry { position: relative; height: 100%; }
 .rail {
   position: absolute; pointer-events: none; inset-inline: 0; top: calc(var(--track-y) - 2.5px);
@@ -12,13 +13,14 @@
   width: calc(100% + var(--thumb)); height: calc(var(--track-y) * 2);
   border: none; margin: 0; padding: 0; background: transparent; cursor: pointer; outline: none; touch-action: none;
 }
+.control[data-inline] .geometry > input[type="range"] { top: calc(var(--track-y) - 15px); height: 30px; }
 .control input::-webkit-slider-runnable-track { height: 5px; border: none; background: transparent; }
 .control input::-webkit-slider-thumb {
   appearance: none; width: var(--thumb); height: 17px; border-radius: 12px; margin-top: -6px;
   border: 1px solid #ffffff9c; background: #e8eaee; box-shadow: 0 1px 3px #0005;
 }
 .control input:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--blue); outline-offset: 2px; }
-.detents { position: absolute; pointer-events: none; inset: 21px 0 auto; height: 22px; }
+.detents { position: absolute; pointer-events: none; inset: calc(var(--track-y) + 6px) 0 auto; height: 22px; }
 .detents button {
   pointer-events: auto; position: absolute; top: 0; left: var(--at); transform: translateX(-50%);
   display: grid; place-items: center; width: min(26px, var(--detent-gap)); height: 21px;

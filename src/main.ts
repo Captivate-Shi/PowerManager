@@ -3,7 +3,7 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { demoDiscovery, demoHistory, demoSnapshot, previewDevice } from './demo';
-import { classify, isHistoryRange, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type HistoryDay, type Settings,
+import { classify, isHistoryRange, isHistoryRangeWithin, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type HistoryDay, type Settings,
   type MainView, type Severity, type Snapshot, type Surface, type Toast } from './model';
 import { Monitor } from './monitor';
 import { startMetrics } from './metrics';
@@ -486,7 +486,7 @@ function ranged(value: unknown, minimum: number, maximum: number): value is numb
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
-function saveSettings(patch: unknown) {
+function saveSettings(patch: unknown, confirmHistoryShorten = false) {
   if (!object(patch)) throw new Error('设置格式有误');
   const previous = { ...snapshot.settings };
   const next = { ...previous };
@@ -504,9 +504,9 @@ function saveSettings(patch: unknown) {
         if (!isMuteDuration(value)) throw new Error('全局静音时长无效');
         next.muteMinutes = value;
         break;
-      case 'historyRange':
+      case 'historyRetention':
         if (!isHistoryRange(value)) throw new Error('记录范围无效');
-        next.historyRange = value;
+        next.historyRetention = value;
         break;
       case 'zoom': case 'trayZoom':
         if (!ranged(value, 75, 150)) throw new Error('缩放比例需在 75%–150% 之间');
@@ -519,7 +519,9 @@ function saveSettings(patch: unknown) {
       default: throw new Error('未知设置');
     }
   }
-  if (next.critical >= next.low) throw new Error('紧急阈值必须低于低电量阈值');
+  if (!isHistoryRangeWithin(previous.historyRetention, next.historyRetention) && !confirmHistoryShorten)
+    throw new Error('缩短保留期限需要确认清理旧记录');
+  if (next.critical >= next.low) throw new Error('告急阈值必须低于低电量阈值');
   const startupChanged = !isDemo && next.startup !== previous.startup;
   if (startupChanged) {
     if (!app.isPackaged) throw new Error('请使用打包版设置随 Windows 登录启动');
@@ -606,6 +608,7 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       if (!device) throw new Error('设备已移除');
       const range = command.range ?? 'day';
       if (!isHistoryRange(range)) throw new Error('记录范围无效');
+      if (!isHistoryRangeWithin(range, snapshot.settings.historyRetention)) throw new Error('查看范围超过记录保留上限');
       if (range === 'day') return { ok: true, history: monitor ? monitor.history(device.id) : demoHistory(device) };
       if (monitor) return { ok: true, historyDays: monitor.historySummary(device.id, range) };
       const historyDays: HistoryDay[] = [];
@@ -635,7 +638,7 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       if (!device) throw new Error('设备已移除');
       saveDeviceSettings(device.id, command.patch);
       break;
-    case 'settings': saveSettings(command.patch as Partial<Settings>); break;
+    case 'settings': saveSettings(command.patch, command.confirmHistoryShorten === true); break;
     case 'toggleAlertSetting': {
       const { key } = command;
       if (key !== 'fullscreenSound' && key !== 'soundOnly' && key !== 'desktopToasts') throw new Error('提醒开关无效');

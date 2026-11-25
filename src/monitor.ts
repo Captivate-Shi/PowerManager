@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { release } from 'node:os';
 
-import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, type AlertState, type Device, type DeviceSettings, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Sample, type Severity, type Settings, type Snapshot } from './model';
+import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Sample, type Severity, type Settings, type Snapshot } from './model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 import { accumulateHistoryDay, historyStart } from './history-plot';
 
@@ -90,7 +90,7 @@ export class Monitor {
       return [key, typeof saved === typeof fallback ? saved : fallback];
     })) as Settings;
     if (!isMuteDuration(initial.settings.muteMinutes)) initial.settings.muteMinutes = defaults.muteMinutes;
-    if (!isHistoryRange(initial.settings.historyRange)) initial.settings.historyRange = defaults.historyRange;
+    if (!isHistoryRange(initial.settings.historyRetention)) initial.settings.historyRetention = defaults.historyRetention;
     initial.deviceSettings = Object.assign(Object.create(null), initial.deviceSettings);
     initial.alerts = Object.assign(Object.create(null), initial.alerts);
     initial.history = Object.assign(Object.create(null), initial.history);
@@ -154,7 +154,7 @@ export class Monitor {
     return (this.data.history[id] ?? []).filter(point => historyPointEnd(point) >= cutoff);
   }
   historySummary(id: string, range: Exclude<HistoryRange, 'day'>) {
-    const start = historyStart(Date.now(), range);
+    const start = historyStart(Date.now(), limitHistoryRange(range, this.state.settings.historyRetention));
     return (this.historyDays[id] ?? []).filter(bucket => bucket.day >= start);
   }
   log(event: string) { this.appendLog('activity.log', new Date().toISOString() + ' ' + event); }
@@ -168,18 +168,32 @@ export class Monitor {
   persist() {
     const start = performance.now();
     try {
-      const cutoff = Date.now() - day;
-      for (const [id, items] of Object.entries(this.data.history)) {
-        this.data.history[id] = items.filter(item => historyPointEnd(item) >= cutoff);
+      const now = Date.now();
+      const cutoff = now - day;
+      const history = Object.assign(Object.create(null), this.data.history) as StateFile['history'];
+      for (const [id, items] of Object.entries(history)) {
+        const kept = items.filter(item => historyPointEnd(item) >= cutoff);
+        if (kept.length) history[id] = kept;
+        else delete history[id];
       }
-      const summaryCutoff = historyStart(Date.now(), 'year');
-      for (const [id, buckets] of Object.entries(this.historyDays)) {
-        if (buckets.some(bucket => bucket.day < summaryCutoff))
-          this.historyDays[id] = buckets.filter(bucket => bucket.day >= summaryCutoff);
+      const summaryCutoff = historyStart(now, this.state.settings.historyRetention);
+      const historyDays = Object.assign(Object.create(null), this.historyDays) as Record<string, HistoryDay[]>;
+      for (const [id, buckets] of Object.entries(historyDays)) {
+        if (!buckets.length) delete historyDays[id];
+        else if (buckets.some(bucket => bucket.day < summaryCutoff)) {
+          const kept = buckets.filter(bucket => bucket.day >= summaryCutoff);
+          if (kept.length) historyDays[id] = kept;
+          else delete historyDays[id];
+        }
       }
-      this.data.devices = [...this.rows.values()].map(({ device }) => device);
-      writeFileSync(this.file + '.tmp', JSON.stringify(this.data), 'utf8');
+      const devices = [...this.rows.values()].map(({ device }) => device);
+      // Commit trimmed history only after the atomic on-disk replacement succeeds.
+      // A failed setting change can then roll back without erasing the live cache.
+      const next = { ...this.data, devices, history, historyDays };
+      writeFileSync(this.file + '.tmp', JSON.stringify(next), 'utf8');
       renameSync(this.file + '.tmp', this.file);
+      this.data = next;
+      this.historyDays = historyDays;
       this.dirty = false;
       this.lastSave = Date.now();
       this.totals.saves++;

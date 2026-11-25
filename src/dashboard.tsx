@@ -1,11 +1,11 @@
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { canProbeBluetooth, defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isMuteDuration, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
-import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
+import { canProbeBluetooth, defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type Device, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
 import listLook from './overview-list.module.css';
@@ -13,11 +13,14 @@ import { allowOverviewMotion, OverviewModeMotion } from './overview-mode-motion'
 import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
 import { DeviceThreshold } from './device-threshold';
+import { HelpTip } from './help-tip';
 import { ZoomControl } from './zoom';
 import preferences from './preferences.module.css';
 import { previewDevice as makePreviewDevice } from './demo';
-import { compareLimit, historyRangeLabels, historyStart, toggleHistorySelection } from './history-plot';
+import { compareLimit, historyRangeLabels, historyStart, toggleHistorySlots } from './history-plot';
+import { historyStorageEstimate } from './history-storage';
 import { DetentSlider } from './detent-slider';
+import { paintStage, shifted, stageLanding, stagePose, stageRest, stageTravel, stageVelocity, type StagePose, type StageSample } from './stage-gesture';
 import { animateDetailPhoto, detailPhoto, fadeReflection, freezeReflection, stageReflection } from './device-art-motion';
 
 const pages = [
@@ -38,10 +41,12 @@ function readPalette(): Palette {
 
 
 const level = (device: Device, state: Snapshot) => severity(device, state.settings, state.deviceSettings[device.id]);
+const snoozeAction = (minutes: number) => minutes + ' 分钟后提醒';
 const needCharge = (state: Snapshot) => state.devices.filter(device => level(device, state));
 const minutes = (values: number[]) => values.map(value => ({ value: String(value), label: value ? value + ' 分钟' : '关闭' }));
 const powerLabels = { charging: '充电中', full: '已充满', discharging: '电池供电', unknown: '设备未上报' };
 const historyChoices = historyRanges.map(value => ({ value, label: historyRangeLabels[value] }));
+const retentionChoices = historyChoices.map(choice => ({ ...choice, detail: historyStorageEstimate(choice.value) }));
 const thresholdDetents = Array.from({ length: 9 }, (_, index) => ({ value: (index + 1) * 10, major: index % 2 === 0 }));
 
 export function Dashboard({ state, remembered }: { state: Snapshot; remembered?: MainView }) {
@@ -60,11 +65,17 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   const returnScroll = useRef(0);
   const returnFocus = useRef<HTMLElement | null>(null);
   const sourcePhoto = useRef<HTMLImageElement>(undefined);
-  const activeTransition = useRef<ReturnType<typeof fadeReflection>[]>(undefined);
+  type DetailMotion = ReturnType<typeof fadeReflection> & { read?: () => ReturnType<typeof detailPhoto> };
+  const activeTransition = useRef<DetailMotion[]>(undefined);
+  const livePhoto = () => activeTransition.current?.find(item => item.read)?.read?.();
   const detailed = state.devices.find(device => device.id === detailId);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, search] = useState('');
+  const [deviceSort, setDeviceSort] = useState('state');
+  const settingsPosition = useRef({ category: 'appearance', top: 0 });
   const [finding, setFinding] = useState(false);
+  const [currentHistoryRange, setCurrentHistoryRange] = useState<HistoryRange>();
+  const [historySlots, setHistorySlots] = useState<(string | undefined)[]>();
   const [feedback, setFeedback] = useState<{ text: string; error?: boolean }>();
   const starting = state.collector === 'starting';
   const inventory = inventoryState(state);
@@ -118,12 +129,12 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   }
 
   function transitionDetail(from: ReturnType<typeof detailPhoto>, to?: HTMLImageElement, duration = 335,
-    reflection?: HTMLElement, returning = false) {
+    reflection?: HTMLElement, returning = false, reflectionOpacity?: number) {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const active: ReturnType<typeof fadeReflection>[] = [];
+    const active: DetailMotion[] = [];
     const photo = from && to && animateDetailPhoto(from, to, duration);
     if (photo) active.push(photo);
-    if (reflection) active.push(returning ? fadeReflection(reflection, true, 190, 95) : fadeReflection(reflection, false, 230));
+    if (reflection) active.push(returning ? fadeReflection(reflection, true, 190, reflectionOpacity === undefined ? 95 : 0, reflectionOpacity) : fadeReflection(reflection, false, 230));
     if (!active.length) return;
     activeTransition.current = active;
     void Promise.allSettled(active.map(motion => motion.finished)).then(() => {
@@ -131,6 +142,8 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     });
   }
   function openDetail(id: string, source?: HTMLElement) {
+    const live = livePhoto();
+    const reflection = freezeReflection(stageReflection(source));
     cancelTransition();
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : source ?? null;
     returnScroll.current = window.scrollY;
@@ -138,8 +151,7 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
       source?.querySelector<HTMLImageElement>('[data-active-stage] img[data-device-art]') ??
       source?.querySelector<HTMLImageElement>('img[data-device-art]') ?? undefined;
     sourcePhoto.current = photo;
-    const from = detailPhoto(photo);
-    const reflection = freezeReflection(stageReflection(source));
+    const from = live && photo && live.image.src === photo.src ? live : detailPhoto(photo);
     const device = state.devices.find(item => item.id === id);
     if (device) prepareHero(device);
     flushSync(() => setDetailId(id));
@@ -148,19 +160,24 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   }
 
   function closeDetail() {
+    const from = livePhoto() ?? detailPhoto(main.current?.querySelector<HTMLImageElement>('[data-full="true"] img[data-device-art]') ?? undefined);
+    const exitingReflection = document.querySelector('[data-reflection-exit]');
+    const reflectionOpacity = exitingReflection ? Number(getComputedStyle(exitingReflection).opacity) : undefined;
     cancelTransition();
-    const from = detailPhoto(main.current?.querySelector<HTMLImageElement>('[data-full="true"] img[data-device-art]') ?? undefined);
     flushSync(() => setDetailId(undefined));
     window.scrollTo(0, returnScroll.current);
     if (returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
     if (!main.current?.contains(document.activeElement)) main.current?.focus({ preventScroll: true });
-    transitionDetail(from, sourcePhoto.current?.isConnected ? sourcePhoto.current : undefined, 285, stageReflection(main.current), true);
+    transitionDetail(from, sourcePhoto.current?.isConnected ? sourcePhoto.current : undefined, 285, stageReflection(main.current), true, reflectionOpacity);
   }
   useEffect(() => {
     const skip = () => cancelTransition();
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    reduced.addEventListener('change', skip);
     document.addEventListener('visibilitychange', skip);
     window.addEventListener('resize', skip);
     return () => {
+      reduced.removeEventListener('change', skip);
       document.removeEventListener('visibilitychange', skip);
       window.removeEventListener('resize', skip);
       cancelTransition();
@@ -188,12 +205,24 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     };
   }, []);
 
-  function open(id: string) { search(''); setFilter('all'); select(id); setPage('devices'); setDetailId(undefined); }
-  function showDevices(next: Filter) { search(''); select(undefined); setFilter(next); setPage('devices'); setDetailId(undefined); }
-  function chooseHistoryRange(value: string) {
-    if (isHistoryRange(value)) void run({ type: 'settings', patch: { historyRange: value } });
+  function navigate(next: Page) {
+    if (next === page) {
+      if (detailed) closeDetail();
+      return;
+    }
+    cancelTransition();
+    setDetailId(undefined);
+    setPage(next);
   }
-  const historyRange = state.settings.historyRange ?? defaults.historyRange;
+  function showDevices(next: Filter) { search(''); select(undefined); setFilter(next); navigate('devices'); }
+  const historyRetention = state.settings.historyRetention ?? defaults.historyRetention;
+  const viewRange = limitHistoryRange(currentHistoryRange ?? 'day', historyRetention);
+  useEffect(() => {
+    setCurrentHistoryRange(previous => previous && limitHistoryRange(previous, historyRetention));
+  }, [historyRetention]);
+  const chooseHistoryRange = (value: string) => {
+    if (isHistoryRange(value) && isHistoryRangeWithin(value, historyRetention)) setCurrentHistoryRange(value);
+  };
   const headings: Record<Page, string> = { overview: '我的桌面', devices: '我的设备', alerts: '提醒', history: '电量对比', settings: '设置' };
   return <div className={s.shell + ' ' + look.shell + ' ' + preferences.mainPalette} data-theme={palette} data-view={detailed ? 'detail' : page}
     style={{ '--studio-stage': `url("${studioPath('stage.webp')}")`, '--alert-stage': `url("${studioPath('alerts-stage.webp')}")` } as CSSProperties}>
@@ -202,7 +231,7 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     <header className={s.topbar + ' ' + look.topbar}>
       <Brand />
       <JellyNav current={page}>{pages.map(([id, label]) => <button key={id} className={s.navItem + ' ' + look.navItem}
-        aria-label={label} aria-current={page === id ? 'page' : undefined} onClick={() => { cancelTransition(); setDetailId(undefined); if (page !== id) search(""); setPage(id); window.scrollTo(0, 0); }}><span>{label}</span>
+        aria-label={label} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}><span>{label}</span>
         {id === 'alerts' && low.length > 0 && <i aria-hidden="true" />}</button>)}</JellyNav>
     </header>
     <main className={s.content + ' ' + look.content} id="main-content" tabIndex={-1} ref={main}>
@@ -226,20 +255,20 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
         chosen={featured} choose={chooseFeatured} mode={overviewMode} setMode={setOverviewMode} />}
       {page === 'devices' && (inventory === 'cold' ? <DeviceSkeleton /> :
         inventory === 'unavailable' ? <Empty button={() => setFinding(true)}>暂无法读取设备，等待采集恢复</Empty> :
-        <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} clearSearch={() => search('')} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
-      {page === 'alerts' && <Alerts state={state} run={run} open={open} />}
-      {page === 'history' && <History state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={historyRange} chooseRange={chooseHistoryRange} />}
-      {page === 'settings' && <Settings state={state} run={run} palette={palette} choosePalette={choosePalette} range={historyRange} chooseRange={chooseHistoryRange} />}
+        <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} sort={deviceSort} setSort={setDeviceSort} clearSearch={() => search('')} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
+      {page === 'alerts' && <Alerts state={state} run={run} open={openDetail} />}
+      {page === 'history' && <History state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={viewRange} retention={historyRetention} chooseRange={chooseHistoryRange} slots={historySlots} setSlots={setHistorySlots} />}
+      {page === 'settings' && <Settings state={state} run={run} palette={palette} choosePalette={choosePalette} retention={historyRetention} position={settingsPosition} />}
       </div>
       {detailed && <div className={s.pageBody}>
         <header className={s.fullHeader + ' ' + look.detailBack}>
-          <button className={look.ghost} ref={detailBack} onClick={closeDetail}><ArrowLeft size={16} aria-hidden="true" />返回{page === 'overview' ? '总览' : '设备'}</button>
+          <button className={look.ghost} ref={detailBack} onClick={closeDetail}><ArrowLeft size={16} aria-hidden="true" />返回{pages.find(([id]) => id === page)?.[1]}</button>
         </header>
         <Details key={detailed.id} device={detailed} state={state} run={run} full />
       </div>}
       <footer className={s.appFooter + ' ' + look.footer} data-cold={page === 'overview' && !detailed && inventory === 'cold'}>
         <span className={s.monitorState}><i data-state={state.collector} />{state.collector === "ready" ? "后台监测中" : "等待采集"}</span>
-        {page === "overview" && !detailed && <button className={s.textButton} onClick={() => { setPage("alerts"); window.scrollTo(0, 0); }}>管理提醒 <ChevronRight size={16} /></button>}
+        {page === "overview" && !detailed && <button className={s.textButton} onClick={() => navigate("alerts")}>管理提醒 <ChevronRight size={16} /></button>}
         <small>{state.demo ? '示例数据' : '电量以设备或 Windows 上报为准'}</small>
       </footer>
     </main>
@@ -261,8 +290,8 @@ function DeviceSkeleton() {
 function batteryState(device: Device, state: Snapshot) {
   if (device.status !== 'current' || !device.reading) return device.reason;
   const alert = level(device, state);
-  if (alert) return alert === 'critical' ? '电量告急' : '建议充电';
-  if (device.reading.power === 'charging') return '正在充电';
+  if (alert) return alert === 'critical' ? '电量告急' : '低电量';
+  if (device.reading.power === 'charging') return '充电中';
   if (device.reading.power === 'full') return '已充满';
   return '电量正常';
 }
@@ -302,15 +331,20 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
   const [order, setOrder] = useState(() => overviewOrder(state));
   const [stageResumed, setStageResumed] = useState(false);
   const [modeInfo, setModeInfo] = useState<'entry' | 'exit'>();
-  const [direction, setDirection] = useState<'next' | 'previous'>('next');
-  const [departing, setDeparting] = useState<{ device: Device; dragOffset: number }>();
+  const [departing, setDeparting] = useState<Device>();
   const [listOutgoing, setListOutgoing] = useState<{ device: Device; opacity: number; y: number }>();
+  const [listReady, setListReady] = useState(true);
+  const [listIncoming, setListIncoming] = useState<{ opacity: number; y: number }>();
+  const artRequest = useRef(0);
   const listArtwork = useRef<HTMLDivElement>(null);
   const overviewDesk = useRef<HTMLDivElement>(null);
   const overviewPlane = useRef<HTMLDivElement>(null);
   const modeMotion = useRef<OverviewModeMotion | undefined>(undefined);
-  const [travel, setTravel] = useState(0);
-  const drag = useRef<{ pointer: number; at: number; y: number } | null>(null);
+  const carousel = useRef<HTMLDivElement>(null);
+  const stageAnimations = useRef<Animation[]>([]);
+  const pendingStage = useRef<(() => void) | undefined>(undefined);
+  const drag = useRef<{ pointer: number; x: number; y: number; samples: StageSample[]; poses?: Map<string, StagePose> } | null>(null);
+  const lastDragged = useRef(-Infinity);
   const hero = useRef<HTMLElement>(null);
   const deviceById = new Map(state.devices.map(device => [device.id, device]));
   const ordered = [...new Set([...order, ...overviewOrder(state)])].flatMap(id => {
@@ -347,21 +381,15 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
     if (chosen && !available.has(chosen)) choose(undefined);
   }, [state, chosen]);
   useEffect(() => {
-    if (initial) return;
-    const neighbors = [featured, ordered[index - 1], ordered[index + 1], ordered[0]].filter((item): item is Device => !!item);
-    neighbors.forEach(prepareHero);
+    if (initial || index < 0) return;
+    const at = (offset: number) => ordered[(index + offset + ordered.length) % ordered.length];
+    [featured, at(-1), at(1), ordered[0]].filter((item): item is Device => !!item).forEach(prepareHero);
   }, [initial, featured?.art, index, ordered.length]);
   useEffect(() => {
-    if (!departing) return;
-    const timer = window.setTimeout(() => setDeparting(undefined), 520);
-    return () => clearTimeout(timer);
-  }, [departing]);
-
-  useEffect(() => {
-    if (!listOutgoing) return;
+    if (!listOutgoing || !listReady) return;
     const timer = window.setTimeout(() => setListOutgoing(undefined), 250);
     return () => clearTimeout(timer);
-  }, [listOutgoing]);
+  }, [listOutgoing, listReady]);
 
   useEffect(() => {
     const cancel = () => modeMotion.current?.cancel();
@@ -378,9 +406,23 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
   }, []);
 
   useEffect(() => { modeMotion.current?.cancel(); }, [featured?.id]);
+  useEffect(() => {
+    const policy = matchMedia('(prefers-reduced-motion: reduce)');
+    const clear = () => { resetStage(); setDeparting(undefined); };
+    policy.addEventListener('change', clear);
+    document.addEventListener('visibilitychange', clear);
+    window.addEventListener('resize', clear);
+    return () => {
+      policy.removeEventListener('change', clear);
+      document.removeEventListener('visibilitychange', clear);
+      window.removeEventListener('resize', clear);
+      resetStage();
+    };
+  }, []);
 
   function switchMode(next: 'stage' | 'list') {
     if (next === mode) return;
+    artRequest.current++;
     const desk = overviewDesk.current;
     const plane = overviewPlane.current;
     const enabled = featured && desk && plane && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -389,8 +431,11 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
     const before = morph ? motion?.read(mode, featured.id) : undefined;
     const reflection = enabled && next === 'list' ? freezeReflection(stageReflection(desk)) : undefined;
     motion?.cancel();
+    resetStage();
     const commit = () => {
       setListOutgoing(undefined);
+      setListIncoming(undefined);
+      setListReady(true);
       setDeparting(undefined);
       setRevealId(undefined);
       setStageResumed(next === 'stage' && !before?.photo);
@@ -403,58 +448,185 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
   }
 
   function previewInList(device: Device) {
-    modeMotion.current?.cancel();
+    const request = ++artRequest.current;
     if (device.id === featured?.id) return;
-    let outgoing: typeof listOutgoing;
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && featured && listArtwork.current) {
-      // Retarget from the brightest visible layer, not from a mostly transparent new device.
+    const commit = () => {
+      if (request !== artRequest.current || !listArtwork.current?.isConnected) return;
+      modeMotion.current?.cancel();
       const live = [...listArtwork.current.querySelectorAll<HTMLElement>('[data-list-art-layer]')].map(node => {
         const style = getComputedStyle(node);
         return { id: node.dataset.deviceId, opacity: Number(style.opacity),
-          y: style.transform === 'none' ? 0 : new DOMMatrixReadOnly(style.transform).m42 };
-      }).sort((a, b) => b.opacity - a.opacity)[0];
-      const visible = live?.id === featured.id ? featured : listOutgoing?.device.id === live?.id ? listOutgoing?.device : undefined;
-      if (visible && visible.id !== device.id && live)
-        outgoing = { device: visible, opacity: live.opacity, y: live.y };
-    }
-    setListOutgoing(outgoing);
-    setDeparting(undefined);
-    choose(device.id);
+          y: style.transform === 'none' ? 0 : new DOMMatrixReadOnly(style.transform).m42,
+          ready: Boolean(node.querySelector('[data-art-ready], svg[data-device-art]')) };
+      });
+      const previous = live.filter(item => item.id !== device.id).sort((a, b) => b.opacity - a.opacity)[0];
+      const incoming = live.find(item => item.id === device.id);
+      const visible = previous && (previous.id === featured?.id ? featured :
+        previous.id === listOutgoing?.device.id ? listOutgoing?.device : undefined);
+      setListOutgoing(visible && previous.opacity > .01 ? { device: visible, opacity: previous.opacity, y: previous.y } : undefined);
+      setListIncoming(incoming);
+      setListReady(incoming?.ready === true || device.art === 'unknown' || !visible);
+      setDeparting(undefined);
+      choose(device.id);
+    };
+    if (heroPrepared(device)) commit();
+    else void prepareHero(device).then(commit);
   }
   const connectionStatus = !featured || featured.status === 'stale' || inventory !== 'ready'
     ? 'pending' : featured.status === 'offline' ? 'offline' : isConnected(featured) ? 'connected' : 'pending';
   const critical = !!featured && inventory === 'ready' && level(featured, state) === 'critical';
 
-  function activate(device: Device, way?: 'next' | 'previous', dragOffset = 0) {
-    modeMotion.current?.cancel();
+  const stageNodes = () => [...(carousel.current?.querySelectorAll<HTMLElement>('[data-stage-layer]') ?? [])];
+  function stopStageAnimations() {
+    pendingStage.current = undefined;
+    const previous = stageAnimations.current;
+    stageAnimations.current = [];
+    previous.forEach(animation => animation.cancel());
+  }
+  function resetStage() {
+    stopStageAnimations();
+    drag.current = null;
+    if (carousel.current) delete carousel.current.dataset.dragging;
+    stageNodes().forEach(node => { node.style.removeProperty('transform'); node.style.removeProperty('opacity'); });
+  }
+  function playStage(frames: Map<string, Keyframe[]>, duration: number, waitForPhoto = true) {
+    const photo = carousel.current?.querySelector<HTMLImageElement>('[data-active-stage] img[data-device-art]');
+    if (waitForPhoto && photo && photo.dataset.artReady === undefined) {
+      // JSX mounts its own image. Even if the preloader finished, the live
+      // image may re-fetch. Keep the last painted frame until it is ready.
+      stageNodes().forEach(node => {
+        const first = frames.get(node.dataset.stageLayer!)?.[0];
+        if (first && typeof first.transform === 'string' && typeof first.opacity === 'number')
+          paintStage(node, { transform: first.transform, opacity: first.opacity });
+      });
+      pendingStage.current = () => playStage(frames, duration, false);
+      return;
+    }
+    pendingStage.current = undefined;
+    if (!duration) {
+      stageNodes().forEach(node => { node.style.removeProperty('transform'); node.style.removeProperty('opacity'); });
+      setDeparting(undefined);
+      return;
+    }
+    const active: Animation[] = [];
+    stageNodes().forEach(node => {
+      const poses = frames.get(node.dataset.stageLayer!);
+      if (!poses) return;
+      // The settled style is already underneath the animation; WAAPI owns only the flight.
+      node.style.removeProperty('transform');
+      node.style.removeProperty('opacity');
+      active.push(node.animate(poses, { duration, fill: 'both' }));
+    });
+    stageAnimations.current = active;
+    void Promise.allSettled(active.map(animation => animation.finished)).then(() => {
+      if (stageAnimations.current !== active) return;
+      stopStageAnimations();
+      setDeparting(undefined);
+    });
+  }
+  function activate(device: Device, way?: 1 | -1, velocity = 0, gesture = false, tried = false) {
+    const request = ++artRequest.current;
     if (initial || device.id === featured?.id) return;
-    const destination = ordered.findIndex(item => item.id === device.id);
-    setDirection(way ?? (destination < index ? 'previous' : 'next'));
-    setDeparting(featured && !matchMedia('(prefers-reduced-motion: reduce)').matches ? { device: featured, dragOffset } : undefined);
-    setRevealId(undefined);
-    choose(device.id);
-  }
-  function step(delta: number, dragOffset = 0) {
-    if (ordered.length < 2) return;
-    activate(ordered[(index + delta + ordered.length) % ordered.length], delta > 0 ? 'next' : 'previous', dragOffset);
-  }
-  function openFeatured(device: Device) {
+    if (!tried && !heroPrepared(device)) {
+      void prepareHero(device).then(() => {
+        if (request === artRequest.current && carousel.current?.isConnected) activate(device, way, velocity, gesture, true);
+      });
+      return;
+    }
     modeMotion.current?.cancel();
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const live = new Map(stageNodes().map(node => [node.dataset.stageLayer!, stagePose(node)]));
+    const outgoing = [featured, departing].filter((item): item is Device => !!item && item.id !== device.id)
+      .sort((a, b) => (live.get(b.id)?.opacity ?? 0) - (live.get(a.id)?.opacity ?? 0))[0];
+    const direction = way ?? (ordered.findIndex(item => item.id === device.id) < index ? -1 : 1);
+    const out = outgoing && live.get(outgoing.id);
+    resetStage();
+    flushSync(() => {
+      setDeparting(outgoing);
+      setRevealId(undefined);
+      choose(device.id);
+    });
+    const enter = live.get(device.id) ?? {
+      transform: gesture ? `perspective(1000px) translate3d(${38 * direction}%, 3%, -175px) rotateY(${-25 * direction}deg) scale(.83)`
+        : `translateX(${8 * direction}px)`,
+      opacity: 0,
+    };
+    const frames = new Map<string, Keyframe[]>([[device.id, [
+      { ...enter, easing: 'cubic-bezier(.19,.74,.22,1)' }, stageRest,
+    ]]]);
+    if (outgoing && out) {
+      const exit: StagePose = { opacity: 0, transform: gesture
+        ? `perspective(1000px) translate3d(${-48 * direction}%, 4%, -205px) rotateY(${28 * direction}deg) scale(.8)`
+        : `translateX(${-8 * direction}px)` };
+      // First 24 ms inherit pointer speed without jumping away from the last visible pose.
+      const lead = Math.max(-34, Math.min(34, velocity * .024));
+      frames.set(outgoing.id, gesture && Math.abs(lead) > 1 ? [
+        { ...out, offset: 0 }, { ...shifted(out, lead), offset: .052, easing: 'cubic-bezier(.26,.55,.29,1)' }, { ...exit, offset: 1 },
+      ] : [{ ...out, easing: 'cubic-bezier(.24,.62,.3,1)' }, exit]);
+    }
+    playStage(frames, reduced ? 0 : gesture ? 460 : 205);
+  }
+  function step(delta: 1 | -1, velocity = 0, gesture = false) {
+    if (ordered.length < 2) return;
+    activate(ordered[(index + delta + ordered.length) % ordered.length], delta, velocity, gesture);
+  }
+  function openFeatured(device: Device, row?: HTMLElement) {
+    const wasFeatured = device.id === featured?.id;
+    artRequest.current++;
+    modeMotion.current?.cancel();
+    // Capture the active photo before clearing any in-progress carousel movement.
+    if (device.id === featured?.id && mode === 'stage') {
+      openDetail(device.id, hero.current ?? undefined);
+      resetStage();
+      setDeparting(undefined);
+      return;
+    }
     if (device.id !== featured?.id || departing || listOutgoing) flushSync(() => {
       setListOutgoing(undefined);
+      setListIncoming(undefined);
+      setListReady(true);
       setDeparting(undefined);
       setRevealId(undefined);
       if (device.id !== featured?.id) choose(device.id);
     });
-    openDetail(device.id, (mode === 'stage' ? hero.current : listArtwork.current) ?? undefined);
+    openDetail(device.id, (!wasFeatured && row ? row : mode === 'stage' ? hero.current : listArtwork.current) ?? undefined);
+  }
+  function trackDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const tracking = drag.current;
+    if (!tracking || tracking.pointer !== event.pointerId) return;
+    const dx = event.clientX - tracking.x;
+    const dy = event.clientY - tracking.y;
+    tracking.samples = [...tracking.samples, { x: event.clientX, at: event.timeStamp }].filter(point => event.timeStamp - point.at <= 100);
+    if (!tracking.poses) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { drag.current = null; return; }
+      if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy) * 1.1) return;
+      tracking.poses = new Map(stageNodes().map(node => [node.dataset.stageLayer!, stagePose(node)]));
+      stopStageAnimations();
+      event.currentTarget.dataset.dragging = 'true';
+    }
+    const x = stageTravel(dx, event.currentTarget.clientWidth);
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+      stageNodes().forEach(node => paintStage(node, shifted(tracking.poses!.get(node.dataset.stageLayer!) ?? stageRest, x)));
   }
   function endDrag(event: ReactPointerEvent<HTMLDivElement>, commit: boolean) {
-    if (drag.current?.pointer !== event.pointerId) return;
-    const dx = event.clientX - drag.current.at;
-    const dy = event.clientY - drag.current.y;
+    const tracking = drag.current;
+    if (!tracking || tracking.pointer !== event.pointerId) return;
+    if (commit) trackDrag(event);
     drag.current = null;
-    setTravel(0);
-    if (commit && Math.abs(dx) >= 42 && Math.abs(dx) > Math.abs(dy) * 1.1) step(dx < 0 ? 1 : -1, travel * .14);
+    delete event.currentTarget.dataset.dragging;
+    if (!tracking.poses) return;
+    lastDragged.current = performance.now();
+    const dx = event.clientX - tracking.x;
+    const velocity = stageVelocity(tracking.samples);
+    const next = commit && stageLanding(dx, event.currentTarget.clientWidth, velocity);
+    if (next) { step(next, velocity, true); return; }
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { resetStage(); setDeparting(undefined); return; }
+    const frames = new Map(stageNodes().map(node => {
+      const pose = stagePose(node);
+      return [node.dataset.stageLayer!, [{ ...pose, easing: 'cubic-bezier(.22,.75,.23,1)' },
+        node.hasAttribute('data-active-stage') ? stageRest : { ...pose, opacity: 0 }]];
+    }));
+    playStage(frames, 230);
   }
   return <div ref={overviewDesk} className={look.desk + ' ' + listLook.modeDesk + (mode === 'list' ? ' ' + listLook.listDesk : '')} data-load-state={inventory === 'cached' || inventory === 'unavailable' ? inventory : phase} data-mode={mode} data-cold-reveal={reveal || undefined} data-mode-featured={!!featured && !initial || undefined}
     data-mode-info-entry={modeInfo === 'entry' || undefined} data-mode-info-exit={modeInfo === 'exit' || undefined}>
@@ -478,29 +650,37 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
           </button>
         </div>
       </div>
-      <div className={look.carousel} data-direction={direction} data-dragging={travel !== 0}
+      <div className={look.carousel} ref={carousel}
         role="group" aria-label="主设备视觉展示" tabIndex={initial || ordered.length <= 1 ? -1 : 0}
-        style={{ '--carousel-travel': travel * .14 + 'px' } as CSSProperties}
-        onDoubleClick={event => { if (!(event.target as Element).closest('button')) openFeatured(featured); }}
+        onDoubleClick={event => {
+          if (performance.now() - lastDragged.current > 320 && !(event.target as Element).closest('button')) openFeatured(featured);
+        }}
         onKeyDown={event => {
           if (event.target !== event.currentTarget || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
           event.preventDefault(); step(event.key === 'ArrowRight' ? 1 : -1);
         }}
         onPointerDown={event => {
           if (initial || ordered.length < 2 || !event.isPrimary || event.button !== 0 || (event.target as Element).closest('button')) return;
+          artRequest.current++;
           modeMotion.current?.cancel();
-          drag.current = { pointer: event.pointerId, at: event.clientX, y: event.clientY };
+          drag.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY, samples: [{ x: event.clientX, at: event.timeStamp }] };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
-        onPointerMove={event => {
-          if (drag.current?.pointer === event.pointerId) setTravel(Math.max(-140, Math.min(140, event.clientX - drag.current.at)));
-        }}
+        onPointerMove={trackDrag}
         onPointerUp={event => endDrag(event, true)}
         onPointerCancel={event => endDrag(event, false)}
         onLostPointerCapture={event => endDrag(event, false)}>
-        {departing && !initial && <div className={look.departing} data-departing="" key={'out-' + departing.device.id} aria-hidden="true"
-          style={{ '--arc-release': departing.dragOffset + 'px' } as CSSProperties}><SceneStage device={departing.device} reflect /></div>}
-        <div className={look.arriving} data-active-stage="" key={featured.id} data-animate={!!departing}><SceneStage device={featured} reflect revealPhoto={revealId === featured.id} /></div>
+        {(departing ? [departing, featured] : [featured]).map(device => {
+          const active = device.id === featured.id;
+          return <div key={device.id} className={active ? look.arriving : look.departing} data-stage-layer={device.id}
+            data-active-stage={active ? '' : undefined} data-departing={active ? undefined : ''} aria-hidden={!active || undefined}>
+            <SceneStage device={device} reflect revealPhoto={active && revealId === device.id}
+              onArtReady={active ? () => {
+                const current = carousel.current?.querySelector<HTMLElement>('[data-active-stage]');
+                if (current?.dataset.stageLayer === device.id) pendingStage.current?.();
+              } : undefined} />
+          </div>;
+        })}
         {ordered.length > 1 && ordered.length <= 8 && <div className={look.dots} role="group" aria-label="主设备切换">{ordered.map(device => <button
           key={device.id} aria-label={'展示 ' + device.name} aria-pressed={device.id === featured?.id} disabled={initial}
           onClick={() => activate(device)} />)}</div>}
@@ -511,10 +691,16 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
     {!initial && mode === 'list' && featured && <>
       <div className={listLook.artFrame} ref={listArtwork} data-list-artwork="" aria-hidden="true">
         {listOutgoing && <div className={listLook.artLayer} data-list-art-layer="" data-device-id={listOutgoing.device.id}
-          data-exiting="" key={listOutgoing.device.id}
+          data-exiting="" data-waiting={!listReady || undefined} key={listOutgoing.device.id}
           style={{ '--list-art-opacity': listOutgoing.opacity, '--list-art-y': listOutgoing.y + 'px' } as CSSProperties}><Art device={listOutgoing.device} variant="stage" /></div>}
         <div className={listLook.artLayer} data-list-art-layer="" data-device-id={featured.id}
-          data-animated={!!listOutgoing || undefined} key={featured.id}><Art device={featured} variant="stage" /></div>
+          data-animated={!!listOutgoing && listReady || undefined} data-waiting={!listReady || undefined} key={featured.id}
+          style={{ '--list-art-in-opacity': listIncoming?.opacity ?? 0, '--list-art-in-y': (listIncoming?.y ?? 8) + 'px' } as CSSProperties}>
+          <Art device={featured} variant="stage" onReady={() => {
+            const current = listArtwork.current?.querySelector<HTMLElement>('[data-list-art-layer]:not([data-exiting])');
+            if (current?.dataset.deviceId === featured.id) setListReady(true);
+          }} />
+        </div>
       </div>
     </>}
     {!initial && featured && (mode === 'list' || modeInfo === 'exit') &&
@@ -560,21 +746,19 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
               </span>
             </div>
           </button>
-          {mode === 'stage' ? <span className={listLook.stageArrow} aria-hidden="true"><ChevronRight size={15} /></span> :
-            <button className={listLook.details} aria-label={'查看详情 · ' + device.name} title="查看详情"
-            onClick={() => openFeatured(device)}>
+          <button className={listLook.details} aria-label={'查看详情 · ' + device.name} title="查看详情"
+            onClick={event => openFeatured(device, event.currentTarget.parentElement ?? undefined)}>
             <ChevronRight size={16} aria-hidden="true" />
-          </button>}
+          </button>
         </div>})}
       </div>
     </section>}
   </div>;
 }
 
-function Devices({ state, selected, pick, filter, setFilter, query, clearSearch, openDetail, run, find }: {
-  state: Snapshot; selected?: string; pick: (id?: string) => void; filter: Filter; setFilter: (value: Filter) => void; query: string; clearSearch: () => void; openDetail: (id: string, source?: HTMLElement) => void; run: Run; find: () => void;
+function Devices({ state, selected, pick, filter, setFilter, query, sort, setSort, clearSearch, openDetail, run, find }: {
+  state: Snapshot; selected?: string; pick: (id?: string) => void; filter: Filter; setFilter: (value: Filter) => void; query: string; sort: string; setSort: (value: string) => void; clearSearch: () => void; openDetail: (id: string, source?: HTMLElement) => void; run: Run; find: () => void;
 }) {
-  const [sort, setSort] = useState('state');
   const split = useRef<HTMLDivElement>(null);
   const { devices, alerts } = state;
   const online = devices.filter(isConnected);
@@ -611,20 +795,23 @@ function Devices({ state, selected, pick, filter, setFilter, query, clearSearch,
       <section className={s.deviceListing + ' ' + look.deviceListing} data-scroll-pane="">
         {visible.length ? <table className={s.deviceTable + ' ' + look.deviceTable}><caption>设备（{visible.length}）</caption>
           <thead><tr><th scope="col">设备</th><th scope="col">连接</th><th scope="col">电量</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
-          <tbody>{visible.map(device => <tr key={device.id} data-selected={device.id === detail?.id}
+          <tbody>{visible.map(device => {
+            const alert = level(device, state);
+            return <tr key={device.id} data-selected={device.id === detail?.id}
             onClick={() => pick(device.id)} onDoubleClick={() => openPreview(device)}>
             <td><button className={s.deviceName} type="button" aria-pressed={device.id === detail?.id} title={device.name}
-              aria-description="单击选择预览，双击或按 Enter 查看详情"
-              onClick={event => { if (event.detail === 0) { event.stopPropagation(); openPreview(device); } }}>
+              aria-description="选择后在右侧预览，可用查看详情按钮打开完整页面"
+              onClick={event => { event.stopPropagation(); pick(device.id); }}>
               <Art device={device} /><b>{device.name}</b>
             </button></td>
             <td>{device.status === 'stale' ? '待确认' : <Connection device={device} />}</td>
             <td className={s.rowReading} data-tone={tone(device, state)}><strong>{readingLabel(device.reading)}</strong>
+              {alert && <small className={s.compactReadingStatus}>{alert === 'critical' ? '电量告急' : '低电量'}</small>}
               {device.status !== 'current' && device.reading && <small title={dateLabel(device.lastRead)}>上次 · {dateLabel(device.lastRead)}</small>}</td>
             <td><StatusTag device={device} state={state} /></td>
             <td onDoubleClick={event => event.stopPropagation()}><button className={s.iconButton} aria-label={'查看详情 · ' + device.name} title="查看详情"
               onClick={event => { event.stopPropagation(); openPreview(device); }}><ChevronRight size={17} /></button></td>
-          </tr>)}</tbody>
+          </tr>; })}</tbody>
         </table> : <Empty button={devices.length ? () => { setFilter('all'); clearSearch(); } : find} action={devices.length ? '清除筛选' : '查找设备'}>{devices.length ? '未找到匹配设备' : '暂无受监测设备'}</Empty>}
       </section>
       {detail && <Details key={detail.id} device={detail} state={state} run={run} openFull={source => openDetail(detail.id, source)} />}
@@ -685,7 +872,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
           <Menu.Root><Menu.Trigger asChild><button className={s.button}><Ellipsis size={20} />更多操作</button></Menu.Trigger>
             <Menu.Portal><Menu.Content align="end" sideOffset={5} className={s.popover}>
               <Menu.Item className={s.menuOption} onSelect={() => send({ type: 'refresh' })}><RefreshCw size={15} aria-hidden="true" />立即刷新</Menu.Item>
-              <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'snooze', id: device.id })}><Clock size={15} aria-hidden="true" />稍后提醒</Menu.Item>
+              <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'snooze', id: device.id })}><Clock size={15} aria-hidden="true" />{snoozeAction(state.settings.snooze)}</Menu.Item>
               <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'ignore', id: device.id })}><BellOff size={15} aria-hidden="true" />忽略本次</Menu.Item>
               {device.watched && <><Menu.Separator className={s.menuDivider} /><Menu.Item className={s.menuOption} data-destructive onSelect={() => setRemove(true)}>
                 <MonitorSmartphone size={15} aria-hidden="true" />停止监测</Menu.Item></>}
@@ -725,7 +912,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
   </section>;
 }
 
-function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: string) => void }) {
+function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: string, source?: HTMLElement) => void }) {
   const devices = needCharge(state).sort((a, b) => Number(level(b, state) === 'critical') - Number(level(a, state) === 'critical'));
   const [low, setLow] = useState(state.settings.low);
   const [critical, setCritical] = useState(state.settings.critical);
@@ -747,12 +934,13 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
         const severityValue = level(device, state);
         const status = state.alerts[device.id];
         return <article className={preferences.chargeDevice} key={device.id} data-level={severityValue}>
-          <button className={preferences.deviceImage} aria-label={'查看 ' + device.name} onClick={() => open(device.id)}><Art device={device} variant="hero" /></button>
-          <div className={preferences.deviceInfo}><button className={s.linkTitle} onClick={() => open(device.id)}>{device.name}</button>
+          <div className={preferences.deviceImage}><Art device={device} variant="hero" /></div>
+          <div className={preferences.deviceInfo}><button className={s.linkTitle} aria-label={'查看详情 · ' + device.name}
+            onClick={event => open(device.id, event.currentTarget.closest('article') ?? undefined)}>{device.name}<ChevronRight size={14} aria-hidden="true" /></button>
             <BatteryMeter device={device} state={state} />
-            <small>{state.deviceSettings[device.id]?.muted ? '已静音' : status?.ignored === severityValue ? '已忽略本次' : (status?.snoozeUntil ?? 0) > Date.now() ? '已设为稍后提醒' : severityValue === 'critical' ? '电量告急' : ''}</small>
+            <small>{state.deviceSettings[device.id]?.muted ? '已静音' : status?.ignored === severityValue ? '已忽略本次' : (status?.snoozeUntil ?? 0) > Date.now() ? '提醒暂停至 ' + dateLabel(status?.snoozeUntil ?? null) : severityValue === 'critical' ? '电量告急' : ''}</small>
           </div>
-          <div className={preferences.chargeActions}><button className={s.button} onClick={() => { void run({ type: 'snooze', id: device.id }); }}>稍后提醒</button>
+          <div className={preferences.chargeActions}><button className={s.button} onClick={() => { void run({ type: 'snooze', id: device.id }); }}>{snoozeAction(state.settings.snooze)}</button>
             <Menu.Root><Menu.Trigger asChild><button className={s.iconButton} aria-label={device.name + '的提醒操作'}><Ellipsis size={19} /></button></Menu.Trigger>
               <Menu.Portal><Menu.Content className={s.popover} align="end" sideOffset={5}><Menu.Item className={s.menuOption} onSelect={() => { void run({ type: 'ignore', id: device.id }); }}>忽略本次</Menu.Item></Menu.Content></Menu.Portal>
             </Menu.Root>
@@ -774,20 +962,20 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
         <DetentSlider name="low-threshold" aria-label="全局低电量阈值" min={2} max={95}
           value={low} detents={thresholdDetents} detentLabel="快速选择全局低电量阈值" selectedDetent={low} disabled={saving}
           onValue={setLow} onDetent={setLow} />
-        <div className={preferences.thresholdLabel}><span>紧急</span><output>{critical}%</output></div>
-        <DetentSlider name="critical-threshold" aria-label="全局紧急阈值" min={1} max={94}
-          value={critical} detents={thresholdDetents} detentLabel="快速选择全局紧急阈值" selectedDetent={critical} disabled={saving}
+        <div className={preferences.thresholdLabel}><span>电量告急</span><output>{critical}%</output></div>
+        <DetentSlider name="critical-threshold" aria-label="全局告急阈值" min={1} max={94}
+          value={critical} detents={thresholdDetents} detentLabel="快速选择全局告急阈值" selectedDetent={critical} disabled={saving}
           onValue={setCritical} onDetent={setCritical} />
-        <div className={preferences.thresholdApply}>{(invalid || error) && <p role="alert">{invalid ? '紧急阈值需低于低电量阈值。' : error}</p>}
+        <div className={preferences.thresholdApply}>{(invalid || error) && <p role="alert">{invalid ? '告急阈值需低于低电量阈值。' : error}</p>}
           <button className={s.button} disabled={saving || !dirty || invalid}>{saving ? '应用中…' : '应用阈值'}</button></div>
       </form>
       <div className={preferences.repeat}><SettingRow title="重复提醒"><SelectControl label="重复提醒间隔" value={String(state.settings.repeat)} onChange={value => patch({ repeat: Number(value) })} choices={minutes([0, 15, 30, 60, 120])} /></SettingRow></div>
       <div className={preferences.notificationPreview}>
         <h3>桌面通知预览</h3>
-        <button className={preferences.notificationCard} aria-label={'发送' + (preview === 'low' ? '低电量' : '紧急') + '测试通知'} onClick={() => { void run({ type: 'preview', severity: preview, ...(previewTarget ? { id: previewTarget.id } : {}) }); }}>
+        <button className={preferences.notificationCard} aria-label={preview === 'low' ? '发送低电量测试通知' : '发送电量告急测试通知'} onClick={() => { void run({ type: 'preview', severity: preview, ...(previewTarget ? { id: previewTarget.id } : {}) }); }}>
           <Art device={previewDevice} /><span><small>发送测试通知</small><span>{previewDevice.name} <strong data-level={preview}>{readingLabel(previewDevice.reading)}</strong></span></span><Bell size={16} aria-hidden="true" />
         </button>
-        <div className={preferences.previewSwitch} role="group" aria-label="通知预览级别">{(['low', 'critical'] as const).map(value => <button key={value} aria-pressed={preview === value} onClick={() => setPreview(value)}>{value === 'low' ? '低电量' : '紧急'}</button>)}</div>
+        <div className={preferences.previewSwitch} role="group" aria-label="通知预览级别">{(['low', 'critical'] as const).map(value => <button key={value} aria-pressed={preview === value} onClick={() => setPreview(value)}>{value === 'low' ? '低电量' : '电量告急'}</button>)}</div>
       </div>
       <details className={preferences.morePreferences}><summary>通知与静音 <ChevronDown size={16} /></summary>
         <SettingRow title="右下角弹窗" hint="关闭后改用 Windows 通知。"><SwitchControl label="右下角弹窗" checked={state.settings.desktopToasts} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopToasts' }); }} /></SettingRow>
@@ -803,10 +991,11 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
 
 const historyClock = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric',
   hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-function History({ state, starting, find, range, chooseRange }: {
-  state: Snapshot; starting: boolean; find: () => void; range: HistoryRange; chooseRange: (value: string) => void;
+function History({ state, starting, find, range, retention, chooseRange, slots, setSlots }: {
+  state: Snapshot; starting: boolean; find: () => void; range: HistoryRange; retention: HistoryRange; chooseRange: (value: string) => void;
+  slots?: (string | undefined)[]; setSlots: (slots: (string | undefined)[]) => void;
 }) {
-  const [ids, select] = useState<string[]>();
+  const addDevice = useRef<HTMLButtonElement>(null);
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     const sync = () => { if (!document.hidden) setClock(Date.now()); };
@@ -816,33 +1005,43 @@ function History({ state, starting, find, range, chooseRange }: {
   }, []);
   const first = state.devices.find(item => item.art === 'mouse') ?? state.devices[0];
   const second = state.devices.find(item => item.id !== first?.id && item.art === 'dualsense');
-  const selected = (ids ?? [first?.id, second?.id]).map(id => state.devices.find(item => item.id === id))
-    .filter((item): item is Device => !!item);
-  if (!selected.length && first) selected.push(first);
+  const byId = new Map(state.devices.map(item => [item.id, item]));
+  const visibleSlots = (slots ?? [first?.id, second?.id]).map(id => id && byId.has(id) ? id : undefined);
+  if (!visibleSlots.some(Boolean) && first) visibleSlots[0] = first.id;
+  const seriesSlots = new Map(visibleSlots.flatMap((id, index) => id ? [[id, index] as const] : []));
+  const selected = [...seriesSlots.keys()].map(id => byId.get(id)!);
   const activeIds = selected.map(item => item.id);
+  const toggle = (id: string) => setSlots(toggleHistorySlots(visibleSlots, id));
   const single = selected.length === 1 ? selected[0] : undefined;
   const now = Math.max(clock, ...selected.map(item => item.lastRead ?? 0));
   return <section className={s.history} aria-label="电量对比记录">
     <div className={s.historyToolbar}>
-      <div className={s.historySpan}><SelectControl label="记录范围" value={range} choices={historyChoices} onChange={chooseRange} />
+      <div className={s.historySpan}><div className={s.historyRangeGroup}>
+          <SelectControl label="记录范围" value={range} choices={historyChoices.map(choice =>
+            ({ ...choice, disabled: !isHistoryRangeWithin(choice.value, retention) }))} onChange={chooseRange} />
+          {retention !== 'year' && <HelpTip label="可查看范围" text={`目前最多保留 ${historyRangeLabels[retention]}。可在设置 → 记录调整；延长期限不会找回已清理的记录。`} />}
+        </div>
         <span aria-label="实际查看时段">{historyClock.format(historyStart(now, range))} – {historyClock.format(now)}</span></div>
       <div className={s.historyChoices} role="group" aria-label="选择对比设备">
-        {selected.map((item, index) => <button type="button" key={item.id} className={s.historyChoice}
-          data-series={index} data-device={item.id} aria-pressed="true" disabled={activeIds.length === 1}
+        {selected.map(item => <button type="button" key={item.id} className={s.historyChoice}
+          data-series={seriesSlots.get(item.id)} data-device={item.id} disabled={activeIds.length === 1}
           aria-label={activeIds.length > 1 ? '移除对比：' + item.name : item.name} title={item.name}
-          onClick={() => select(toggleHistorySelection(activeIds, item.id))}>
+          onClick={event => {
+            if (event.currentTarget === document.activeElement) addDevice.current?.focus();
+            toggle(item.id);
+          }}>
           <Art device={item} /><i aria-hidden="true" /><span>{item.name}</span>
           {item.status === 'offline' && <Unplug size={13} aria-label="当前断开" />}
           {activeIds.length > 1 && <X className={s.historyRemove} size={12} aria-hidden="true" />}
         </button>)}
         {state.devices.length > 1 && <Menu.Root>
-          <Menu.Trigger asChild><button className={s.historyAdd}><Plus size={15} aria-hidden="true" />对比设备</button></Menu.Trigger>
+          <Menu.Trigger asChild><button ref={addDevice} className={s.historyAdd}><Plus size={15} aria-hidden="true" />对比设备</button></Menu.Trigger>
           <Menu.Portal><Menu.Content align="end" sideOffset={6} className={s.historyMenu} aria-label="可对比设备">
             {state.devices.map(item => {
               const checked = activeIds.includes(item.id);
               return <Menu.CheckboxItem key={item.id} checked={checked} className={s.menuOption}
                 disabled={checked ? activeIds.length === 1 : activeIds.length >= compareLimit}
-                onCheckedChange={() => select(toggleHistorySelection(activeIds, item.id))}>
+                onCheckedChange={() => toggle(item.id)}>
                 <span>{item.name}</span><Menu.ItemIndicator aria-hidden="true">✓</Menu.ItemIndicator>
               </Menu.CheckboxItem>;
             })}
@@ -851,35 +1050,98 @@ function History({ state, starting, find, range, chooseRange }: {
       </div>
     </div>
     {!first && !starting ? <Empty button={find}>暂无电量记录</Empty> :
-      <CompareChart devices={selected} starting={starting} anchor={now} range={range}
+      <CompareChart devices={selected} starting={starting} anchor={now} range={range} seriesSlots={seriesSlots}
         threshold={single ? state.deviceSettings[single.id]?.low ?? state.settings.low : undefined} />}
   </section>;
 }
-function Settings({ state, run, palette, choosePalette, range, chooseRange }: {
+function Settings({ state, run, palette, choosePalette, retention, position }: {
   state: Snapshot; run: Run; palette: Palette; choosePalette: (palette: Palette) => void;
-  range: HistoryRange; chooseRange: (value: string) => void;
+  retention: HistoryRange; position: RefObject<{ category: string; top: number }>;
 }) {
+  const [shorter, setShorter] = useState<HistoryRange>();
+  const [savingRetention, setSavingRetention] = useState(false);
+  const [retentionError, setRetentionError] = useState('');
+  const retentionControl = useRef<HTMLElement>(null);
+  async function saveRetention(value: HistoryRange, confirmed = false) {
+    setSavingRetention(true);
+    setRetentionError('');
+    const result = await run({ type: 'settings', patch: { historyRetention: value }, confirmHistoryShorten: confirmed });
+    setSavingRetention(false);
+    if (result.ok) closeRetention();
+    else if (confirmed) setRetentionError(result.error);
+  }
+  function closeRetention() {
+    setShorter(undefined);
+    setRetentionError('');
+    requestAnimationFrame(() => retentionControl.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus({ preventScroll: true }));
+  }
+  function selectRetention(value: string) {
+    if (!isHistoryRange(value) || savingRetention || value === retention) return;
+    if (!isHistoryRangeWithin(retention, value)) setShorter(value);
+    else void saveRetention(value);
+  }
   const [context, setContext] = useState('');
   const [exporting, setExporting] = useState(false);
-  const [active, setActive] = useState('appearance');
+  const [active, setActive] = useState(position.current.category);
   const sections = useRef<HTMLDivElement>(null);
+  const requested = useRef<string | undefined>(position.current.category);
   const send = (command: Command) => { void run(command); };
-  useEffect(() => {
-    const observer = new IntersectionObserver(entries => {
-      const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-      if (visible[0]) setActive(visible[0].target.id.replace('settings-', ''));
-    }, { rootMargin: '-100px 0px -55% 0px', threshold: 0 });
-    sections.current?.querySelectorAll('section').forEach(section => observer.observe(section));
-    return () => observer.disconnect();
-  }, []);
+  useLayoutEffect(() => {
+    const pane = sections.current;
+    const nodes = [...(pane?.querySelectorAll<HTMLElement>(':scope > section') ?? [])];
+    if (!pane || !nodes.length) return;
+    pane.scrollTop = position.current.top;
+    let frame = 0;
+    const sync = () => {
+      frame = 0;
+      position.current.top = pane.scrollTop;
+      if (requested.current) return;
+      const edge = pane.getBoundingClientRect().top + parseFloat(getComputedStyle(pane).scrollPaddingTop) + 2;
+      const bottom = pane.scrollHeight - pane.clientHeight;
+      const current = bottom > 2 && pane.scrollTop >= bottom - 2 ? nodes.at(-1) :
+        nodes.findLast(node => (node.querySelector('h2')?.getBoundingClientRect().top ?? Infinity) <= edge) ?? nodes[0];
+      if (current) {
+        position.current.category = current.id.slice('settings-'.length);
+        setActive(position.current.category);
+      }
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(sync); };
+    // While navigating to an explicit target, crossing another section (or a
+    // clamped position at the bottom) must not steal the selected category.
+    const release = () => { requested.current = undefined; };
+    const onKey = (event: KeyboardEvent) => {
+      if (['Tab', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(event.key)) release();
+    };
+    pane.addEventListener('wheel', release, { passive: true });
+    pane.addEventListener('pointerdown', release, { passive: true });
+    window.addEventListener('keydown', onKey);
+    pane.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => {
+      pane.removeEventListener('wheel', release);
+      pane.removeEventListener('pointerdown', release);
+      window.removeEventListener('keydown', onKey);
+      pane.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      cancelAnimationFrame(frame);
+    };
+  }, [position]);
   return <div className={preferences.settings} data-page="settings">
     <nav className={preferences.settingsNav} aria-label="设置分类">{[['appearance', '外观'], ['runtime', '运行与托盘'], ['history', '记录'], ['diagnostics', '诊断']].map(([id, title]) =>
-      <button key={id} aria-current={active === id ? 'location' : undefined} onClick={() => {
-        setActive(id); document.getElementById('settings-' + id)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
+      <button type="button" key={id} aria-controls={'settings-' + id} aria-current={active === id ? 'location' : undefined} onClick={() => {
+        const heading = document.querySelector<HTMLElement>('#settings-' + id + ' h2');
+        if (!heading) return;
+        requested.current = id;
+        position.current.category = id;
+        setActive(id);
+        heading.focus({ preventScroll: true });
+        heading.scrollIntoView({
+          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start', inline: 'nearest',
+        });
       }}>{title}</button>)}</nav>
-    <div className={preferences.settingsSections} ref={sections}>
+    <div className={preferences.settingsSections} ref={sections} data-scroll-pane="" role="region" aria-label="设置内容" tabIndex={0}>
       <section id="settings-appearance" className={preferences.appearance} aria-labelledby="appearance-heading">
-        <h2 id="appearance-heading">外观</h2>
+        <h2 id="appearance-heading" tabIndex={-1}>外观</h2>
         <div className={preferences.currentColor} role="group" aria-label="配色"><span>配色</span>
           <div>{palettes.map(([id, label]) => <label key={id} data-palette={id}>
             <input type="radio" name="appearance-palette" checked={palette === id} onChange={() => choosePalette(id)} />
@@ -890,16 +1152,28 @@ function Settings({ state, run, palette, choosePalette, range, chooseRange }: {
         <ZoomControl name="托盘浮窗" value={state.settings.trayZoom} apply={value => run({ type: 'settings', patch: { trayZoom: value } })} />
       </section>
       <section id="settings-runtime" className={preferences.settingsSection} aria-labelledby="runtime-heading">
-        <h2 id="runtime-heading">运行与托盘</h2>
+        <h2 id="runtime-heading" tabIndex={-1}>运行与托盘</h2>
         <SettingRow title="开机启动" hint="登录 Windows 后在托盘开始监测，不打开主窗口。"><SwitchControl label="随 Windows 登录启动" checked={state.settings.startup} onChange={value => send({ type: 'settings', patch: { startup: value } })} /></SettingRow>
         <SettingRow title="电量采集" hint="低电量和充电中的设备会更频繁更新；读不到时自动重试。"><button className={s.button} disabled={state.refreshing || state.collector === 'starting'} onClick={() => send({ type: 'refresh' })}>{state.refreshing ? '刷新中…' : '立即刷新'}</button></SettingRow>
       </section>
-      <section id="settings-history" className={preferences.settingsSection} aria-labelledby="settings-history-heading">
-        <h2 id="settings-history-heading">记录</h2>
-        <SettingRow title="默认查看范围"><SelectControl label="默认记录范围" value={range} choices={historyChoices} onChange={chooseRange} /></SettingRow>
+      <section ref={retentionControl} id="settings-history" className={preferences.settingsSection} aria-labelledby="settings-history-heading">
+        <h2 id="settings-history-heading" tabIndex={-1}>记录</h2>
+        <SettingRow title="保留上限" hint="按每台设备的高频采样估算，只算电量历史，不含诊断日志。最近 24 小时保留明细，更早只保留每日汇总。">
+          <SelectControl label="记录保留上限" value={retention} choices={retentionChoices} onChange={selectRetention} disabled={savingRetention} />
+        </SettingRow>
+        {shorter && <Modal title="缩短记录保留期限？"
+          description={`超过 ${historyRangeLabels[shorter]} 的电量记录将被删除。之后延长期限也无法恢复。`}
+          onClose={() => { if (!savingRetention) closeRetention(); }}>
+          {retentionError && <p className={s.formError} role="alert">{retentionError}</p>}
+          <div className={s.confirmActions}>
+            <button type="button" className={s.button} disabled={savingRetention} onClick={closeRetention}>取消</button>
+            <button type="button" className={s.deleteAction} disabled={savingRetention}
+              onClick={() => { void saveRetention(shorter, true); }}>{savingRetention ? '正在清理…' : '缩短并清理'}</button>
+          </div>
+        </Modal>}
       </section>
       <section id="settings-diagnostics" className={preferences.settingsSection} aria-labelledby="diagnostics-heading">
-        <h2 id="diagnostics-heading">诊断</h2>
+        <h2 id="diagnostics-heading" tabIndex={-1}>诊断</h2>
         <SettingRow title="记录 DualSense 电池电压" hint="电压记在本地诊断日志。"><SwitchControl label="记录 DualSense 电池电压" checked={state.settings.voltage} onChange={value => send({ type: 'settings', patch: { voltage: value } })} /></SettingRow>
         <SettingRow title="诊断日志"><button className={s.button} onClick={() => send({ type: 'diagnostics' })}>打开诊断目录 <ChevronRight size={16} /></button></SettingRow>
         <form className={preferences.compatibility} onSubmit={event => {

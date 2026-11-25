@@ -45,24 +45,24 @@ export function ChartFrame({ large, pending, threshold, children, notice, summar
   </div>;
 }
 
-type SummaryRow = { device: Device; name: ReactNode; lowest?: ReactNode; charge?: ReactNode; count?: ReactNode; pending?: boolean };
+type SummaryRow = { device: Device; slot?: number; name: ReactNode; lowest?: ReactNode; charge?: ReactNode; count?: ReactNode; pending?: boolean };
 export function HistorySummary({ rows, range = 'day' }: { rows: SummaryRow[]; range?: HistoryRange }) {
   return <table className={s.historySummary} aria-label={'近 ' + historyRangeLabels[range] + '记录摘要'}>
     <thead><tr><th scope="col">设备</th><th scope="col">最低记录</th><th scope="col">最近充电采样</th><th scope="col">有效采样</th></tr></thead>
-    <tbody>{rows.map(({ device, name, lowest, charge, count, pending }, index) => (
+    <tbody>{rows.map(({ device, name, lowest, charge, count, pending, slot }, index) => (
       <tr key={device.id} data-summary-device={device.id} data-pending={pending}>
-        <th scope="row"><div>{name}<i style={{ background: historyColors[index] }} /><span>{device.name}</span></div></th>
+        <th scope="row"><div>{name}<i style={{ background: historyColors[slot ?? index] }} /><span>{device.name}</span></div></th>
         <td>{pending ? '读取中' : lowest ?? '—'}</td><td>{charge ?? '—'}</td><td>{count ?? '—'}</td>
       </tr>
     ))}</tbody>
   </table>;
 }
 
-export function ChartLoadingFrame({ devices, large = true, threshold, reserveRows, renderArt, range = 'day' }: {
-  devices: Device[]; large?: boolean; threshold?: number; reserveRows: 1 | 3; renderArt: (device: Device) => ReactNode; range?: HistoryRange;
+export function ChartLoadingFrame({ devices, large = true, threshold, reserveRows, renderArt, range = 'day', seriesSlots }: {
+  devices: Device[]; large?: boolean; threshold?: number; reserveRows: 1 | 3; renderArt: (device: Device) => ReactNode; range?: HistoryRange; seriesSlots?: ReadonlyMap<string, number>;
 }) {
   return <ChartFrame large={large} pending threshold={threshold} reserveRows={reserveRows} range={range}
-    summary={<HistorySummary range={range} rows={devices.map(device => ({ device, name: renderArt(device), pending: true }))} />}>
+    summary={<HistorySummary range={range} rows={devices.map(device => ({ device, slot: seriesSlots?.get(device.id), name: renderArt(device), pending: true }))} />}>
     <ChartSkeleton large={large} />
   </ChartFrame>;
 }

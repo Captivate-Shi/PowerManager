@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { historyWindow, plotHistory, sampleAt, toggleHistorySelection, unsampledAfter } from '../src/history-plot';
+import { historyDateTicks, historyStart, historyWindow, plotHistory, sampleAt, toggleHistorySelection, toggleHistorySlots, unsampledAfter } from '../src/history-plot';
 import type { HistoryPoint, Power } from '../src/model';
 
 const now = 1_800_000_000_000;
@@ -151,4 +151,25 @@ test('trend interval ribbons use the measured time and bounds of each plateau', 
   assert.ok(ribbon.includes('Q8,10 8,14'));
   assert.ok(ribbon.includes('M12,20'));
   assert.ok(ribbon.includes('Q16,40 12,40'));
+});
+
+test('comparison reuses a vacated color without renumbering the other devices', () => {
+  const two = toggleHistorySlots(['mouse', 'dual', 'keyboard'], 'mouse');
+  assert.deepEqual(two, [undefined, 'dual', 'keyboard']);
+  const lone = toggleHistorySlots(two, 'keyboard');
+  assert.deepEqual(lone, [undefined, 'dual', undefined]);
+  assert.equal(toggleHistorySlots(lone, 'dual'), lone);
+  assert.deepEqual(toggleHistorySlots(two, 'xbox'), ['xbox', 'dual', 'keyboard']);
+  assert.equal(toggleHistorySlots(two, 'mouse').length, 3);
+});
+
+test('multi-day axis ticks advance by local date without repeating the first date', () => {
+  const end = new Date(2026, 10, 25, 11, 34).getTime();
+  for (const range of ['week', 'month', 'year'] as const) {
+    const start = historyStart(end, range);
+    const ticks = historyDateTicks(start, end, 8);
+    assert(ticks.length > 0 && ticks.length <= 8);
+    assert(ticks.every(time => time > start && time < end && new Date(time).getHours() === 0));
+    assert.equal(new Set([start, ...ticks].map(time => new Date(time).toLocaleDateString())).size, ticks.length + 1);
+  }
 });

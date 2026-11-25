@@ -30,8 +30,8 @@
 .artLayer img { height: 100%; width: 100%; object-fit: contain; }
 .artLayer[data-animated] { animation: list-art-in 240ms ease-out both; }
 .artLayer[data-exiting] { animation: list-art-out 230ms ease-out both; }
-@keyframes list-art-in { from { opacity: 0; transform: translateY(8px); } to { opacity: .95; transform: none; } }
-@keyframes list-art-out { from { opacity: var(--list-art-opacity,.95); transform: translateY(var(--list-art-y,0)); } to { opacity: 0; transform: translateY(8px); } }
+@keyframes list-art-in { from { opacity: var(--list-art-in-opacity,0); transform: translateY(var(--list-art-in-y,8px)); } to { opacity: .95; transform: none; } }
+@keyframes list-art-out { 0%, 18% { opacity: var(--list-art-opacity,.95); transform: translateY(var(--list-art-y,0)); } to { opacity: 0; transform: translateY(8px); } }
 @keyframes list-mode-arrive { from { opacity: .12; } }
 .stageResume { animation: list-stage-resume 220ms ease-out both; }
 @keyframes list-stage-resume { from { opacity: .72; } }
@@ -159,7 +159,8 @@
   line-height: 1.2;
 }
 .modeDesk[data-mode] .sharedInfo > strong { justify-self: end; }
-.stageArrow { width: 32px; height: 34px; display: grid; place-items: center; color: #a0adc0; }
+.details:hover { color: var(--ink); background: #ffffff10; }
+.details:active { background: #ffffff1b; }
 .modeExtra {
   position: absolute;
   inset: calc(50% + 12px) auto auto 0;
@@ -223,8 +224,8 @@
   .modeDesk[data-mode="stage"] > .modeRail { grid-column: 2; }
   .modeDesk[data-mode="stage"] > section[aria-label="主设备"] { grid-area: 1 / 1; }
   .modeDesk[data-mode-featured] > .status { grid-row: 1; }
-  .modeDesk[data-mode="stage"] .entry { grid-template-columns: minmax(0, 1fr) 16px; }
-  .modeDesk[data-mode="stage"] .stageArrow { width: 16px; }
+  .modeDesk[data-mode="stage"] .entry { grid-template-columns: minmax(0, 1fr) 24px; }
+  .modeDesk[data-mode="stage"] .details { width: 24px; }
   .modeDesk[data-mode][data-mode-featured] { --mode-row-height: 49px; }
   .modeDesk .entry > .selectRow > div:first-child { height: 38px; }
 }
@@ -306,3 +307,7 @@
   .modeDesk > .bottomVeil, .modeDesk[data-mode="list"][data-mode-featured] > .bottomVeil { transition: none; }
   .modeDesk[data-overview-rail-motion] .entry[data-list-selected]::after { animation: none; opacity: 0; }
 }
+
+.artLayer[data-waiting]:not([data-exiting]) { opacity: 0; animation: none; }
+.artLayer[data-waiting][data-exiting] { display: grid; animation: none;
+  opacity: var(--list-art-opacity,.95); transform: translateY(var(--list-art-y,0px)); }

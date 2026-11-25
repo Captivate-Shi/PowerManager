@@ -2,7 +2,7 @@ import { exactCurve, intervalPaths, intervalRibbon, trendCurve } from './history
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { RefreshCw, Zap } from 'lucide-react';
 import type { Device, HistoryDay, HistoryPoint, HistoryRange } from './model';
-import { historyRangeLabels, historyStart, plotHistory, sampleAt, type PlotSeries } from './history-plot';
+import { historyDateTicks, historyRangeLabels, historyStart, plotHistory, sampleAt, type PlotSeries } from './history-plot';
 import { api, Art, readingLabel } from './ui';
 import { ChartFrame, ChartProgress, ChartSkeleton, HistorySummary, historyColors, type ChartView } from './chart-loading';
 import s from './panel.module.css';
@@ -17,8 +17,8 @@ export function Chart({ device, threshold, large = false }: { device: Device; re
   return <HistoryComparison devices={[device]} threshold={threshold} large={large} reserveRows={1} />;
 }
 
-export function HistoryComparison({ devices, threshold, anchor, range = 'day', large = true, reserveRows = 3 }: {
-  devices: Device[]; threshold?: number; anchor?: number; range?: HistoryRange; large?: boolean; reserveRows?: 1 | 3;
+export function HistoryComparison({ devices, threshold, anchor, range = 'day', seriesSlots, large = true, reserveRows = 3 }: {
+  devices: Device[]; threshold?: number; anchor?: number; range?: HistoryRange; seriesSlots?: ReadonlyMap<string, number>; large?: boolean; reserveRows?: 1 | 3;
 }) {
   const [results, setResults] = useState<Record<string, ReadingResult>>({});
   const [retry, setRetry] = useState(0);
@@ -76,15 +76,19 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', l
     })), [results, range, start, end, daysById]);
   const activeSeries = useMemo(() => devices.flatMap((device, index): Series[] => {
     const plot = plotById.get(device.id);
-    return plot?.points.length ? [{ device, plot, color: historyColors[index], index, days: daysById.get(device.id) }] : [];
-  }), [devices, plotById, daysById]);
+    const slot = seriesSlots?.get(device.id) ?? index;
+    return plot?.points.length ? [{ device, plot, color: historyColors[slot], index: slot, days: daysById.get(device.id) }] : [];
+  }), [devices, plotById, daysById, seriesSlots]);
   const hasData = (id: string) => results[id]?.range === range && !!(results[id].points || results[id].days);
   const pending = devices.some(device => results[device.id]?.query !== signature(device));
   const errors = devices.filter(({ id }) => results[id]?.range === range && !!results[id]?.error);
   const settledEmpty = devices.filter(({ id }) => hasData(id) && !plotById.get(id)?.points.length);
   const onlyGaps = activeSeries.length > 0 && activeSeries.every(series => !series.plot.runs.length);
-  const status = errors.length ? {
-    text: errors.map(device => device.name + (hasData(device.id) ? '：保留上次记录' : '：读取失败')).join(' · '),
+  const allFailed = !pending && errors.length > 0 && errors.length === devices.length;
+  const retryButton = <button className={s.textButton} onClick={() => setRetry(value => value + 1)} disabled={pending}><RefreshCw size={13} aria-hidden="true" />重试</button>;
+  const status = errors.length && !(allFailed && !activeSeries.length) ? {
+    text: allFailed ? '更新失败，仍显示上次记录' :
+      errors.map(device => device.name + (hasData(device.id) ? '：保留上次记录' : '：读取失败')).join(' · '),
     retry: true,
   } : pending && activeSeries.length ? {
     text: '正在更新，暂显示已有记录',
@@ -98,7 +102,7 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', l
       ' 段无有效读数，' + plot.gaps.filter(gap => gap.kind === 'unrecorded').length + ' 段未采样').join('；')}</span>}
     {status && <div className={s.chartNotice} role="status">
       {status.progress ? <ChartProgress>{status.text}</ChartProgress> : <span title={status.text}>{status.text}</span>}
-      {status.retry && <button className={s.textButton} onClick={() => setRetry(value => value + 1)} disabled={pending}><RefreshCw size={13} />重试</button>}
+      {status.retry && retryButton}
     </div>}
   </>;
   const summary = <HistorySummary range={range} rows={devices.map(device => {
@@ -110,7 +114,7 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', l
     const latestCharge = days ? Math.max(0, ...days.map(bucket => bucket.lastCharge ?? 0)) :
       valid.findLast(point => point.reading?.power === 'charging')?.time;
     const count = days ? days.reduce((total, bucket) => total + bucket.count, 0) : valid.length;
-    return { device, name: <Art device={device} />, pending: !hasData(device.id) && result?.query !== signature(device),
+    return { device, slot: seriesSlots?.get(device.id), name: <Art device={device} />, pending: !hasData(device.id) && result?.query !== signature(device),
       lowest: lowest && <>{readingLabel(lowest.reading)} <small>{(range === 'day' ? tick : stamp).format(lowest.time)}</small></>,
       charge: latestCharge ? stamp.format(latestCharge) : undefined,
       count: hasData(device.id) ? count.toLocaleString('zh-CN') + ' 次' : undefined };
@@ -118,8 +122,9 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', l
   return <ChartFrame large={large} pending={pending} threshold={threshold} notice={notice} summary={summary} reserveRows={reserveRows} range={range}
     view={view} onView={activeSeries.some(item => item.plot.runs.length) ? setView : undefined}>
     {activeSeries.length ? <Graph key={range} series={activeSeries} start={start} end={end} threshold={threshold} range={range} view={view} /> : pending ?
-      <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large} role="status">
-        {errors.length ? '暂时无法读取电量记录' : '近 ' + historyRangeLabels[range] + '暂无设备读数'}
+      <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large}>
+        {allFailed ? <div><span role="status">电量记录读取失败</span>{retryButton}</div> :
+          <span role="status">{errors.length ? '没有可显示的电量读数' : '近 ' + historyRangeLabels[range] + '暂无设备读数'}</span>}
       </div>}
   </ChartFrame>;
 }
@@ -149,6 +154,8 @@ function Graph({ series, start, end, threshold, range, view }: {
   const left = width < 560 ? 39 : 65;
   const right = width - (width < 560 ? 10 : 24);
   const compact = height < 145;
+  const bucketSlot = (right - left) * 86_400_000 / Math.max(1, end - start);
+  const cap = Math.min(6, Math.max(0, bucketSlot * .6));
   const top = compact ? 11 : 14;
   const bottom = Math.max(33, height - (range === 'day' ? compact ? 34 : 59 : 30));
   const x = (time: number) => left + (time - start) / (end - start) * (right - left);
@@ -168,7 +175,8 @@ function Graph({ series, start, end, threshold, range, view }: {
     }
   } else {
     const intervals = Math.max(2, Math.min(8, Math.floor((right - left) / 95)));
-    for (let i = 1; i < intervals; i++) ticks.push(start + (end - start) * i / intervals);
+    ticks.push(...historyDateTicks(start, end, intervals).filter(instant =>
+      x(instant) - left >= 54 && right - x(instant) >= 54));
   }
   ticks.push(end);
   const paths = useMemo(() => series.map(({ plot, index, color }) => {
@@ -193,7 +201,10 @@ function Graph({ series, start, end, threshold, range, view }: {
       const first = run.points[0];
       if (run.points.length === 1) {
         const pos = x(first.time).toFixed(1);
-        brackets.push('M' + pos + ',' + y(first.reading.low).toFixed(1) + 'V' + y(first.reading.high).toFixed(1));
+        const low = y(first.reading.low).toFixed(1);
+        const high = y(first.reading.high).toFixed(1);
+        brackets.push(range === 'day' ? `M${pos},${low}V${high}` :
+          `M${Number(pos) - cap / 2},${low}h${cap}M${pos},${low}V${high}M${Number(pos) - cap / 2},${high}h${cap}`);
         continue;
       }
       const points = run.points.map(({ time, reading }) => [x(time), y(reading.high), y(reading.low)] as const);
@@ -211,7 +222,7 @@ function Graph({ series, start, end, threshold, range, view }: {
     }
     return { index, color, line: line.join(''), dots, bands: bands.join(''), brackets: brackets.join(''),
       upper: upperEdges.join(''), lower: lowerEdges.join('') };
-  }), [series, start, end, width, height, view]);
+  }), [series, start, end, width, height, view, range]);
   const eventPositions = useMemo(() => series.map(({ plot, index, color, device }) => {
     const valid = plot.runs.flatMap(run => run.points);
     const gaps = [...plot.gaps].sort((a, b) => Number(a.kind === 'invalid') - Number(b.kind === 'invalid')).map(gap => {
@@ -251,7 +262,7 @@ function Graph({ series, start, end, threshold, range, view }: {
       setPointer(localX < left || localX > right || localY < top || localY > bottom ? null : (localX - left) / (right - left));
     }} onPointerLeave={() => { setOver(null); if (!keyboard) setPointer(null); }}
     onBlur={() => { setKeyboard(false); setPointer(null); setOver(null); }}>
-    <svg className={s.graphSvg} width="100%" height="100%" aria-hidden="true">
+    <svg className={s.graphSvg} width="100%" height="100%" aria-hidden="true" data-chart-range={range}>
       <defs>{paths.filter(item => item.bands).map(item => <linearGradient key={item.index}
         id={gradientId + '-range-' + item.index} x2="0%" y2="100%">
         <stop offset="0%" stopColor={item.color} stopOpacity={view === 'trend' ? '.46' : '.25'} />
@@ -266,7 +277,7 @@ function Graph({ series, start, end, threshold, range, view }: {
         const last = i === ticks.length - 1;
         const anchor = i === 0 ? 'start' : last ? 'end' : 'middle';
         const px = x(instant);
-        return <g key={i}>
+        return <g key={instant} data-time-tick="">
           <line className={s.graphAxis} x1={px} x2={px} y1={bottom} y2={bottom + 7}/>
           <text className={s.graphLabel} x={px} y={bottom + (range === 'day' ? compact ? 30 : 34 : 22)} textAnchor={anchor}>
             {last ? '现在' : (range === 'day' ? tick : dayTick).format(instant)}</text>
@@ -279,12 +290,15 @@ function Graph({ series, start, end, threshold, range, view }: {
         <path data-trace="range" d={item.bands} fill={`url(#${gradientId}-range-${item.index})`} stroke="none" />
         <path className={s.graphBandUpper} d={item.upper} />
         <path className={s.graphBandLower} d={item.lower} />
-        <path className={s.graphBandUpper} d={item.brackets} />
+        <path className={range === 'day' ? s.graphBandUpper : s.graphDailyRange} data-daily-range={range !== 'day' || undefined}
+          style={range === 'year' ? { strokeWidth: Math.min(1.65, bucketSlot * .76) } : undefined} d={item.brackets} />
         <path data-trace="exact" className={s.graphTrace} d={item.line} />
-        {item.dots.map((value, index) => { const [cx, cy] = value.split(','); return <circle key={index} cx={cx} cy={cy} r="2" />; })}
+        {item.dots.map((value, index) => { const [cx, cy] = value.split(','); return <circle key={index} cx={cx} cy={cy} data-daily-point={range !== 'day' || undefined}
+          r={range === 'day' ? 2 : range === 'year' && item.dots.length > (right - left) / 6 ?
+            Math.min(2, bucketSlot * .46) : 3.2} />; })}
       </g>)}
       {eventPositions.map(({ device, color, index, gaps, valid, plot }) => <g key={device.id} data-event-series={index}>
-        {range === 'day' && !compact && index === 0 && valid.length > 1 && [valid.at(-1)!].map(point => point.reading.low === point.reading.high &&
+        {range === 'day' && !compact && index === series[0]?.index && valid.length > 1 && [valid.at(-1)!].map(point => point.reading.low === point.reading.high &&
           <g key={point.time} fill={color} pointerEvents="none">
             <circle cx={x(point.time)} cy={y(point.reading.high)} r="2.7" />
             <text x={x(point.time) - 7} y={y(point.reading.high) + (point.reading.high > 92 ? 17 : -10)}

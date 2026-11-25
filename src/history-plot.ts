@@ -2,13 +2,32 @@ import { historyPointEnd, type HistoryDay, type HistoryPoint, type HistoryRange,
 
 export const historyWindow = 86_400_000;
 export const historyRangeLabels = { day: '24 小时', week: '7 天', month: '30 天', year: '365 天' } satisfies Record<HistoryRange, string>;
-const daysByRange = { week: 7, month: 30, year: 365 } as const;
+export const historyPointLimit = 7200;
+// A rolling day crosses midnight; budget a third bucket around a short DST day.
+export const historyBucketLimit = { day: 3, week: 7, month: 30, year: 365 } satisfies Record<HistoryRange, number>;
 export function historyStart(end: number, range: HistoryRange) {
   if (range === 'day') return end - historyWindow;
   const date = new Date(end);
   date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - daysByRange[range] + 1);
+  date.setDate(date.getDate() - historyBucketLimit[range] + 1);
   return date.getTime();
+}
+
+/** Calendar ticks, not fractional subdivisions that can display the same date twice. */
+export function historyDateTicks(start: number, end: number, intervals: number): number[] {
+  const wallDay = (at: number) => {
+    const date = new Date(at);
+    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  };
+  const days = Math.round((wallDay(end) - wallDay(start)) / historyWindow);
+  const step = Math.max(1, Math.ceil(days / Math.max(1, intervals)));
+  const date = new Date(start);
+  return Array.from({ length: Math.max(0, Math.floor(days / step)) }, (_, index) => {
+    const tick = new Date(date);
+    tick.setDate(date.getDate() + (index + 1) * step);
+    tick.setHours(0, 0, 0, 0);
+    return tick.getTime();
+  }).filter(tick => tick > start && tick < end);
 }
 
 export function accumulateHistoryDay(days: HistoryDay[], { time, reading }: HistoryPoint) {
@@ -91,4 +110,15 @@ export function sampleAt(series: PlotSeries, time: number, end = time): HistoryP
 export function toggleHistorySelection(ids: string[], id: string): string[] {
   if (ids.includes(id)) return ids.length > 1 ? ids.filter(value => value !== id) : ids;
   return ids.length < compareLimit ? [...ids, id] : ids;
+}
+
+/** Keep colors attached to the remaining devices when a comparison changes. */
+export function toggleHistorySlots(slots: (string | undefined)[], id: string): (string | undefined)[] {
+  const index = slots.indexOf(id);
+  if (index !== -1) {
+    return slots.filter(Boolean).length > 1 ? slots.map(value => value === id ? undefined : value) : slots;
+  }
+  const free = slots.indexOf(undefined);
+  if (free !== -1) return slots.map((value, position) => position === free ? id : value);
+  return slots.length < compareLimit ? [...slots, id] : slots;
 }

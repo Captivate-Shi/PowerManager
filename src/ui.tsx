@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import * as Select from '@radix-ui/react-select';
 import * as Switch from '@radix-ui/react-switch';
 import { Battery, BatteryCharging, BatteryLow, Bluetooth, Cable, Check, ChevronDown, ChevronUp, CircleHelp, Wifi, X } from 'lucide-react';
-import { lazy, Suspense, useRef, type ComponentProps, type ReactNode } from 'react';
+import { lazy, Suspense, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { HelpTip } from './help-tip';
 import { ChartLoadingFrame } from './chart-loading';
 import { isConnected, type Reading, severity, type DesktopApi, type Device, type Snapshot } from './model';
@@ -23,30 +23,51 @@ const deviceArtUrl = (device: Device, variant: ArtVariant, loading: boolean) => 
   loading ? 'loading' : variant === 'thumb' || variant === 'card' ? 'thumb' : 'hero');
 const fallbackArtUrl = (device: Device, variant: ArtVariant) => renderedArt.has(device.art)
   ? './assets/' + device.art + '-' + (variant === 'stage' ? 'card' : variant === 'detail' ? 'hero' : variant) + '.webp' : artUrl(device.art);
-const warmedArtwork = new Set<string>();
-
-export function prepareHero(device: Device) {
-  if (device.art === 'unknown') return;
+const warmedArtwork = new Map<string, { ready: boolean; request: Promise<boolean> }>();
+export function heroPrepared(device: Device) {
+  return device.art === 'unknown' || warmedArtwork.get(deviceArtUrl(device, 'hero', false))?.ready === true;
+}
+export function prepareHero(device: Device): Promise<boolean> {
+  if (device.art === 'unknown') return Promise.resolve(true);
   const url = deviceArtUrl(device, 'hero', false);
-  if (warmedArtwork.has(url)) return;
-  warmedArtwork.add(url);
+  const previous = warmedArtwork.get(url);
+  if (previous) return previous.request;
   const image = new Image();
   image.src = url;
-  void image.decode().catch(() => { warmedArtwork.delete(url); });
+  const entry = { ready: false, request: image.decode().then(() => {
+    entry.ready = true;
+    return true;
+  }, () => {
+    warmedArtwork.delete(url); // allow a later attempt after a transient failure
+    return false;
+  }) };
+  warmedArtwork.set(url, entry);
+  return entry.request;
 }
 
-export function Art({ device, variant = 'thumb', loading = false, revealPhoto = false }: {
-  device: Device; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean;
+export function Art({ device, variant = 'thumb', loading = false, revealPhoto = false, onReady }: {
+  device: Device; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean; onReady?: () => void;
 }) {
+  const [failed, setFailed] = useState<string>();
   const url = deviceArtUrl(device, variant, loading);
   return <div className={s.art + (loading ? ' ' + scene.loadingArt : '')} data-art={device.art}
     style={loading && device.art !== 'unknown' ? { '--device-mask': `url("${url}")` } as React.CSSProperties : undefined}>
-    {device.art === 'unknown' ? <CircleHelp data-device-art='' aria-hidden='true' /> :
+    {device.art === 'unknown' || failed === url ? <CircleHelp data-device-art='' aria-hidden='true' /> :
       <img key={url} data-device-art='' src={url} width='120' height='90' alt='' draggable={false} data-cold-photo={revealPhoto || undefined}
-        onLoad={revealPhoto ? event => { event.currentTarget.dataset.coldPhotoLoaded = ''; } : undefined}
+        onLoad={event => {
+          const image = event.currentTarget;
+          if (revealPhoto) image.dataset.coldPhotoLoaded = '';
+          if (!onReady) return;
+          const ready = () => {
+            if (!image.isConnected || !image.naturalWidth) return;
+            image.dataset.artReady = '';
+            onReady();
+          };
+          void image.decode().then(ready, ready);
+        }}
         onError={event => {
           const image = event.currentTarget;
-          if (image.dataset.fallback) return;
+          if (image.dataset.fallback) { setFailed(url); onReady?.(); return; }
           image.dataset.fallback = 'true';
           if (loading) image.parentElement?.style.setProperty('--device-mask', `url("${new URL(fallbackArtUrl(device, variant), document.baseURI).href}")`);
           image.src = fallbackArtUrl(device, variant);
@@ -102,17 +123,22 @@ export function SectionTitle({ children, aside }: { children: ReactNode; aside?:
 export function SwitchControl({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
   return <Switch.Root className={s.switch} checked={checked} onCheckedChange={onChange} aria-label={label}><Switch.Thumb /></Switch.Root>;
 }
-export function SelectControl({ label, value, choices, onChange }: {
-  label: string; value: string; choices: { value: string; label: string }[]; onChange: (value: string) => void;
+export function SelectControl({ label, value, choices, onChange, disabled }: {
+  label: string; value: string; disabled?: boolean; choices: { value: string; label: string; detail?: string; disabled?: boolean }[]; onChange: (value: string) => void;
 }) {
-  return <Select.Root value={value} onValueChange={onChange}>
+  const details = useId();
+  return <Select.Root value={value} disabled={disabled} onValueChange={onChange}>
     <Select.Trigger className={s.select} aria-label={label} title={choices.find(choice => choice.value === value)?.label}>
       <span className={s.selectValue}><Select.Value /></span><Select.Icon asChild><ChevronDown className={s.selectChevron} size={15} aria-hidden="true" /></Select.Icon>
     </Select.Trigger>
-    <Select.Portal><Select.Content className={s.popover + ' ' + s.selectPopover} position="popper" sideOffset={5} collisionPadding={8}>
+    <Select.Portal><Select.Content className={s.popover + ' ' + s.selectPopover} position="popper" align={choices.some(choice => choice.detail) ? "end" : "start"} sideOffset={5} collisionPadding={8}>
       <Select.ScrollUpButton className={s.selectScroll}><ChevronUp size={15} aria-hidden="true" /></Select.ScrollUpButton>
-      <Select.Viewport className={s.selectViewport}>{choices.map(choice => <Select.Item key={choice.value} value={choice.value} className={s.option}>
-        <Select.ItemText>{choice.label}</Select.ItemText><Select.ItemIndicator><Check size={15} aria-hidden="true" /></Select.ItemIndicator>
+      <Select.Viewport className={s.selectViewport}>{choices.map(choice => <Select.Item key={choice.value} value={choice.value}
+        disabled={choice.disabled} className={s.option} data-with-detail={!!choice.detail || undefined}
+        aria-describedby={choice.detail ? details + '-' + choice.value : undefined}>
+        <Select.ItemText>{choice.label}</Select.ItemText>
+        {choice.detail && <span className={s.optionDetail} id={details + '-' + choice.value}>{choice.detail}</span>}
+        <Select.ItemIndicator><Check size={15} aria-hidden="true" /></Select.ItemIndicator>
       </Select.Item>)}</Select.Viewport>
       <Select.ScrollDownButton className={s.selectScroll}><ChevronDown size={15} aria-hidden="true" /></Select.ScrollDownButton>
     </Select.Content></Select.Portal>
@@ -153,8 +179,8 @@ export function Modal({ title, description, hint, onClose, children }: {
   </Dialog.Portal></Dialog.Root>;
 }
 export function SettingRow({ title, hint, status, children }: { title: string; hint?: string; status?: string; children: ReactNode }) {
-  return <div className={s.settingRow}><div><div className={s.settingLabel}><b>{title}</b>
-    {hint && <HelpTip label={title} text={hint} />}</div>{status && <small>{status}</small>}</div><div>{children}</div></div>;
+  return <div className={s.settingRow} data-setting-row=""><div data-setting-description=""><div className={s.settingLabel} data-setting-label=""><b>{title}</b>
+    {hint && <HelpTip label={title} text={hint} />}</div>{status && <small>{status}</small>}</div><div data-setting-control="">{children}</div></div>;
 }
 export const dateLabel = (value: number | null) => value ? new Intl.DateTimeFormat('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
@@ -171,7 +197,7 @@ export function Chart(props: ComponentProps<typeof HistoryView>) {
 }
 export function CompareChart({ starting, ...props }: ComponentProps<typeof ComparisonView> & { starting: boolean }) {
   const fallback = <ChartLoadingFrame devices={props.devices} large={props.large} threshold={props.threshold}
-    reserveRows={3} renderArt={chartArt} range={props.range} />;
+    reserveRows={3} renderArt={chartArt} range={props.range} seriesSlots={props.seriesSlots} />;
   if (starting && !props.devices.length) return fallback;
   return <Suspense fallback={fallback}><ComparisonView {...props} /></Suspense>;
 }

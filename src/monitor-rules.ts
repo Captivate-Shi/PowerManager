@@ -1,8 +1,8 @@
 import { historyPointEnd, severity, threshold, type AlertState, type Device, type DeviceSettings, type HistoryPoint, type Settings, type Severity } from './model';
-import { unsampledAfter } from './history-plot';
+import { historyPointLimit, unsampledAfter } from './history-plot';
 
 export const day = 24 * 60 * 60 * 1000;
-export const historyLimit = 7200;
+export { historyPointLimit as historyLimit } from "./history-plot";
 export function observeRecovery(device: Device, settings: Settings, rules: DeviceSettings | undefined, previous: AlertState): AlertState {
   const reading = device.status === 'current' ? device.reading : null;
   const recovered = reading && (reading.power === 'full' || reading.low >= threshold(settings, rules) + 5);
@@ -28,13 +28,13 @@ export function recordHistory(points: HistoryPoint[], point: HistoryPoint): Hist
     const ordered = retained.filter(item => item.time !== point.time);
     const position = ordered.findIndex(item => item.time > point.time);
     ordered.splice(position < 0 ? ordered.length : position, 0, point);
-    return ordered.slice(-historyLimit);
+    return ordered.slice(-historyPointLimit);
   }
   if (last && !last.reading && !point.reading && point.time - historyPointEnd(last) <= unsampledAfter) {
     return [...retained.slice(0, -1), { ...last, invalidThrough: Math.max(point.time, historyPointEnd(last)) }];
   }
   const end = retained.length - Number(last?.time === point.time);
-  return [...retained.slice(Math.max(0, end - historyLimit + 1), end), point];
+  return [...retained.slice(Math.max(0, end - historyPointLimit + 1), end), point];
 }
 export function delayFor(device: Device, settings: Settings, rules: DeviceSettings | undefined, failures: number) {
   if (device.status === 'current' && device.reading) {

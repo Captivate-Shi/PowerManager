@@ -32,7 +32,7 @@ export class OverviewModeMotion {
     const fitted = containedImage(target);
     if (fitted.width < 2 || fitted.height < 2) return { rail };
     const frame = target.closest('[data-list-artwork]');
-    const layer = target.closest('[data-list-art-layer]');
+    const layer = target.closest('[data-list-art-layer], [data-active-stage]');
     return { rail, photo: { src: target.currentSrc || target.src, deviceId, rect: fitted,
       filter: getComputedStyle(layer ?? target).filter,
       opacity: (layer ? Number(getComputedStyle(layer).opacity) : 1) * (frame ? Number(getComputedStyle(frame).opacity) : 1),
@@ -65,26 +65,29 @@ export class OverviewModeMotion {
       const plane = this.plane.getBoundingClientRect();
       const x = first.rect.x - dest.x, y = first.rect.y - dest.y;
       const sx = first.rect.width / dest.width, sy = first.rect.height / dest.height;
-      node = document.createElement('img');
-      node.alt = '';
-      node.src = first.src;
-      node.draggable = false;
-      node.dataset.modeHero = '';
-      node.dataset.deviceId = first.deviceId;
-      Object.assign(node.style, { left: dest.x - plane.x + 'px', top: dest.y - plane.y + 'px',
-        width: dest.width + 'px', height: dest.height + 'px' });
-      this.plane.append(node);
-      this.desk.dataset.overviewMorph = mode;
-      const travel = 450;
-      const timing = { duration: travel, easing: 'cubic-bezier(.25,.69,.26,1)', fill: 'both' as const };
-      animations.push(node.animate([
-        { transform: `translate3d(${x}px,${y}px,0) scale(${sx},${sy})`, filter: first.filter, opacity: first.opacity },
-        { transform: 'translate3d(0,0,0) scale(1)', filter: last.filter, opacity: last.opacity },
-      ], timing));
-      // Use the same soft edge as the real list artwork, moving its width
-      // instead of swapping a hard clip for a feathered one at handoff.
-      const matte = (right: number) => `${Math.max(0, right - plane.left)}px 100%`;
-      animations.push(this.plane.animate([{ maskSize: matte(first.matteRight) }, { maskSize: matte(last.matteRight) }], timing));
+      const candidate = document.createElement('img');
+      candidate.src = first.src;
+      if (candidate.complete && candidate.naturalWidth) node = candidate;
+      if (node) {
+        node.alt = '';
+        node.draggable = false;
+        node.dataset.modeHero = '';
+        node.dataset.deviceId = first.deviceId;
+        Object.assign(node.style, { left: dest.x - plane.x + 'px', top: dest.y - plane.y + 'px',
+          width: dest.width + 'px', height: dest.height + 'px' });
+        this.plane.append(node);
+        this.desk.dataset.overviewMorph = mode;
+        const travel = 450;
+        const timing = { duration: travel, easing: 'cubic-bezier(.25,.69,.26,1)', fill: 'both' as const };
+        animations.push(node.animate([
+          { transform: `translate3d(${x}px,${y}px,0) scale(${sx},${sy})`, filter: first.filter, opacity: first.opacity },
+          { transform: 'translate3d(0,0,0) scale(1)', filter: last.filter, opacity: last.opacity },
+        ], timing));
+        // Use the same soft edge as the real list artwork, moving its width
+        // instead of swapping a hard clip for a feathered one at handoff.
+        const matte = (right: number) => `${Math.max(0, right - plane.left)}px 100%`;
+        animations.push(this.plane.animate([{ maskSize: matte(first.matteRight) }, { maskSize: matte(last.matteRight) }], timing));
+      }
     }
     if (rail && from.rail && to.rail && from.rail.width > 0 && to.rail.width > 0) {
       const before = from.rail, after = to.rail;

@@ -102,7 +102,7 @@ export function DeviceThreshold({ deviceId, saved, global, critical, save }: {
 
   return <section className={styles.editor} aria-labelledby={id} data-device-threshold>
     <header><div className={styles.title}><h4 id={id}>设备低电量阈值</h4>
-      <HelpTip label="设备低电量阈值" text={'紧急阈值 ' + critical + '% 优先。调整后自动保存，不立即发送提醒。' +
+      <HelpTip label="设备低电量阈值" text={'告急阈值 ' + critical + '% 优先。调整后自动保存，不立即发送提醒。' +
         (actual > 50 ? ' 当前值超出滑块范围；调节后取 1%–50%。' : '')} />
     </div><output>{actual}%</output></header>
     <DetentSlider min={1} max={50} value={sliderValue} detents={presets}

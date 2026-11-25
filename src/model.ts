@@ -18,10 +18,13 @@ export type Settings = {
   low: number; critical: number; repeat: number; snooze: number; fullscreenSound: boolean;
   soundOnly: boolean; voltage: boolean; startup: boolean;
   zoom: number; trayZoom: number; desktopToasts: boolean; muteMinutes: MuteMinutes;
-  historyRange: HistoryRange;
+  historyRetention: HistoryRange;
 };
 export const historyRanges = ['day', 'week', 'month', 'year'] as const;
 export type HistoryRange = typeof historyRanges[number];
+export const isHistoryRangeWithin = (range: HistoryRange, limit: HistoryRange) =>
+  historyRanges.indexOf(range) <= historyRanges.indexOf(limit);
+export const limitHistoryRange = (range: HistoryRange, limit: HistoryRange) => isHistoryRangeWithin(range, limit) ? range : limit;
 export const isHistoryRange = (value: unknown): value is HistoryRange => historyRanges.some(range => range === value);
 export type DeviceSettings = { alias?: string; low?: number; muted?: boolean };
 export type HistoryPoint = { time: number; reading: Reading | null; invalidThrough?: number };
@@ -61,7 +64,7 @@ export type Command =
   | { type: 'compatibility'; context: string }
   | { type: 'history'; id: string; range?: HistoryRange }
   | { type: 'add' | 'remove' | 'bluetooth' | 'snooze' | 'ignore'; id: string }
-  | { type: 'settings'; patch: Partial<Settings> }
+  | { type: 'settings'; patch: Partial<Settings>; confirmHistoryShorten?: boolean }
   | { type: 'toggleAlertSetting'; key: AlertSwitch }
   | { type: 'deviceSettings'; id: string; patch: DeviceSettings }
   | { type: 'preview'; severity: Severity; id?: string };
@@ -85,7 +88,7 @@ export const defaults: Settings = {
   low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true,
   soundOnly: false, voltage: false, startup: false,
   zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60,
-  historyRange: 'day',
+  historyRetention: 'year',
 };
 export const midpoint = (reading: Reading) => Math.ceil((reading.low + reading.high) / 2);
 export const percent = (reading: Reading | null) =>
