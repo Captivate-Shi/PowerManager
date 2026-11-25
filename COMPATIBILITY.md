@@ -137,3 +137,14 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 复用现有 `046D:C548` 接收器与 HID++ 2.0 电量路径。固件特征索引从各自槽位动态查询，按 Unit ID 验证读数，不用接收器厂商号猜型号，也不固定键盘或鼠标的槽位。发现型号或类型读不全时，下次轮询补读；只有读到明确子设备名称才识别为 MX Keys S / MX Master 3S。区分 HID++ 1.0 的设备不存在与 HID++ 2.0 的忙，不随忙回复删掉设备。直连蓝牙不在本批。
 
 依据：[MX Keys S Windows/Bolt 实测工具](https://github.com/svanlaere/mxkeys-cli) · [双设备 Bolt 读取项目](https://github.com/FedeltaMedia/mx-battery) · [Linux HID++ 错误码](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-logitech-hidpp.c)。余电真机需确认同接收器双设备、休眠唤醒和充电切换。
+
+## 国产外设接收器一批
+
+| 设备 | 路径 | 接入边界 |
+| --- | --- | --- |
+| 迈从 G3 V2 | `3837:4245`、精确产品名、唯一 `FF01:0010` | 同次采样先查在线，再读电量；离线不吃缓存。按 M HUB 的档位显示，不把档位当精确百分比。参考 [MyFinder](https://github.com/wushuai0802/myfinder-device-battery/blob/main/docs/compatibility.md)、[VigilWatt](https://github.com/evren-oct/vigil-watt/blob/main/docs/hardware/mchose.md)。 |
+| 狼蛛 SC580 / SC580X | `089D:062F`、唯一 `FF02:0000` | 读设备状态，核对型号标记、校验和及无线在线标识。只显示验证过的电量；充电占位 100 不当成满电，设备明确上报充满才显示充满。参考 [同型号协议](https://github.com/Crucialjun/omarchy-aula-SC580)、[Windows 真机记录](https://github.com/notjiccu/wireless-device-battery-monitor#supported-devices)。 |
+| 达尔优 EM901X | `260D:1074`、对应的输入和 Feature 集合列入诊断 | **不发送电量查询，不开启监测。** 已知接收器关机后仍可回应上次电量，现有证据缺少能够独立验证无线在线的信号。参考 [Windows 上游驱动](https://github.com/notjiccu/wireless-device-battery-monitor/blob/main/src/drivers/dareu.cpp)。 |
+| 狼蛛 F87 Pro V2D | `0C45:FEFE`、精确产品名 `AULA F87ProV2D Dongle`、接口 3、唯一 `FF60:0061` | 只读对应状态页电量，不推断充电状态；不接共用 ID 的黑爵或其他 F87。参考 [BatteryMonitor 实测](https://github.com/JKWTCN/BatteryMonitor/blob/master/README.en.md#verified-devices)、[MyFinder 报文](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md#L2043-L2070)。 |
+
+三条监测路径都只匹配原装 2.4G 接收器，不发设置命令。使用余电的实物验收仍待进行。

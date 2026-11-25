@@ -82,7 +82,8 @@ json sample(const Sample& value)
             {"reason", value.millivolts && !value.reading ? "仅上报电压，暂无可靠百分比" :
                 value.status == Status::unavailable &&
                 ((value.feature == 0x1000 && (value.detail == 1 || value.detail == 2 || value.detail == 4)) ||
-                 (value.feature == 0x0a && value.report == 6 && value.detail == 255)) ?
+                 (value.feature == 0x0a && value.report == 6 && value.detail == 255) ||
+                 (value.feature == 0x30 && value.report == 0x30 && value.detail == 1)) ?
                 "设备充电中，未上报实时百分比" : utf8(statusName(value.status))},
             {"reportId", value.report}, {"detail", value.detail}, {"feature", value.feature},
             {"millivolts", value.millivolts ? json(*value.millivolts) : json(nullptr)}};
@@ -326,9 +327,11 @@ const char* art(const Device& device)
     if (device.transport == Transport::eightbitdo_pro3_bluetooth ||
         device.transport == Transport::switch_pro_bluetooth ||
         device.transport == Transport::gamesir_super_nova_receiver) return "controller";
-    if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard) return "keyboard";
+    if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard ||
+        device.transport == Transport::aula_f87v2d_receiver) return "keyboard";
     if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver ||
-        device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver) return "mouse";
+        device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver ||
+        device.transport == Transport::mchose_g3v2_receiver || device.transport == Transport::aula_sc580_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {
         if (device.kind == 0 || device.kind == 2) return "keyboard";
         if (device.kind >= 3 && device.kind <= 5) return "mouse";

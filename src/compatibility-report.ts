@@ -31,7 +31,7 @@ function from(value: unknown, values: Set<string>) {
   return typeof value === 'string' && values.has(value) ? value : undefined;
 }
 const provider = (value: unknown) =>
-  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo|mouse|sony|oppo|huawei|nintendo|gamesir|8bitdo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
+  typeof value === 'string' && /^(?:windows|ble|bluetooth|xinput|wgi|gameinput|dualsense|logitech|razer|vgn|rapoo|mouse|sony|oppo|huawei|nintendo|gamesir|mchose|aula|dareu|8bitdo)(?:-[a-z][a-z0-9-]{0,47}|-[0-9]{4}-[a-f0-9]{4})?$/.test(value) ? value : undefined;
 // A diagnostic target is a short ephemeral label, never an enumerator ID.
 const target = (value: unknown) => typeof value === 'string' && /^[A-Z]{1,3}[1-9][0-9]{0,3}$/.test(value) ? value : undefined;
 const bleReasons = new Set(['candidate', 'not_bluetooth', 'invalid_container', 'platform_unavailable', 'interface_enumeration_failed',
