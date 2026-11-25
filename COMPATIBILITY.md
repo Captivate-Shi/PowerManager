@@ -125,3 +125,9 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 仅限原生 Bluetooth HID 的 `057E:2009` 游戏手柄集合，需有唯一匹配接口和 Windows 设备容器。只被动读取完整 `0x30` 报告里的电量档位和充电标记，不发子命令、不强切模式，也不读取 USB 或 Joy-Con。手柄仅上报简化 `0x3F` 时，尝试同一物理容器的 Windows 电量；仍无则保留未知。界面的区间是档位表达，不是校准的百分比。第三方手柄可能复用同一标识，所以用“Switch Pro（蓝牙模式）”，不据此辨别原厂。
 
 依据：[SDL 报告布局](https://github.com/libsdl-org/SDL/blob/main/src/joystick/hidapi/SDL_hidapi_switch.c) · [Windows 枚举记录](https://github.com/libsdl-org/SDL/issues/11849) · [HaloBattery 实现范围](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md#nintendo-switch-pro-controller-joy-con-l--r)。余电仍待实物，需对照 Steam 或游戏已开启完整报告及无完整报告两种状态。
+
+## GameSir Super Nova
+
+只对 `3537:103E` 原装接收器、明确的 Super Nova / NovaPro / T4NPro 产品字符串、唯一 `FFA0` 集合及已匹配的物理 USB 容器发一次设备信息查询。不以共享 PID 区分 Super Nova 和 Tarantula Pro；通用名称、不匹配规格、有线或其他 GameSir 型号均不进入此路径。返回 `0xFF` 只记作充电但没有可用百分比，不补 100％，也不触发电量提醒。还需余电真机验证产品字符串、游戏共存及充电行为。
+
+依据：[Wireless Device Battery Monitor 的 Windows 实测与报文](https://github.com/notjiccu/wireless-device-battery-monitor/blob/main/docs/gamesir_sapjoy.md)。

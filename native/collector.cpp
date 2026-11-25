@@ -80,8 +80,9 @@ json sample(const Sample& value)
                             "unavailable", "basic_bluetooth", "charging_error"};
     return {{"status", status[static_cast<int>(value.status)]}, {"reading", reading(value.reading)},
             {"reason", value.millivolts && !value.reading ? "仅上报电压，暂无可靠百分比" :
-                value.feature == 0x1000 && value.status == Status::unavailable &&
-                (value.detail == 1 || value.detail == 2 || value.detail == 4) ?
+                value.status == Status::unavailable &&
+                ((value.feature == 0x1000 && (value.detail == 1 || value.detail == 2 || value.detail == 4)) ||
+                 (value.feature == 0x0a && value.report == 6 && value.detail == 255)) ?
                 "设备充电中，未上报实时百分比" : utf8(statusName(value.status))},
             {"reportId", value.report}, {"detail", value.detail}, {"feature", value.feature},
             {"millivolts", value.millivolts ? json(*value.millivolts) : json(nullptr)}};
@@ -323,7 +324,8 @@ const char* art(const Device& device)
     if (device.transport == Transport::sony_gamepad_usb || device.transport == Transport::sony_gamepad_bluetooth)
         return device.pid == 0x0df2 ? "dualsense" : "controller";
     if (device.transport == Transport::eightbitdo_pro3_bluetooth ||
-        device.transport == Transport::switch_pro_bluetooth) return "controller";
+        device.transport == Transport::switch_pro_bluetooth ||
+        device.transport == Transport::gamesir_super_nova_receiver) return "controller";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard) return "keyboard";
     if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver ||
         device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver) return "mouse";

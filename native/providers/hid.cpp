@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include "gamesir_battery.hpp"
 #include "peripheral_protocol.hpp"
 #include "device_identity.hpp"
 #include "device_search.hpp"
@@ -169,6 +170,8 @@ std::optional<Transport> candidate(const std::wstring& path)
     }
     if (path.find(L"{00001124-0000-1000-8000-00805f9b34fb}_vid&0002057e_pid&") != std::wstring::npos &&
         hexId(path, L"vid&0002057e_pid&", 4) == 0x2009) return Transport::switch_pro_bluetooth;
+    if (hexId(path, L"vid_", 4) == 0x3537 && hexId(path, L"pid_", 4) == 0x103e)
+        return Transport::gamesir_super_nova_receiver;
     return peripheralTransport(hexId(path, L"vid_", 4).value_or(0), hexId(path, L"pid_", 4).value_or(0));
 }
 
@@ -216,12 +219,24 @@ DWORD completeIo(HANDLE file, HANDLE event, Clock::time_point deadline, DWORD& b
     return Clock::now() <= deadline ? ERROR_SUCCESS : ERROR_TIMEOUT;
 }
 
+bool exactSuperNova(HANDLE handle)
+{
+    std::array<wchar_t,128> name{};
+    return HidD_GetProductString(handle, name.data(), static_cast<ULONG>(sizeof(name))) &&
+        name.back() == 0 && gamesir_battery::superNovaName(lower(name.data()));
+}
+
 class HidExchange {
 public:
     explicit HidExchange(const Collection& channel, DWORD access = GENERIC_READ | GENERIC_WRITE)
         : input_(channel.inputLength), file_(CreateFileW(channel.path.c_str(), access,
             sharing, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr)),
           openError_(file_.valid() ? 0 : GetLastError()), event_(CreateEventW(nullptr, TRUE, FALSE, nullptr)) {}
+
+    bool identifiesSuperNova() const
+    {
+        return file_.valid() && exactSuperNova(file_.value);
+    }
 
     template<class Match>
     DWORD request(std::span<std::uint8_t> query, Clock::time_point end, Match match, HidExchange* alternate = nullptr)
@@ -288,6 +303,26 @@ private:
     const DWORD openError_;
     Handle event_;
 };
+
+Sample readGameSirSuperNova(const Device& device)
+{
+    if (device.collections.size() != 1) return {Status::unavailable};
+    const auto& c = device.collections.front();
+    if (!gamesir_battery::collection(device.vid, device.pid, c.page, c.inputLength,
+        c.outputLength, c.featureLength)) return {Status::unavailable};
+
+    HidExchange exchange(c);
+    if (!exchange.identifiesSuperNova()) return {Status::unavailable};
+    auto query = gamesir_battery::deviceInfo;
+    Sample result{Status::unavailable};
+    const auto error = exchange.request(query, Clock::now() + 650ms, [&](auto bytes) {
+        const auto value = gamesir_battery::parseReply(bytes);
+        if (value.status == Status::bad_report) return false;
+        result = value;
+        return true;
+    });
+    return error ? ioFailure(error, 7) : result;
+}
 
 Sample readVgn(const Device& device)
 {
@@ -681,6 +716,7 @@ const wchar_t* transportName(Transport transport)
     case Transport::vgn_v3_receiver:
     case Transport::logitech_receiver:
     case Transport::rapoo_receiver:
+    case Transport::gamesir_super_nova_receiver:
     case Transport::supported_mouse_receiver: return L"2.4 GHz";
     }
     return L"";
@@ -705,6 +741,7 @@ const wchar_t* providerName(Transport transport)
     case Transport::logitech_receiver:
     case Transport::logitech_usb: return L"logitech-hidpp20";
     case Transport::rapoo_receiver: return L"rapoo-passive-hid";
+    case Transport::gamesir_super_nova_receiver: return L"gamesir-sapjoy";
     case Transport::supported_mouse_receiver: return L"mouse-vendor-hid";
     }
     return L"unknown";
@@ -824,10 +861,16 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if ((isVgn(*transport) || *transport == Transport::logitech_receiver || *transport == Transport::logitech_usb) &&
             (peripheralTransport(vid, pid) != transport || !haveCaps)) continue;
         if (*transport == Transport::rapoo_receiver && !isRapooReceiver(vid, pid)) continue;
-        if (*transport == Transport::supported_mouse_receiver) {
+        const bool superNova = *transport == Transport::gamesir_super_nova_receiver;
+        if (superNova || *transport == Transport::supported_mouse_receiver) {
             const auto kind = supportedMouse(vid, pid);
             const auto ifaceNumber = hexId(normalized, L"&mi_", 2);
-            if (!haveCaps || !kind || !ifaceNumber ||
+            if (!haveCaps) continue;
+            if (superNova) {
+                if (!gamesir_battery::collection(vid, pid, caps.UsagePage, caps.InputReportByteLength,
+                    caps.OutputReportByteLength, caps.FeatureReportByteLength) ||
+                    !info.valid() || !exactSuperNova(info.value)) continue;
+            } else if (!kind || !ifaceNumber ||
                 !supportedMouseCollection(*kind, static_cast<int>(*ifaceNumber), caps.UsagePage, caps.Usage)) continue;
             bool usbParent = false;
             DEVINST parent = devInfo.DevInst;
@@ -843,7 +886,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 parent = next;
             }
             if (!usbParent) continue;
-            if (*kind == SupportedMouse::aulaV9) {
+            if (kind == SupportedMouse::aulaV9) {
                 std::array<wchar_t, 128> name{};
                 if (!HidD_GetProductString(info.value, name.data(), static_cast<ULONG>(sizeof(name))) ||
                     name.back() != 0 || std::wstring_view(name.data()) != L"AULA-V9Pro+") continue;
@@ -867,7 +910,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         const bool bluetooth = *transport == Transport::dualsense_bluetooth;
         const auto key = deviceKey(devInfo.DevInst, *transport, normalized);
         // Report the receiver only when Windows supplied a physical container.
-        if ((switchPro || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
+        if ((superNova || switchPro || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
             !key.ends_with(L'}')) continue;
         auto [it, inserted] = devices.try_emplace(key, Device{key, *transport, attributes.VersionNumber,
                                                                bluetooth ? windowsBattery(devInfo.DevInst)
@@ -881,6 +924,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
         }
         if (pro3 && inserted) it->second.label = L"8BitDo Pro 3";
+        if (superNova && inserted) it->second.label = L"GameSir Super Nova";
         if (switchPro && inserted) it->second.label = L"Switch Pro（蓝牙模式）";
         if (extraSony && inserted) {
             it->second.label = pid == 0x0df2 ? L"DualSense Edge" : L"DUALSHOCK 4";
@@ -904,7 +948,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
     std::erase_if(receivers_, [&](const auto& item) { return !devices.contains(item.first); });
     std::vector<Device> result;
     for (auto& [key, device] : devices) {
-        if (device.transport == Transport::switch_pro_bluetooth && device.collections.size() != 1) continue;
+        if ((device.transport == Transport::switch_pro_bluetooth || device.transport == Transport::gamesir_super_nova_receiver) &&
+            device.collections.size() != 1) continue;
         if (device.transport == Transport::supported_mouse_receiver) {
             if (device.collections.size() != 1) continue;
             device.label = supportedMouse(device.vid, device.pid) == SupportedMouse::aerox9
@@ -1034,6 +1079,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
 
 Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
 {
+    if (device.transport == Transport::gamesir_super_nova_receiver) return readGameSirSuperNova(device);
     if (device.transport == Transport::supported_mouse_receiver) {
         const auto kind = supportedMouse(device.vid, device.pid);
         if (!kind || device.collections.size() != 1) return {Status::unavailable};

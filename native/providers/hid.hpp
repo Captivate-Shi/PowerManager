@@ -12,7 +12,7 @@
 namespace pm {
 
 enum class Transport { razer_receiver, dualsense_usb, dualsense_bluetooth, windows_battery, razer_shared_keyboard,
-    vgn_usb, vgn_receiver, vgn_v3_usb, vgn_v3_receiver, logitech_receiver, rapoo_receiver, logitech_usb, sony_gamepad_usb, sony_gamepad_bluetooth, supported_mouse_receiver, eightbitdo_pro3_bluetooth, switch_pro_bluetooth };
+    vgn_usb, vgn_receiver, vgn_v3_usb, vgn_v3_receiver, logitech_receiver, rapoo_receiver, logitech_usb, sony_gamepad_usb, sony_gamepad_bluetooth, supported_mouse_receiver, eightbitdo_pro3_bluetooth, switch_pro_bluetooth, gamesir_super_nova_receiver };
 constexpr bool isDualSense(Transport transport)
 {
     return transport == Transport::dualsense_usb || transport == Transport::dualsense_bluetooth;
