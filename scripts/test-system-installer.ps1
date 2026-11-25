@@ -38,6 +38,11 @@ try {
     $uninstall = (Get-ItemProperty -LiteralPath $key).UninstallString.Trim('"')
     if (!(Test-Path -LiteralPath $uninstall)) { throw 'Registered uninstaller missing.' }
     Invoke-Inno $uninstall 'uninstall' ''
+    # Inno may hand off to a temporary uninstaller executable.
+    $deadline = [DateTime]::UtcNow.AddSeconds(12)
+    while ((Test-Path -LiteralPath (Join-Path $app '.installer-maintenance')) -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+    }
     if ((Test-Path -LiteralPath (Join-Path $app 'PowerManager-H5.exe')) -or
         (Test-Path -LiteralPath $shortcut) -or (Test-Path -LiteralPath $key)) { throw 'Owned files, shortcut, or registration remain.' }
     if (!(Test-Path -LiteralPath $foreign) -or !(Test-Path -LiteralPath $profileProbe)) { throw 'Uninstall removed unrelated files or user data.' }

@@ -58,8 +58,8 @@ english.PMUnsafePath=Choose a dedicated local folder. Network paths, linked fold
 chs.PMUnsafePath=请选择本机的独立目录。不支持网络路径、链接目录或磁盘根目录。
 english.PMSystemPath=For all users, choose a dedicated subfolder directly under the system Program Files folder. If it is missing or unavailable, restart Setup and choose Current user only.
 chs.PMSystemPath=为所有用户安装时，请选择系统 Program Files 下的独立子目录。如果系统目录不存在或不可用，请重新运行安装包并选择「仅为我安装」。
-english.PMNotEmpty=Choose a new or empty folder. Setup will not overwrite files in an unregistered directory.
-chs.PMNotEmpty=请选择新目录或空目录。安装程序不会覆盖未登记目录中的文件。
+english.PMNotEmpty=Choose a new folder (an empty folder is also allowed for current-user installs). Setup will not overwrite files in an unregistered directory.
+chs.PMNotEmpty=请选择新目录（仅为当前用户安装时也可选空目录）。安装程序不会覆盖未登记目录中的文件。
 english.PMNewer=A newer PowerManager version is already installed.
 chs.PMNewer=已安装较新版本的余电。
 english.PMClose=Close PowerManager from its tray menu, including in any other signed-in session, then retry.
@@ -92,6 +92,9 @@ Name: "{autodesktop}\PowerManager"; Filename: "{app}\{#AppExe}"; WorkingDir: "{a
 Filename: "{app}\{#AppExe}"; Flags: nowait skipifsilent runasoriginaluser; Check: ReopenForeground
 Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait skipifsilent runasoriginaluser; Check: ReopenTray
 Filename: "{app}\{#AppExe}"; Description: "{cm:PMLaunch}"; Flags: postinstall nowait skipifsilent runasoriginaluser; Check: OfferLaunch
+
+[UninstallDelete]
+Type: files; Name: "{app}\.installer-maintenance"
 
 [Code]
 const
@@ -257,7 +260,7 @@ begin
       Exit;
     end;
   end;
-  if not HasInstall and not EmptyFolder(Path) then
+  if not HasInstall and ((IsAdminInstallMode and DirExists(Path)) or not EmptyFolder(Path)) then
     Result := CustomMessage('PMNotEmpty');
 end;
 
