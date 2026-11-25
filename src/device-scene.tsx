@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Art, BatteryTrack, studioPath, tone } from './ui';
-import { type Device, type Snapshot } from './model';
+import { isLiveDualSenseFull, type Device, type Snapshot } from './model';
 import view from './scene.module.css';
 
 type Phase = 'initial' | 'refreshing' | 'ready';
@@ -36,11 +36,12 @@ export function SceneBattery({ device, state, phase }: { device?: Device; state:
   const reading = device?.reading;
   const color = device ? tone(device, state) : 'normal';
   const initial = phase === 'initial';
+  const full = isLiveDualSenseFull(device);
   const hasRange = !!reading && reading.low !== reading.high;
-  return <div className={view.meter} data-phase={phase} data-tone={color}>
-    {!initial && <strong>{reading ? <>{reading.low}{hasRange && <><span className={view.rangeDash}>–</span>{reading.high}</>}
+  return <div className={view.meter} data-phase={phase} data-tone={color} data-charge-complete={full || undefined}>
+    {!initial && <strong>{full ? '已充满' : reading ? <>{reading.low}{hasRange && <><span className={view.rangeDash}>–</span>{reading.high}</>}
       <small className={view.percentUnit}>%</small></> : '—'}</strong>}
     {initial ? <div role="progressbar" className={view.progress} aria-label="正在读取电量"><i aria-hidden="true" /></div> :
-      <BatteryTrack className={view.track} reading={reading} label={device?.status === 'current' ? '电量' : '上次电量'} />}
+      !full && <BatteryTrack className={view.track} reading={reading} label={device?.status === 'current' ? '电量' : '上次电量'} />}
   </div>;
 }

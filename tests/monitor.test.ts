@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { defaults, percent, type Device, type Reading } from '../src/model';
+import { defaults, isLiveDualSenseFull, percent, type Device, type Reading } from '../src/model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from '../src/monitor-rules';
 import { Collector } from '../src/collector';
 
@@ -8,6 +8,20 @@ const reading: Reading = { low: 10, high: 19, raw: 1, power: 'discharging', sour
 const device: Device = { id: 'test', name: 'DualSense', connection: '蓝牙', art: 'dualsense',
   status: 'current', reason: '', lastRead: 1, watched: false, reading };
 const candidate = (level: number): Device => ({ ...device, reading: { ...reading, low: level, high: level } });
+test('DualSense 实时充满只影响展示，拔线和缓存不冒充充满', () => {
+  const gauge: Reading = { low: 80, high: 89, raw: 8, power: 'full', source: 'hid' };
+  const charged: Device = { ...device, reading: gauge };
+  const unplugged = { ...charged, reading: { ...gauge, power: 'discharging' as const } };
+  assert.equal(isLiveDualSenseFull(charged), true);
+  assert.equal(isLiveDualSenseFull(unplugged), false);
+  assert.equal(isLiveDualSenseFull({ ...charged, status: 'stale' }), false);
+  assert.equal(isLiveDualSenseFull({ ...charged, art: 'keyboard' }), false);
+  assert.equal(isLiveDualSenseFull({ ...charged, reading: { ...gauge, source: 'windows' } }), false);
+  const before = recordHistory([], { time: 1, reading: charged.reading });
+  const history = recordHistory(before, { time: 2, reading: unplugged.reading });
+  assert.equal(history.at(-1)?.reading?.raw, 8);
+  assert.deepEqual(history.map(point => [point.reading?.low, point.reading?.high]), [[80, 89], [80, 89]]);
+});
 test('原始档位的上限决定提醒，显示四舍五入后的估算值', () => {
   assert.equal(percent(reading), '约 15%');
   assert.equal(eligible(device, defaults, undefined, {}, 0, 100), 'low');

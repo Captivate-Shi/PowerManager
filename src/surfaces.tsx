@@ -1,6 +1,6 @@
 import { Bell, BellOff, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, RefreshCw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { inventoryState, isConnected, muteDurationLabel, severity, type Device, type Snapshot, type Toast } from './model';
+import { inventoryState, isConnected, isLiveDualSenseFull, muteDurationLabel, severity, type Device, type Snapshot, type Toast } from './model';
 import { api, Art, BatteryTrack, Brand, dateLabel, readingLabel } from './ui';
 import s from './panel.module.css';
 import preferences from './preferences.module.css';
@@ -8,22 +8,23 @@ import tray from './tray.module.css';
 
 function TrayDevice({ device, state, kind }: { device: Device; state: Snapshot; kind: 'live' | 'cached' | 'offline' }) {
   const { reading } = device;
+  const full = kind === 'live' && isLiveDualSenseFull(device);
   const alert = kind === 'live' ? severity(device, state.settings, state.deviceSettings[device.id]) : undefined;
   const connection = device.connection.replace(' 共享接收器', ' · 共享');
   const status = alert === 'critical' ? '电量告急' : alert === 'low' ? '低电量' : device.status !== 'current'
     ? device.reason || '读数待确认' : reading?.power === 'charging' ? '充电中' : reading?.power === 'full' ? '已充满' : reading ? '已连接' : '电量未知';
   const description = kind === 'cached' ? '上次记录' + (device.lastRead ? ' · ' + dateLabel(device.lastRead) : '')
-    : [connection, kind === 'offline' ? '未连接' : status].filter(Boolean).join(' · ');
-  const display = reading ? readingLabel(reading) : '未知';
+    : [connection, kind === 'offline' ? '未连接' : full ? '' : status].filter(Boolean).join(' · ');
+  const display = full ? '已充满' : reading ? readingLabel(reading) : '未知';
   return <button type="button" className={tray.row} data-kind={kind} data-alert={alert}
     data-power={kind === 'live' && (reading?.power === 'charging' || reading?.power === 'full') ? reading.power : undefined}
     data-tray-device={device.id} title={device.name}
-    aria-label={device.name + '，' + description + '，' + (kind === 'live' ? '电量' : '上次电量') + display}
+    aria-label={device.name + '，' + description + '，' + (full ? '' : kind === 'live' ? '电量' : '上次电量') + display}
     onClick={() => { void api.command({ type: 'open', id: device.id }); }}>
     <div className={tray.art}><Art device={device} /></div>
     <span className={tray.copy}><b>{device.name}</b><small>{description}</small></span>
     <span className={tray.reading}><strong>{display}</strong>
-      {reading && <BatteryTrack className={tray.track} reading={reading} />}
+      {reading && !full && <BatteryTrack className={tray.track} reading={reading} />}
     </span>
     <ChevronRight size={13} aria-hidden="true" className={tray.chevron} />
   </button>;
