@@ -1,11 +1,11 @@
 import type { CompatibilityPreview } from './compatibility-report';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { canProbeBluetooth, defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { defaults, historyRanges, inventoryState, isConnected, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -820,8 +820,6 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
   const [alias, setAlias] = useState(state.deviceSettings[device.id]?.alias ?? '');
   const aliasTooLong = [...alias.trim()].length > 50;
   const [confirmRemove, setRemove] = useState(false);
-  const [confirmBluetooth, setConfirmBluetooth] = useState(false);
-  const [probing, setProbing] = useState(false);
   const rules = state.deviceSettings[device.id];
   const savedLimit = deviceLowThreshold(device, state);
   useEffect(() => { if (!full) prepareHero(device); }, [device.art, full]);
@@ -842,7 +840,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <SceneBattery state={state} device={device} phase={state.refreshing ? "refreshing" : "ready"} /></div>
         <dl className={s.detailsFacts}>
           <div><ShieldCheck size={21} /><div><dt>读取状态</dt><dd>{device.reason}</dd></div></div>
-          <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? { hid: '设备 HID', windows: 'Windows 电量属性', ble: '蓝牙电池服务' }[device.reading.source] : '—'}</dd></div></div>
+          <div><Cable size={21} /><div><dt>读数来源</dt><dd>{device.reading ? { hid: '设备 HID', windows: 'Windows 电量属性', ble: '蓝牙电池服务', hid_voltage: '设备电压估算' }[device.reading.source] : '—'}</dd></div></div>
           <div><Zap size={21} /><div><dt>{device.status === 'current' ? '充电状态' : '上次充电状态'}</dt><dd>{device.reading ? powerLabels[device.reading.power] : '—'}</dd></div></div>
           <div><Clock size={21} /><div><dt>上次读数</dt><dd>{dateLabel(device.lastRead)}</dd></div></div>
         </dl>
@@ -858,12 +856,6 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
             onChange={value => send({ type: 'deviceSettings', id: device.id, patch: { muted: value } })} /></SettingRow>
           </Collapsible.Content>
         </Collapsible.Root>
-        {canProbeBluetooth(device) && <div className={s.bluetoothOption}>
-          <SettingRow title="DualSense 蓝牙电量" hint={!isConnected(device) ? '唤醒手柄并连接蓝牙。' : undefined}>
-            <button className={s.button} disabled={probing || device.status === 'offline' || device.status === 'stale'}
-              onClick={() => setConfirmBluetooth(true)}><Bluetooth size={16} aria-hidden="true" />{probing ? '正在读取…' : '读取蓝牙电量'}</button>
-          </SettingRow>
-        </div>}
         <footer className={s.detailActions}>{openFull && <button className={s.primary} onClick={() => { if (detailRef.current) openFull(detailRef.current); }}>查看详情 <ChevronRight size={16} aria-hidden="true" /></button>}<button className={s.button} onClick={() => send({ type: 'preview', severity: low ?? 'low', id: device.id })}><Bell size={19} />提醒测试</button>
           <Menu.Root><Menu.Trigger asChild><button className={s.button}><Ellipsis size={20} />更多操作</button></Menu.Trigger>
             <Menu.Portal><Menu.Content align="end" sideOffset={5} className={s.popover}>
@@ -880,17 +872,6 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         </section>}
       </div>
     </div>
-    {confirmBluetooth && <Modal title="启用 DualSense 蓝牙增强读取？"
-      description="手柄会在本次连接发送完整报告，部分 DirectInput 游戏可能受影响。关机重连可恢复。"
-      onClose={() => { if (!probing) setConfirmBluetooth(false); }}>
-      <button className={s.primary} disabled={probing} onClick={() => {
-        setProbing(true);
-        void run({ type: 'bluetooth', id: device.id }).then(reply => {
-          setProbing(false);
-          if (reply.ok) setConfirmBluetooth(false);
-        });
-      }}>{probing ? '正在读取…' : '确认读取蓝牙电量'}</button>
-    </Modal>}
     {editing && <Modal title="编辑设备备注" description={'识别名称：' + (device.recognizedName ?? device.name)} hint="备注可填 1–50 个字符，清空后保存可恢复原名。" onClose={() => edit(false)}>
       <form className={s.modalForm} onSubmit={event => {
         event.preventDefault();

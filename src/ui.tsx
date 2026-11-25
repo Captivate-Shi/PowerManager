@@ -92,7 +92,7 @@ export function tone(device: Device, state: Snapshot) {
   return 'normal';
 }
 export const readingLabel = (reading: Reading | null) => !reading ? "—" :
-  reading.low === reading.high ? reading.low + "%" : reading.low + "–" + reading.high + "%";
+  reading.low === reading.high ? reading.low + "%" : (reading.source === "hid_voltage" ? "约 " : "") + reading.low + "–" + reading.high + "%";
 
 export function BatteryTrack({ reading, className, label }: { reading?: Reading | null; className?: string; label?: string }) {
   const range = !!reading && reading.low !== reading.high;
@@ -101,7 +101,7 @@ export function BatteryTrack({ reading, className, label }: { reading?: Reading 
     data-scale={range ? 'interval' : 'exact'} role={named ? 'meter' : undefined} aria-hidden={!named || undefined}
     aria-label={named ? label : undefined} aria-valuemin={named ? 0 : undefined} aria-valuemax={named ? 100 : undefined}
     aria-valuenow={named ? reading.low : undefined} aria-valuetext={named ? readingLabel(reading) : undefined}
-    aria-description={named && range ? '设备上报电量区间，实色为确认的下限，斜纹为上报范围。' : undefined}>
+    aria-description={named && range ? (reading.source === 'hid_voltage' ? '根据设备电压估算的电量范围。' : '设备上报电量区间，实色为确认的下限，斜纹为上报范围。') : undefined}>
     {reading && <span className={s.batteryConfirmed} data-battery-confirmed="" style={{ width: reading.low + '%' }} />}
     {range && <span className={s.batteryInterval} data-battery-band=""
       style={{ left: reading.low + '%', width: (reading.high - reading.low) + '%' }} />}

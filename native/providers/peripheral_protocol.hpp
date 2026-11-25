@@ -11,6 +11,7 @@ namespace pm {
 
 inline std::optional<Transport> peripheralTransport(unsigned vid, unsigned pid)
 {
+    if (isRapooReceiver(vid, pid)) return Transport::rapoo_receiver;
     if (vid == 0x320f && pid == 0x5055) return Transport::vgn_usb;
     if (vid == 0x320f && pid == 0x5088) return Transport::vgn_receiver;
     if (vid == 0x258a && pid == 0x024e) return Transport::vgn_v3_usb;
@@ -122,13 +123,44 @@ inline std::optional<LogitechReply> parseLogitechReply(std::span<const std::uint
     return {};
 }
 
-inline Sample logitechBattery(unsigned feature, bool percentage, std::span<const std::uint8_t> data, bool coarse = false)
+// Restrict the empirical 0x1001 curve to the paired product name, not the
+// receiver PID (the same receiver may serve multiple devices). Never apply it
+// to ADC features, keyboards or unverified generations.
+inline bool logitechVoltageProfile(std::wstring_view label)
+{
+    std::wstring name(label);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    return name == L"g502 lightspeed wireless gaming mouse" || name == L"g502 lightspeed";
+}
+
+inline Sample logitechBattery(unsigned feature, bool percentage, std::span<const std::uint8_t> data,
+                              bool coarse = false, bool estimateVoltage = false)
 {
     if (data.size() < 3) return {Status::bad_report, {}, 0x11, 0, feature};
     if (feature == 0x1001) {
         const unsigned millivolts = (data[0] << 8) | data[1];
         if (millivolts < 2000 || millivolts > 5000) return {Status::bad_report, {}, 0x11, data[2], feature};
-        return {Status::unavailable, {}, 0x11, data[2], feature, millivolts};
+        const auto unavailable = Sample{Status::unavailable, {}, 0x11, data[2], feature, millivolts};
+        if (!estimateVoltage || millivolts < 3500 || millivolts > 4400) return unavailable;
+        // Prefer the explicit charge-complete bit. While attached otherwise,
+        // voltage is not comparable to the on-battery curve: keep the last
+        // valid reading and do not trigger a new low-power notification.
+        const auto flags = data[2];
+        if (flags & 0x80) {
+            if ((flags & 7) == 1) return {Status::current,
+                Reading{100, 100, Power::full, static_cast<int>(millivolts), ReadingSource::hid_voltage},
+                0x11, flags, feature, millivolts};
+            return unavailable;
+        }
+        // Ten-point cuts from the public Logitech/Linux 0x1001 reference
+        // curve. Expose bands, not one-percent precision; real discharge
+        // varies by load and battery condition.
+        constexpr std::array decadeCuts{3671u, 3717u, 3751u, 3778u, 3811u,
+                                        3859u, 3922u, 3989u, 4067u};
+        const int low = 10 * static_cast<int>(std::upper_bound(decadeCuts.begin(), decadeCuts.end(), millivolts)
+            - decadeCuts.begin());
+        return {Status::current, Reading{low, low + 10, Power::discharging,
+                    static_cast<int>(millivolts), ReadingSource::hid_voltage}, 0x11, flags, feature, millivolts};
     }
     if (!percentage) return {Status::unavailable, {}, 0x11, data[1], feature};
     if (data[0] > 100) return {Status::bad_report, {}, 0x11, data[0], feature};

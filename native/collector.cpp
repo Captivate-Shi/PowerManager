@@ -67,7 +67,8 @@ json reading(const std::optional<Reading>& value)
     const char* power[] = {"discharging", "charging", "full", "unknown"};
     return {{"low", value->low}, {"high", value->high}, {"raw", value->raw},
             {"power", power[static_cast<int>(value->power)]},
-            {"source", value->source == ReadingSource::hid ? "hid" : value->source == ReadingSource::ble ? "ble" : "windows"}};
+            {"source", value->source == ReadingSource::hid ? "hid" : value->source == ReadingSource::ble ? "ble" :
+                value->source == ReadingSource::hid_voltage ? "hid_voltage" : "windows"}};
 }
 
 json sample(const Sample& value)
@@ -317,7 +318,7 @@ const char* art(const Device& device)
 {
     if (isDualSense(device.transport)) return "dualsense";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard) return "keyboard";
-    if (device.transport == Transport::razer_receiver) return "mouse";
+    if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {
         if (device.kind == 0 || device.kind == 2) return "keyboard";
         if (device.kind >= 3 && device.kind <= 5) return "mouse";
@@ -338,7 +339,6 @@ public:
         if (action == "compatibility") return compatibility();
         if (action == "diagnostic_devices") return diagnosticDevices();
         if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("id").get<std::string>()));
-        if (action == "bluetooth") return bluetooth(wide(request.at("key").get<std::string>()));
         if (action == "poll") return poll(request);
         throw std::runtime_error("Unknown action");
     }
@@ -496,22 +496,9 @@ private:
             result.push_back({{"id", utf8(key)}, {"name", utf8(label(*endpoint))},
                 {"connection", utf8(transportName(endpoint->transport))}, {"connected", true},
                 {"automatic", true}, {"reading", nullptr},
-                {"offerBluetooth", endpoint->transport == Transport::dualsense_bluetooth}});
+                {"offerBluetooth", false}});
         }
         return result;
-    }
-
-    json bluetooth(const std::wstring& key)
-    {
-        const auto links = bluetoothConnections();
-        for (const auto& endpoint : monitor_.enumerate()) {
-            if (endpoint.transport == Transport::dualsense_bluetooth &&
-                (key == endpoint.key || key == endpoint.endpointKey)) {
-                if (bluetoothDisconnected(endpoint, links)) return sample({Status::offline});
-                return sample(monitor_.requestBluetoothReadingOnce(endpoint));
-            }
-        }
-        return sample({Status::offline});
     }
 
     json poll(const json& request)

@@ -472,7 +472,7 @@ function canAccess(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>): S
   return surface as Surface;
 }
 const actions: Record<Surface, string[]> = {
-  main: ['refresh', 'discover', 'diagnostics', 'diagnosticDevices', 'diagnosticFirmware', 'compatibility', 'mute', 'open', 'history', 'add', 'remove', 'bluetooth',
+  main: ['refresh', 'discover', 'diagnostics', 'diagnosticDevices', 'diagnosticFirmware', 'compatibility', 'mute', 'open', 'history', 'add', 'remove',
     'snooze', 'ignore', 'settings', 'toggleAlertSetting', 'deviceSettings', 'preview'],
   tray: ['mute', 'pin', 'refresh', 'open', 'closeSurface'],
   toast: ['open', 'closeSurface'],
@@ -648,9 +648,6 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       else if (device?.watched) { snapshot.devices = snapshot.devices.filter(item => item !== device); broadcast(); }
       else throw new Error('这个设备由系统自动监测');
       break;
-    case 'bluetooth':
-      if (!monitor) return { ok: true, message: '示例模式 · 蓝牙电量读取成功' };
-      return { ok: true, message: await monitor.bluetooth(command.id) };
     case 'deviceSettings':
       if (!device) throw new Error('设备已移除');
       saveDeviceSettings(device.id, command.patch);

@@ -426,7 +426,8 @@ Sample readLogitech(const Device& device, unsigned& order)
             coarse = caps.size() >= 2 && caps[0] >= 2 && (caps[0] < 10 || !(caps[1] & 2));
         }
         const auto data = query.read(index, 0);
-        return data.empty() ? query.failure(feature) : logitechBattery(feature, true, data, coarse);
+        return data.empty() ? query.failure(feature) : logitechBattery(feature, true, data, coarse,
+            feature == 0x1001 && logitechVoltageProfile(device.label));
     }
     return {Status::unavailable};
 }
@@ -636,6 +637,7 @@ const wchar_t* deviceName(Transport transport)
     if (transport == Transport::vgn_usb || transport == Transport::vgn_receiver) return sharedKeyboardLabel(transport, {});
     if (isVgn(transport)) return L"VGN V98 Pro V3";
     if (transport == Transport::logitech_receiver) return L"Logitech HID++ 外设";
+    if (transport == Transport::rapoo_receiver) return L"Rapoo VT3S 接收器";
     return transport == Transport::windows_battery ? L"Windows 外设" : L"DualSense";
 }
 
@@ -651,7 +653,8 @@ const wchar_t* transportName(Transport transport)
     case Transport::vgn_v3_usb: return L"USB";
     case Transport::vgn_receiver:
     case Transport::vgn_v3_receiver:
-    case Transport::logitech_receiver: return L"2.4 GHz";
+    case Transport::logitech_receiver:
+    case Transport::rapoo_receiver: return L"2.4 GHz";
     }
     return L"";
 }
@@ -669,6 +672,7 @@ const wchar_t* providerName(Transport transport)
     case Transport::vgn_v3_usb: return L"vgn-beiying-feature";
     case Transport::vgn_v3_receiver: return L"vgn-beiying-receiver";
     case Transport::logitech_receiver: return L"logitech-hidpp20";
+    case Transport::rapoo_receiver: return L"rapoo-passive-hid";
     }
     return L"unknown";
 }
@@ -683,7 +687,7 @@ const wchar_t* statusName(Status status)
     case Status::timeout: return L"读取超时";
     case Status::bad_report: return L"报告无法验证";
     case Status::unavailable: return L"暂时无法读取";
-    case Status::basic_bluetooth: return L"蓝牙简化报告无电量";
+    case Status::basic_bluetooth: return L"蓝牙当前未提供电量";
     case Status::charging_error: return L"设备报告充电异常";
     }
     return L"";
@@ -786,8 +790,11 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         }
         if ((isVgn(*transport) || *transport == Transport::logitech_receiver) &&
             (peripheralTransport(vid, pid) != transport || !haveCaps)) continue;
+        if (*transport == Transport::rapoo_receiver && !isRapooReceiver(vid, pid)) continue;
         const bool bluetooth = *transport == Transport::dualsense_bluetooth;
         const auto key = deviceKey(devInfo.DevInst, *transport, normalized);
+        // Report the receiver only when Windows supplied a physical container.
+        if (*transport == Transport::rapoo_receiver && !key.ends_with(L'}')) continue;
         auto [it, inserted] = devices.try_emplace(key, Device{key, *transport, attributes.VersionNumber,
                                                                bluetooth ? windowsBattery(devInfo.DevInst)
                                                                          : std::nullopt, {}, key, vid, pid});
@@ -818,6 +825,15 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
     std::erase_if(receivers_, [&](const auto& item) { return !devices.contains(item.first); });
     std::vector<Device> result;
     for (auto& [key, device] : devices) {
+        if (device.transport == Transport::rapoo_receiver) {
+            const auto vendorCollection = [](const Collection& c) { return c.page == 0xff00 && c.usage == 2; };
+            const auto current = std::ranges::find_if(device.collections, vendorCollection);
+            if (current == device.collections.end() || std::ranges::count_if(device.collections, vendorCollection) != 1 ||
+                std::ranges::any_of(device.collections, [](const Collection& c) { return !c.page && !c.usage; }) ||
+                !isRapooBatteryCollection(current->page, current->usage, current->inputLength)) continue;
+            const auto only = *current;
+            device.collections = {only};
+        }
         if (device.transport == Transport::logitech_receiver) {
             const auto channel = std::ranges::find_if(device.collections, logitechChannel);
             if (channel == device.collections.end()) continue;
@@ -902,6 +918,10 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
 
 Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
 {
+    if (device.transport == Transport::rapoo_receiver) {
+        if (device.collections.size() != 1) return {Status::unavailable};
+        return rapoo_.read(device.collections.front().path);
+    }
     if (isVgn(device.transport)) return readVgn(device);
     if (device.transport == Transport::logitech_receiver) return readLogitech(device, logitechRequestId_);
     const bool keyboard = device.transport == Transport::razer_shared_keyboard;
@@ -961,16 +981,18 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
             radioSilent = result;
         }
     }
-    if (bluetooth && !device.collections.empty() && result.status != Status::offline &&
-        result.status != Status::charging_error) {
-        const auto container = device.endpointKey.substr(2);
-        if (container.size() == 38 && container.front() == L'{' && container.back() == L'}') {
-            if (auto windows = readWindowsDevice(container); windows.reading) {
-                return windows;
+    if (bluetooth && result.status != Status::offline && result.status != Status::charging_error) {
+        // A present Bluetooth devnode is enough to try the exact container,
+        // but only a connected Windows report with a valid level is accepted.
+        // Do not re-stamp a cached ancestor property as this controller's reading.
+        const auto delimiter = device.endpointKey.find(L':');
+        if (delimiter != std::wstring::npos) {
+            const auto container = device.endpointKey.substr(delimiter + 1);
+            if (container.size() == 38 && container.front() == L'{' && container.back() == L'}') {
+                if (auto windows = readWindowsDevice(container); windows.reading) {
+                    return windows;
+                }
             }
-        }
-        if (auto reading = windowsReading(device.windowsBattery, {})) {
-            return {Status::current, reading};
         }
     }
     return radioSilent.status == Status::no_radio_reply ? radioSilent : result;
@@ -1038,35 +1060,14 @@ VoltageSample HidMonitor::sampleVoltage(const Device& device, const Sample& pair
     return {VoltageStatus::timeout};
 }
 
-Sample HidMonitor::requestBluetoothReadingOnce(const Device& device)
-{
-    auto result = sample(device);
-    if (device.transport != Transport::dualsense_bluetooth || result.status != Status::basic_bluetooth) {
-        return result;
-    }
-    const auto collection = std::ranges::find_if(device.collections, gamepad);
-    if (collection == device.collections.end()) {
-        return result;
-    }
-    std::array<std::uint8_t, 64> report{};
-    report[0] = 0x05;
-    DWORD count = 0;
-    // The user confirmed a single feature read for this connection. Never retry the mode change.
-    const auto error = readFeature(*collection, report, GENERIC_READ, 1500ms, count);
-    for (int attempt = 0; attempt < 3; ++attempt) {
-        result = sample(device);
-        if (result.reading || result.status == Status::offline) {
-            return result;
-        }
-        if (attempt != 2) {
-            Sleep(150);
-        }
-    }
-    return error ? ioFailure(error, 0x05) : result;
-}
-
 void HidMonitor::forgetOffline(const std::vector<Device>& devices)
 {
+    std::set<std::wstring> rapooPaths;
+    for (const auto& device : devices) {
+        if (device.transport == Transport::rapoo_receiver && device.collections.size() == 1)
+            rapooPaths.insert(device.collections.front().path);
+    }
+    rapoo_.retainPaths(rapooPaths);
     std::erase_if(razerCollections_, [&](const auto& entry) {
         return std::ranges::find(devices, entry.first, &Device::key) == devices.end();
     });

@@ -300,7 +300,7 @@
 .settingsContent .settingRow { min-height: 64px; }
 .settingsContent .zoomForm { padding-block: 16px; }
 .settingRow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px 10px; padding: 9px 0; }
-.settingRow + .settingRow, .settingsPanel form + .settingRow, .bluetoothOption { border-top: 1px solid var(--line); }
+.settingRow + .settingRow, .settingsPanel form + .settingRow { border-top: 1px solid var(--line); }
 .settingRow > div:first-child { flex: 1 1 120px; min-width: 0; }
 .settingRow > div:last-child { min-width: 0; }
 .settingRow b, .settingRow small { display: block; }

@@ -8,7 +8,7 @@
 namespace pm {
 
 enum class Power { discharging, charging, full, unknown };
-enum class ReadingSource { hid, windows, ble };
+enum class ReadingSource { hid, windows, ble, hid_voltage };
 enum class Status {
     current, offline, no_radio_reply, busy, timeout, bad_report, unavailable,
     basic_bluetooth, charging_error

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "battery.hpp"
+#include "rapoo_battery.hpp"
 
 #include <chrono>
 #include <map>
@@ -11,7 +12,7 @@
 namespace pm {
 
 enum class Transport { razer_receiver, dualsense_usb, dualsense_bluetooth, windows_battery, razer_shared_keyboard,
-    vgn_usb, vgn_receiver, vgn_v3_usb, vgn_v3_receiver, logitech_receiver };
+    vgn_usb, vgn_receiver, vgn_v3_usb, vgn_v3_receiver, logitech_receiver, rapoo_receiver };
 constexpr bool isDualSense(Transport transport)
 {
     return transport == Transport::dualsense_usb || transport == Transport::dualsense_bluetooth;
@@ -71,7 +72,6 @@ public:
     std::vector<Device> enumerate(bool includePairedBluetooth = false, std::vector<HidInterface>* inventory = nullptr);
     Sample sample(const Device& device, std::wostream* diagnostics = nullptr);
     VoltageSample sampleVoltage(const Device& device, const Sample& pairedReading);
-    Sample requestBluetoothReadingOnce(const Device& device);
     void forgetOffline(const std::vector<Device>& devices);
     const std::vector<ReceiverAttempt>& receiverAttempts() const { return receiverAttempts_; }
 
@@ -85,6 +85,7 @@ private:
         unsigned nextSlot{1};
         std::map<unsigned, Device> children;
     };
+    RapooBatteryReader rapoo_;
     std::map<std::wstring, Receiver> receivers_;
     unsigned logitechRequestId_{};
     std::vector<ReceiverAttempt> receiverAttempts_;
