@@ -166,3 +166,16 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 在已有的 `046D:C548` 路径上，按活跃槽位、Unit ID、HID++ 型号 ID 和设备实时名称匹配；接收器型号本身不够。新增 MX Master 4（B042）、MX Anywhere 3S（B037）、MX Keys Mini（B369）、Lift（B031）、Signature M650（B02A）。只用 `0x1004` 的百分比能力；采样前后复核同一槽位的 Unit ID 和型号。休眠、回复忙或更换配对设备时，不发送当前读数。不带上直连蓝牙、Unifying、企业名称变体或 M650 L。
 
 依据：[MX Master 4 Windows 读数](https://github.com/JKWTCN/BatteryMonitor/blob/25c221326391e26b62ae2b7db8e72ce8538ff909/README.en.md#verified-devices) · [MX Anywhere 3S Bolt 报告](https://github.com/AprilNEA/OpenLogi/pull/1962) · [MX Keys Mini](https://github.com/pwr-Solaar/Solaar/issues/2127) · [Lift](https://github.com/pwr-Solaar/Solaar/issues/2968) · [Signature M650](https://openlogi.uxatom.com/devices/signature-m650)。余电真机需验证多设备共用接收器时的重新配对、休眠唤醒和 Options+ 并行。
+
+## 第 12 批：罗技 LIGHTSPEED / Unifying 与迈从 A7 V2 Pro
+
+| 范围 | 默认接入条件 |
+| --- | --- |
+| LIGHTSPEED：G502 X PLUS（4099）、PRO X SUPERLIGHT 原版（4093） | 确认接收器类型、实时型号、设备名及槽位 Unit ID，只读 `0x1004` 原生百分比。不是同型号的 USB 路径，也不纳入第二代。 |
+| LIGHTSPEED：G305（4074）、G613（4065） | 同样验证实时身份，仅读 `0x1000`。先看能力字段，只上报可确认的原生百分比或电量区间，不做电压换算。 |
+| Unifying：M720 Triathlon（405E）、MX Master 2S（4069）、MX Keys 原版（408A）、ERGO K860 零售版（4088）、K780（405B） | 只认可对应无线型号与实时名称，查询前后复核同一槽位的 Unit ID 和型号。只读有能力依据的 `0x1000`；丢失响应或改配对不作为当前电量。 |
+| 迈从 A7 V2 Pro 有线 | `3837:4018`、物理 USB 父设备及唯一 `MI02 / FF01:0001` 集合。只发一次已知 `0x11` Feature 查询并核对报文自报型号；无线接收器不计。 |
+
+依据：[LIGHTSPEED 接收器与设备](https://pwr-solaar.github.io/Solaar/devices/) · [G502 X PLUS 电量](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md) · [SUPERLIGHT 原版](https://github.com/pwr-Solaar/Solaar/issues/3005) · [G305](https://github.com/pwr-Solaar/Solaar/issues/850) · [G613](https://github.com/pwr-Solaar/Solaar/issues/1610) · [Unifying HID++ 跨设备验证](https://github.com/pwr-Solaar/Solaar/issues/1070) · [A7 V2 Pro Windows 记录](https://github.com/JKWTCN/BatteryMonitor/blob/25c221326391e26b62ae2b7db8e72ce8538ff909/README.en.md#verified-devices)。
+
+暂不计入接入：G915 / G915 TKL（[有电压报文](https://github.com/pwr-Solaar/Solaar/issues/1462)，缺各自可验证的电量换算）、Signature K650（[官方支持 Bolt](https://hub.sync.logitech.com/mx-anywhere-3/post/logi-bolt-mice-keyboards-and-combos-features-and-information-zaeyQiSs2UKlECd)，缺零售机型的实际电量报文）、黑爵 MK87PRO（诊断只识别候选 HID 接口，不主动查询；上游的工作模式字段不能证明无线链路在线）。余电实物验收仍待进行。

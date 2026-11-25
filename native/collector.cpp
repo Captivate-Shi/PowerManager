@@ -332,7 +332,8 @@ const char* art(const Device& device)
     if (device.transport == Transport::razer_receiver || device.transport == Transport::razer_pro_receiver ||
         device.transport == Transport::rapoo_receiver ||
         device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver ||
-        device.transport == Transport::mchose_g3v2_receiver || device.transport == Transport::aula_sc580_receiver) return "mouse";
+        device.transport == Transport::mchose_g3v2_receiver || device.transport == Transport::mchose_a7v2pro_usb ||
+        device.transport == Transport::aula_sc580_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {
         if (device.kind == 0 || device.kind == 2) return "keyboard";
         if (device.kind >= 3 && device.kind <= 5) return "mouse";

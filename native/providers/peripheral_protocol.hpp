@@ -1,6 +1,8 @@
 #pragma once
 
 #include "hid.hpp"
+#include "logitech_office12.hpp"
+#include "lightspeed12.hpp"
 #include "supported_mouse_battery.hpp"
 
 #include <algorithm>
@@ -201,6 +203,17 @@ inline std::optional<BoltOfficeIdentity> boltBatch11Identity(unsigned receiverVi
     return {};
 }
 
+inline std::optional<LogitechNamedIdentity> logitechNamedIdentity(unsigned vid, unsigned pid,
+                                                                 unsigned model, std::wstring_view label,
+                                                                 unsigned kind)
+{
+    if (auto office = office12Identity(vid, pid, model, label, kind)) return office;
+    if (auto lightspeed = lightspeed12Identity(vid, pid, model, label, kind)) return lightspeed;
+    if (const auto bolt = boltBatch11Identity(vid, pid, model, label, kind))
+        return LogitechNamedIdentity{bolt->label, bolt->kind, model, named_percent_1004};
+    return {};
+}
+
 // Restrict the empirical 0x1001 curve to the paired product name, not the
 // receiver PID (the same receiver may serve multiple devices). Never apply it
 // to ADC features, keyboards or unverified generations.
@@ -210,6 +223,14 @@ inline bool logitechVoltageProfile(std::wstring_view label)
     std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
     return name == L"g502 lightspeed wireless gaming mouse" || name == L"g502 lightspeed" ||
         name == L"g pro wireless gaming mouse" || name == L"logitech g pro wireless";
+}
+
+inline std::optional<bool> namedLegacyCoarse(std::span<const std::uint8_t> capabilities)
+{
+    if (capabilities.size() < 2 || capabilities[0] < 2 || capabilities[0] > 100) return {};
+    // The draft HID++ 0x1000 specification assigns four ranges if the
+    // firmware exposes fewer than ten levels or disables the mileage bit.
+    return capabilities[0] < 10 || !(capabilities[1] & 2);
 }
 
 inline Sample logitechBattery(unsigned feature, bool percentage, std::span<const std::uint8_t> data,

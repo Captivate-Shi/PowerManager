@@ -183,6 +183,8 @@ std::optional<Transport> candidate(const std::wstring& path)
     if (vid == 0x3837 && pid == 0x4245) return Transport::mchose_g3v2_receiver;
     if (vid == 0x089d && pid == 0x062f) return Transport::aula_sc580_receiver;
     if (vid == 0x0c45 && pid == 0xfefe) return Transport::aula_f87v2d_receiver;
+    if (vid == 0x3837 && pid == 0x4018) return Transport::mchose_a7v2pro_usb;
+    if (vid == 0x0c45 && pid == 0xfefc) return Transport::ajazz_mk87pro_receiver;
     if (vid == 0x260d && pid == 0x1074) return Transport::dareu_em901x_inventory;
     return peripheralTransport(hexId(path, L"vid_", 4).value_or(0), hexId(path, L"pid_", 4).value_or(0));
 }
@@ -233,7 +235,8 @@ DWORD completeIo(HANDLE file, HANDLE event, Clock::time_point deadline, DWORD& b
 
 bool cnReceiver(Transport t)
 {
-    return t == Transport::mchose_g3v2_receiver || t == Transport::aula_sc580_receiver || t == Transport::aula_f87v2d_receiver;
+    return t == Transport::mchose_g3v2_receiver || t == Transport::aula_sc580_receiver || t == Transport::aula_f87v2d_receiver ||
+        t == Transport::mchose_a7v2pro_usb;
 }
 
 template<class Caps, class GetCaps>
@@ -246,7 +249,7 @@ bool onlyReportZero(USHORT count, PHIDP_PREPARSED_DATA prep, HIDP_REPORT_TYPE ty
     return std::ranges::all_of(std::span(caps).first(count), [](const auto& cap) { return cap.ReportID == 0; });
 }
 
-bool cnDescriptor(HANDLE file, Transport t, unsigned iface)
+bool cnDescriptor(HANDLE file, Transport t, unsigned iface, const Collection* expected = nullptr)
 {
     HIDD_ATTRIBUTES a{};
     a.Size = sizeof(a);
@@ -259,7 +262,24 @@ bool cnDescriptor(HANDLE file, Transport t, unsigned iface)
     bool valid = false;
     if (HidP_GetCaps(prep, &caps) == HIDP_STATUS_SUCCESS) {
         const auto in = caps.InputReportByteLength, out = caps.OutputReportByteLength;
-        if (t == Transport::mchose_g3v2_receiver)
+        if (expected && (expected->page != caps.UsagePage || expected->usage != caps.Usage ||
+            expected->inputLength != in || expected->outputLength != out ||
+            expected->featureLength != caps.FeatureReportByteLength)) {
+            HidD_FreePreparsedData(prep);
+            return false;
+        }
+        if (t == Transport::mchose_a7v2pro_usb) {
+            const auto featureLength = caps.FeatureReportByteLength;
+            std::array<char,65> feature{};
+            valid = mchoseA7V2ProCollection(a.VendorID, a.ProductID, iface,
+                caps.UsagePage, caps.Usage, featureLength) &&
+                HidP_InitializeReportForID(HidP_Feature, 0x11, prep, feature.data(), featureLength) == HIDP_STATUS_SUCCESS;
+            HidD_FreePreparsedData(prep);
+            return valid;
+        }
+        if (t == Transport::ajazz_mk87pro_receiver)
+            valid = ajazzMk87ProCollection(a.VendorID, a.ProductID, caps.UsagePage, caps.Usage, in, out, name);
+        else if (t == Transport::mchose_g3v2_receiver)
             valid = cn_mouse::MatchesMchoseG3(a.VendorID, a.ProductID, caps.UsagePage, caps.Usage, in, out, name);
         else if (t == Transport::aula_sc580_receiver)
             valid = cn_mouse::MatchesAulaSc580(a.VendorID, a.ProductID, caps.UsagePage, caps.Usage, in, out);
@@ -290,9 +310,9 @@ public:
             sharing, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr)),
           openError_(file_.valid() ? 0 : GetLastError()), event_(CreateEventW(nullptr, TRUE, FALSE, nullptr)) {}
 
-    bool matchesCnReceiver(Transport t, unsigned iface) const
+    bool matchesCnReceiver(Transport t, unsigned iface, const Collection& expected) const
     {
-        return file_.valid() && cnDescriptor(file_.value, t, iface);
+        return file_.valid() && cnDescriptor(file_.value, t, iface, &expected);
     }
 
     bool flushInput() const { return file_.valid() && HidD_FlushQueue(file_.value); }
@@ -327,11 +347,15 @@ public:
     }
 
     template<class Match>
-    DWORD feature(std::span<std::uint8_t> query, Clock::time_point end, Match match)
+    DWORD feature(std::span<std::uint8_t> query, Clock::time_point end, Match match, bool standardHid = false)
     {
         if (const auto failure = error()) return failure;
         DWORD size = 0;
         const auto send = completeIo(file_.value, event_.value, end, size, [&](OVERLAPPED* io) {
+            // Windows HIDClass SET_FEATURE consumes the input buffer.
+            if (standardHid)
+                return DeviceIoControl(file_.value, setFeature, query.data(),
+                    static_cast<DWORD>(query.size()), nullptr, 0, &size, io);
             return DeviceIoControl(file_.value, setFeature, nullptr, 0, query.data(),
                 static_cast<DWORD>(query.size()), &size, io);
         });
@@ -340,7 +364,9 @@ public:
         std::vector<std::uint8_t> response(query.size());
         response[0] = query[0];
         const auto read = completeIo(file_.value, event_.value, end, size, [&](OVERLAPPED* io) {
-            return DeviceIoControl(file_.value, getFeature, nullptr, 0, response.data(),
+            // Match hidapi's Windows numbered-report GET_FEATURE exchange.
+            return DeviceIoControl(file_.value, getFeature, standardHid ? response.data() : nullptr,
+                standardHid ? static_cast<DWORD>(response.size()) : 0, response.data(),
                 static_cast<DWORD>(response.size()), &size, io);
         });
         if (read) return read;
@@ -374,8 +400,17 @@ Sample readCnReceiver(const Device& device)
     const auto& c = device.collections.front();
     HidExchange exchange(c);
     const auto iface = hexId(c.description, L"&mi_", 2).value_or(255);
-    if (!exchange.matchesCnReceiver(device.transport, iface)) return {Status::unavailable};
+    if (!exchange.matchesCnReceiver(device.transport, iface, c)) return {Status::unavailable};
     const auto end = Clock::now() + 550ms;
+    if (device.transport == Transport::mchose_a7v2pro_usb) {
+        auto request = makeMchoseA7V2ProQuery();
+        Sample result{Status::unavailable};
+        const auto error = exchange.feature(std::span(request).first(c.featureLength), end, [&](auto reply) {
+            result = parseMchoseA7V2ProReply(reply);
+            return result.reading.has_value();
+        }, true);
+        return error == ERROR_INVALID_DATA ? result : error ? ioFailure(error, 0x11) : result;
+    }
     if (device.transport == Transport::aula_f87v2d_receiver) {
         if (!exchange.flushInput()) return {Status::unavailable};
         auto query = makeAulaF87ProV2DQuery();
@@ -510,14 +545,14 @@ public:
         return response.empty() ? 0 : response.front();
     }
 
-    std::uint32_t unit(unsigned* boltModel = nullptr)
+    std::uint32_t unit(unsigned* reportedModel = nullptr, unsigned modelLink = 0)
     {
-        if (boltModel) *boltModel = 0;
+        if (reportedModel) *reportedModel = 0;
         const auto index = feature(3);
         if (!index) return 0;
         const auto info = read(index, 0);
         if (info.size() < 5) return 0;
-        if (boltModel) *boltModel = boltOfficeModel(info);
+        if (reportedModel) *reportedModel = logitechReportedModel(info, modelLink);
         std::uint32_t identity = 0;
         for (unsigned i = 1; i <= 4; ++i) identity = (identity << 8) | info[i];
         return identity == 0xffffffff ? 0 : identity;
@@ -585,11 +620,24 @@ Sample readLogitech(const Device& device, unsigned& order)
     if (channel == device.collections.end()) return {Status::unavailable};
     LogitechQuery query(*channel, shortLogitechChannel(device), device.slot, order, Clock::now() + 900ms);
     unsigned model = 0;
-    const auto identity = query.unit(device.boltNamedModel ? &model : nullptr);
+    const bool named = device.logitechNamedModel != 0;
+    if (named && std::ranges::count_if(device.collections, logitechChannel) != 1)
+        return {Status::unavailable};
+    const unsigned modelLink = logitechBolt(device.vid, device.pid) ? 2 : 4;
+    const auto identity = query.unit(named ? &model : nullptr, modelLink);
     if (identity != device.unit) return identity ? Sample{Status::offline} : query.failure(3);
-    if (device.boltNamedModel && model != device.boltNamedModel) return {Status::unavailable};
+    if (named && model != device.logitechNamedModel) return {Status::unavailable};
+    const auto verify = [&](Sample reading) {
+        if (!named || !reading.reading) return reading;
+        // A receiver remains attached while a paired device is replaced.
+        // Re-check the live unit + model rather than publishing its reading
+        // against the identity cached during enumeration.
+        const auto verified = query.unit(&model, modelLink);
+        if (verified != identity) return verified ? Sample{Status::offline} : query.failure(3);
+        return model == device.logitechNamedModel ? reading : Sample{Status::unavailable};
+    };
     for (const unsigned feature : {0x1004u, 0x1000u, 0x1001u}) {
-        if (device.boltNamedModel && feature != 0x1004) break;
+        if (named && !(device.logitechNamedFeatures & namedBatteryFlag(feature))) continue;
         const auto index = query.feature(feature);
         if (!index) {
             if (query.winError || query.protocolError) return query.failure(feature);
@@ -601,27 +649,27 @@ Sample readLogitech(const Device& device, unsigned& order)
             if (caps[1] & 2) {
                 const auto data = query.read(index, 1);
                 if (data.empty()) return query.failure(feature);
-                const auto reading = logitechBattery(feature, true, data);
-                if (device.boltNamedModel && reading.reading) {
-                    // The receiver remains attached even when its slot is
-                    // replaced. Reject a reply if the identity changed (or
-                    // became unreachable) during the live sample.
-                    const auto verified = query.unit(&model);
-                    if (verified != identity) return verified ? Sample{Status::offline} : query.failure(3);
-                    if (model != device.boltNamedModel) return {Status::unavailable};
-                }
-                return reading;
+                return verify(logitechBattery(feature, true, data));
             }
             continue;
         }
         bool coarse = false;
         if (feature == 0x1000) {
             const auto caps = query.read(index, 1);
-            coarse = caps.size() >= 2 && caps[0] >= 2 && (caps[0] < 10 || !(caps[1] & 2));
+            const auto classification = namedLegacyCoarse(caps);
+            if (named && !classification)
+                return query.winError || query.protocolError ? query.failure(feature)
+                    : Sample{Status::unavailable, {}, 0x11, 0, feature};
+            coarse = named ? classification.value_or(false)
+                           : caps.size() >= 2 && caps[0] >= 2 && (caps[0] < 10 || !(caps[1] & 2));
         }
         const auto data = query.read(index, 0);
-        return data.empty() ? query.failure(feature) : logitechBattery(feature, true, data, coarse,
-            feature == 0x1001 && logitechVoltageProfile(device.label));
+        if (data.empty()) return query.failure(feature);
+        if (named && feature == 0x1000 && data.size() >= 3 && data[2] == 0 && data[1] > data[0])
+            return {Status::bad_report, {}, 0x11, data[1], feature};
+        return verify(logitechBattery(feature, true, data, coarse,
+            feature == 0x1001 && (named ? (device.logitechNamedFeatures & named_voltage_1001) != 0
+                                       : logitechVoltageProfile(device.label))));
     }
     return {Status::unavailable};
 }
@@ -856,6 +904,7 @@ const wchar_t* transportName(Transport transport)
     case Transport::windows_battery: return L"Windows 电量";
     case Transport::vgn_usb:
     case Transport::vgn_v3_usb:
+    case Transport::mchose_a7v2pro_usb:
     case Transport::logitech_usb: return L"USB";
     case Transport::vgn_receiver:
     case Transport::vgn_v3_receiver:
@@ -863,6 +912,7 @@ const wchar_t* transportName(Transport transport)
     case Transport::rapoo_receiver:
     case Transport::mchose_g3v2_receiver:
     case Transport::aula_sc580_receiver:
+    case Transport::ajazz_mk87pro_receiver:
     case Transport::aula_f87v2d_receiver:
     case Transport::dareu_em901x_inventory:
     case Transport::gamesir_super_nova_receiver:
@@ -894,6 +944,8 @@ const wchar_t* providerName(Transport transport)
     case Transport::mchose_g3v2_receiver: return L"mchose-g3v2";
     case Transport::aula_sc580_receiver: return L"aula-sc580";
     case Transport::aula_f87v2d_receiver: return L"aula-f87v2d";
+    case Transport::mchose_a7v2pro_usb: return L"mchose-a7v2pro-usb";
+    case Transport::ajazz_mk87pro_receiver: return L"ajazz-mk87pro-candidate";
     case Transport::dareu_em901x_inventory: return L"dareu-em901x-cache-unverified";
     case Transport::gamesir_super_nova_receiver: return L"gamesir-sapjoy";
     case Transport::supported_mouse_receiver: return L"mouse-vendor-hid";
@@ -1019,7 +1071,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 !((caps.UsagePage == 0xff01 && caps.Usage == 0 && caps.InputReportByteLength == 17) ||
                   (caps.UsagePage == 0xff02 && caps.Usage == 2 && caps.FeatureReportByteLength == 17))))
                 reportedProvider.reset();
-            if (transport == Transport::aula_f87v2d_receiver &&
+            if ((transport == Transport::aula_f87v2d_receiver || transport == Transport::mchose_a7v2pro_usb ||
+                 transport == Transport::ajazz_mk87pro_receiver) &&
                 (!info.valid() || !cnDescriptor(info.value, *transport, interfaceNumber.value_or(255))))
                 reportedProvider.reset();
             inventory->push_back({vid, pid, attributes.VersionNumber, caps.UsagePage, caps.Usage,
@@ -1030,7 +1083,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if ((isVgn(*transport) || *transport == Transport::logitech_receiver || *transport == Transport::logitech_usb) &&
             (peripheralTransport(vid, pid) != transport || !haveCaps)) continue;
         if (*transport == Transport::rapoo_receiver && !isRapooReceiver(vid, pid)) continue;
-        if (*transport == Transport::dareu_em901x_inventory) continue;
+        if (*transport == Transport::dareu_em901x_inventory || *transport == Transport::ajazz_mk87pro_receiver) continue;
         const bool cn = cnReceiver(*transport);
         const bool superNova = *transport == Transport::gamesir_super_nova_receiver;
         if (cn || superNova || *transport == Transport::supported_mouse_receiver) {
@@ -1118,7 +1171,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if (superNova && inserted) it->second.label = L"GameSir Super Nova";
         if (cn && inserted) {
             it->second.label = *transport == Transport::mchose_g3v2_receiver ? L"MCHOSE G3 V2" :
-                *transport == Transport::aula_sc580_receiver ? L"AULA SC580 / SC580X" : L"AULA F87 Pro V2D";
+                *transport == Transport::aula_sc580_receiver ? L"AULA SC580 / SC580X" :
+                *transport == Transport::mchose_a7v2pro_usb ? L"MCHOSE A7 V2 Pro" : L"AULA F87 Pro V2D";
         }
         if (switchPro && inserted) it->second.label = L"Switch Pro（蓝牙模式）";
         if (extraSony && inserted) {
@@ -1194,8 +1248,9 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if (device.transport == Transport::logitech_receiver) {
             const auto channel = std::ranges::find_if(device.collections, logitechChannel);
             if (channel == device.collections.end()) continue;
-            const bool bolt = device.vid == 0x046d && device.pid == 0xc548;
-            if (bolt && std::ranges::count_if(device.collections, logitechChannel) != 1) continue;
+            const bool bolt = logitechBolt(device.vid, device.pid);
+            const auto channels = std::ranges::count_if(device.collections, logitechChannel);
+            if (bolt && channels != 1) continue;
             auto& receiver = receivers_[key];
             const auto now = Clock::now();
             if (now >= receiver.due) {
@@ -1204,7 +1259,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 receiver.due = now + 4s;
                 LogitechQuery query(*channel, shortLogitechChannel(device), slot, logitechRequestId_, now + 750ms);
                 unsigned model = 0;
-                const auto identity = query.unit(bolt ? &model : nullptr);
+                const auto identity = query.unit(channels == 1 ? &model : nullptr, bolt ? 2 : 4);
                 const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
                 if (receiverAttempts_.size() == 96) receiverAttempts_.erase(receiverAttempts_.begin());
@@ -1212,10 +1267,10 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                     identity ? Sample{Status::current, {}, 0x11, 0, 3} : query.failure(3)});
                 auto child = receiver.children.find(slot);
                 const bool newIdentity = child == receiver.children.end() || child->second.unit != identity ||
-                    (child->second.boltNamedModel && model && child->second.boltNamedModel != model);
-                const bool confirmBolt = !newIdentity && !child->second.boltNamedModel &&
-                    boltBatch11Identity(device.vid, device.pid, model, child->second.label, child->second.kind);
-                if (identity && (newIdentity || confirmBolt || child->second.label.empty() || child->second.kind == 255)) {
+                    (child->second.logitechNamedModel && model && child->second.logitechNamedModel != model);
+                const bool confirmNamed = !newIdentity && !child->second.logitechNamedModel &&
+                    logitechNamedIdentity(device.vid, device.pid, model, child->second.label, child->second.kind);
+                if (identity && (newIdentity || confirmNamed || child->second.label.empty() || child->second.kind == 255)) {
                     // Preserve metadata already proven by the same unit. A
                     // partial name/type read on discovery is retried on rotation.
                     auto paired = newIdentity ? device : child->second;
@@ -1230,10 +1285,11 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                         if (!type.empty()) paired.kind = type.front();
                         if (auto name = logitechName(query, nameIndex); !name.empty())
                             paired.label = std::move(name);
-                        if (const auto batch11 = boltBatch11Identity(device.vid, device.pid, model, paired.label, paired.kind)) {
-                            paired.label = batch11->label;
-                            paired.kind = batch11->kind;
-                            paired.boltNamedModel = model;
+                        if (const auto named = logitechNamedIdentity(device.vid, device.pid, model, paired.label, paired.kind)) {
+                            paired.label = named->label;
+                            paired.kind = named->kind;
+                            paired.logitechNamedModel = named->model;
+                            paired.logitechNamedFeatures = named->batteryFeatures;
                         } else if (const auto office = boltOfficeIdentity(device.vid, device.pid, paired.label)) {
                             paired.label = office->label;
                             if (paired.kind == 255) paired.kind = office->kind;

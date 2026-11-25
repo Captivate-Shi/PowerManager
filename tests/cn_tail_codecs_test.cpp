@@ -51,6 +51,40 @@ int main()
     assert(!parseAulaF87ProV2DReply(std::span(capture).first(32)).reading);
     assert(!parseAulaF87ProV2DReply(std::span(capture).subspan(1)).reading);
 
+    static_assert(mchoseA7V2ProCollection(0x3837, 0x4018, 2, 0xff01, 1, 21));
+    static_assert(mchoseA7V2ProCollection(0x3837, 0x4018, 2, 0xff01, 1, 65));
+    static_assert(!mchoseA7V2ProCollection(0x3837, 0x100b, 2, 0xff01, 1, 65));
+    static_assert(!mchoseA7V2ProCollection(0x3837, 0x4019, 2, 0xff01, 1, 65));
+    static_assert(!mchoseA7V2ProCollection(0x3837, 0x4018, 1, 0xff01, 1, 65));
+    static_assert(!mchoseA7V2ProCollection(0x3837, 0x4018, 2, 0xff0b, 0x104, 65));
+    static_assert(!mchoseA7V2ProCollection(0x3837, 0x4018, 2, 0xff01, 1, 22));
+    constexpr auto mRequest = makeMchoseA7V2ProQuery();
+    static_assert(mRequest[0] == 0x11 && mRequest[1] == 0xf9 &&
+        mRequest[20] == 0xff && mRequest[21] == 0 && mRequest[64] == 0);
+    assert(!parseMchoseA7V2ProReply(mRequest).reading);
+    // Synthetic from the published byte layout, not a captured A7 frame.
+    auto mchose = mRequest;
+    mchose[2] = 0xc8; mchose[3] = 0xc7; mchose[4] = 0xe7; mchose[5] = 0xbf;
+    mchose[11] = 76 ^ 0xff; mchose[12] = 1 ^ 0xff;
+    auto m = parseMchoseA7V2ProReply(mchose);
+    assert(m.reading && m.reading->midpoint() == 76 && m.reading->power == Power::charging);
+    m = parseMchoseA7V2ProReply(std::span(mchose).first(21));
+    assert(m.reading && m.reading->midpoint() == 76);
+    assert(!parseMchoseA7V2ProReply(std::span(mchose).first(20)).reading);
+    mchose[4] = 0xe6; // A7 Ultra is a different logical product.
+    assert(!parseMchoseA7V2ProReply(mchose).reading);
+    mchose[4] = 0xe7;
+    mchose[11] = 101 ^ 0xff;
+    assert(!parseMchoseA7V2ProReply(mchose).reading);
+
+    constexpr auto hs = L"HS USB Dongle";
+    static_assert(ajazzMk87ProCollection(0x0c45, 0xfefc, 0xff80, 1, 33, 33, hs));
+    static_assert(ajazzMk87ProCollection(0x0c45, 0xfefc, 0xff80, 1, 65, 65, hs));
+    static_assert(!ajazzMk87ProCollection(0x0c45, 0xfefe, 0xff80, 1, 33, 33, hs));
+    static_assert(!ajazzMk87ProCollection(0x0c45, 0x8802, 0xff80, 1, 33, 33, hs));
+    static_assert(!ajazzMk87ProCollection(0x0c45, 0xfefc, 0xff60, 1, 33, 33, hs));
+    static_assert(!ajazzMk87ProCollection(0x0c45, 0xfefc, 0xff80, 1, 33, 65, hs));
+    static_assert(!ajazzMk87ProCollection(0x0c45, 0xfefc, 0xff80, 1, 33, 33, L"USB Dongle"));
     static_assert(isDareuEm901xReceiver(0x260d, 0x1074));
     static_assert(!isDareuEm901xReceiver(0x260d, 0x1090)); // Cable is a separate SKU/transport path.
     static_assert(!isDareuEm901xReceiver(0x260d, 0x1125)); // Sharkoon, not DAREU EM901X.
