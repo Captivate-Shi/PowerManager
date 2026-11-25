@@ -131,3 +131,9 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 只对 `3537:103E` 原装接收器、明确的 Super Nova / NovaPro / T4NPro 产品字符串、唯一 `FFA0` 集合及已匹配的物理 USB 容器发一次设备信息查询。不以共享 PID 区分 Super Nova 和 Tarantula Pro；通用名称、不匹配规格、有线或其他 GameSir 型号均不进入此路径。返回 `0xFF` 只记作充电但没有可用百分比，不补 100％，也不触发电量提醒。还需余电真机验证产品字符串、游戏共存及充电行为。
 
 依据：[Wireless Device Battery Monitor 的 Windows 实测与报文](https://github.com/notjiccu/wireless-device-battery-monitor/blob/main/docs/gamesir_sapjoy.md)。
+
+## 罗技 MX Keys S / MX Master 3S（Logi Bolt）
+
+复用现有 `046D:C548` 接收器与 HID++ 2.0 电量路径。固件特征索引从各自槽位动态查询，按 Unit ID 验证读数，不用接收器厂商号猜型号，也不固定键盘或鼠标的槽位。发现型号或类型读不全时，下次轮询补读；只有读到明确子设备名称才识别为 MX Keys S / MX Master 3S。区分 HID++ 1.0 的设备不存在与 HID++ 2.0 的忙，不随忙回复删掉设备。直连蓝牙不在本批。
+
+依据：[MX Keys S Windows/Bolt 实测工具](https://github.com/svanlaere/mxkeys-cli) · [双设备 Bolt 读取项目](https://github.com/FedeltaMedia/mx-battery) · [Linux HID++ 错误码](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-logitech-hidpp.c)。余电真机需确认同接收器双设备、休眠唤醒和充电切换。

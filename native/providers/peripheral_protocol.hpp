@@ -127,6 +127,7 @@ inline std::optional<Sample> parseVgn(Transport transport, std::span<const std::
 struct LogitechReply {
     std::span<const std::uint8_t> params;
     unsigned error{};
+    unsigned errorFrame{};
 };
 
 inline std::optional<LogitechReply> parseLogitechReply(std::span<const std::uint8_t> bytes,
@@ -138,8 +139,35 @@ inline std::optional<LogitechReply> parseLogitechReply(std::span<const std::uint
     // HIDClass can pad a short reply to the collection's maximum length.
     bytes = bytes.first(length);
     if ((bytes[2] == 0x8f || bytes[2] == 0xff) &&
-        bytes[3] == index && bytes[4] == function) return LogitechReply{{}, bytes[5]};
+        bytes[3] == index && bytes[4] == function) return LogitechReply{{}, bytes[5], bytes[2]};
     if (bytes[2] == index && bytes[3] == function) return LogitechReply{bytes.subspan(4)};
+    return {};
+}
+
+// Error values overlap across HID++ generations; the response frame decides
+// whether the slot is gone (1.0 UnknownDevice) or only busy (2.0 Busy).
+constexpr Status logitechErrorStatus(unsigned errorFrame, unsigned error)
+{
+    if (errorFrame == 0x8f) {
+        if (error == 8) return Status::offline;
+        if (error == 7) return Status::busy;
+        if (error == 4 || error == 9) return Status::no_radio_reply;
+    } else if (errorFrame == 0xff && error == 8) {
+        return Status::busy;
+    }
+    return Status::unavailable;
+}
+
+struct BoltOfficeIdentity { const wchar_t* label; unsigned kind; };
+
+inline std::optional<BoltOfficeIdentity> boltOfficeIdentity(unsigned receiverVid, unsigned receiverPid,
+                                                           std::wstring_view pairedLabel)
+{
+    if (receiverVid != 0x046d || receiverPid != 0xc548) return {};
+    std::wstring name(pairedLabel);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    if (name == L"mx keys s" || name == L"logitech mx keys s") return BoltOfficeIdentity{L"MX Keys S", 0};
+    if (name == L"mx master 3s" || name == L"logitech mx master 3s") return BoltOfficeIdentity{L"MX Master 3S", 3};
     return {};
 }
 

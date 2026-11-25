@@ -366,11 +366,13 @@ public:
             static_cast<std::uint8_t>(index), static_cast<std::uint8_t>(tagged),
             static_cast<std::uint8_t>(a), static_cast<std::uint8_t>(b)};
         protocolError = 0;
+        protocolErrorFrame = 0;
         std::vector<std::uint8_t> response;
         winError = exchange_.request(query, std::min(end_, Clock::now() + 330ms), [&](auto bytes) {
             const auto parsed = parseLogitechReply(bytes, slot_, index, tagged);
             if (!parsed) return false;
             protocolError = parsed->error;
+            protocolErrorFrame = parsed->errorFrame;
             response.assign(parsed->params.begin(), parsed->params.end());
             return true;
         }, short_ ? &*short_ : nullptr);
@@ -396,8 +398,7 @@ public:
 
     Sample failure(unsigned feature = 0) const
     {
-        if (protocolError) return {protocolError == 8 ? Status::offline :
-            (protocolError == 4 || protocolError == 9) ? Status::no_radio_reply : Status::unavailable,
+        if (protocolErrorFrame) return {logitechErrorStatus(protocolErrorFrame, protocolError),
             {}, 0x11, protocolError, feature};
         auto result = winError ? ioFailure(winError, 0x11) : Sample{Status::unavailable, {}, 0x11};
         if (result.status == Status::timeout) result.status = Status::no_radio_reply;
@@ -407,6 +408,7 @@ public:
 
     DWORD winError{};
     unsigned protocolError{};
+    unsigned protocolErrorFrame{};
 
 private:
     HidExchange exchange_;
@@ -1012,8 +1014,11 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 receiverAttempts_.push_back({device.vid, device.pid, slot, stamp, identity != 0,
                     identity ? Sample{Status::current, {}, 0x11, 0, 3} : query.failure(3)});
                 auto child = receiver.children.find(slot);
-                if (identity && (child == receiver.children.end() || child->second.unit != identity)) {
-                    auto paired = device;
+                const bool newIdentity = child == receiver.children.end() || child->second.unit != identity;
+                if (identity && (newIdentity || child->second.label.empty() || child->second.kind == 255)) {
+                    // Preserve metadata already proven by the same unit. A
+                    // partial name/type read on discovery is retried on rotation.
+                    auto paired = newIdentity ? device : child->second;
                     paired.key = L"logitech-hidpp:" + std::to_wstring(identity);
                     paired.parentEndpoint = device.endpointKey;
                     paired.endpointKey.clear();
@@ -1023,10 +1028,15 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                     if (nameIndex) {
                         const auto type = query.read(nameIndex, 2);
                         if (!type.empty()) paired.kind = type.front();
-                        paired.label = logitechName(query, nameIndex);
+                        if (auto name = logitechName(query, nameIndex); !name.empty())
+                            paired.label = std::move(name);
+                        if (const auto office = boltOfficeIdentity(device.vid, device.pid, paired.label)) {
+                            paired.label = office->label;
+                            if (paired.kind == 255) paired.kind = office->kind;
+                        }
                     }
                     receiver.children.insert_or_assign(slot, std::move(paired));
-                } else if (query.protocolError == 8) {
+                } else if (!identity && query.failure(3).status == Status::offline) {
                     receiver.children.erase(slot);
                 }
             }

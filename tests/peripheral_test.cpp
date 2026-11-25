@@ -71,6 +71,27 @@ int main()
     assert(!parseLogitechReply(std::span(paddedShort).first(6), 2, 5, 0x1b));
     const std::uint8_t protocolError[] = {0x10, 2, 0x8f, 5, 0x1b, 8, 0};
     assert(parseLogitechReply(protocolError, 2, 5, 0x1b)->error == 8);
+    const std::uint8_t boltBusy[20] = {0x11, 2, 0xff, 5, 0x1b, 8};
+    const auto busy = parseLogitechReply(boltBusy, 2, 5, 0x1b);
+    const auto removed = parseLogitechReply(protocolError, 2, 5, 0x1b);
+    assert(busy && logitechErrorStatus(busy->errorFrame, busy->error) == Status::busy);
+    assert(removed && logitechErrorStatus(removed->errorFrame, removed->error) == Status::offline);
+    assert(logitechErrorStatus(0xff, 9) == Status::unavailable);
+    assert(!parseLogitechReply(boltBusy, 1, 5, 0x1b));
+    const auto keyboard = boltOfficeIdentity(0x046d, 0xc548, L"MX KEYS S");
+    const auto mouse = boltOfficeIdentity(0x046d, 0xc548, L"Logitech MX Master 3S");
+    assert(keyboard && keyboard->kind == 0 && std::wstring_view(keyboard->label) == L"MX Keys S");
+    assert(mouse && mouse->kind == 3 && std::wstring_view(mouse->label) == L"MX Master 3S");
+    assert(!boltOfficeIdentity(0x046d, 0xc52b, L"MX Keys S"));
+    assert(!boltOfficeIdentity(0x046d, 0xc548, L"MX Keys"));
+    assert(!boltOfficeIdentity(0x046d, 0xc548, L"Logi Bolt Receiver"));
+    // The two slots on one receiver return distinct battery values.
+    const std::uint8_t keysBattery[20] = {0x11, 1, 8, 0x1a, 40, 4, 0};
+    const std::uint8_t mouseBattery[20] = {0x11, 2, 8, 0x1a, 76, 4, 1};
+    assert(!parseLogitechReply(mouseBattery, 1, 8, 0x1a));
+    assert(logitechBattery(0x1004, true, parseLogitechReply(keysBattery, 1, 8, 0x1a)->params).reading->high == 40);
+    const auto mouseReading = logitechBattery(0x1004, true, parseLogitechReply(mouseBattery, 2, 8, 0x1a)->params);
+    assert(mouseReading.reading && mouseReading.reading->low == 76 && mouseReading.reading->power == Power::charging);
     const std::uint8_t legacyCharging[] = {0, 0, 1};
     assert(!logitechBattery(0x1000, true, legacyCharging).reading);
     const std::uint8_t legacyFull[] = {0, 0, 3};
