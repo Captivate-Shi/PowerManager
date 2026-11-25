@@ -1,0 +1,33 @@
+name: Installer screenshots
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  capture:
+    if: github.head_ref == 'qa/installer-screenshots'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45575769149
+          name: windows-x64
+          path: setup-check
+      - name: Capture Setup before committing any install
+        shell: powershell
+        run: ./scripts/capture-installer.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: installer-screenshots
+          path: setup-shots/
+          if-no-files-found: error
