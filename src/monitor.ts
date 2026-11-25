@@ -1,16 +1,26 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Collector } from './collector';
+import { randomUUID } from 'node:crypto';
+import { CompatibilityDraft, compatibilityJson, diagnosticConnection, diagnosticFirmwareLimit, diagnosticModelLimit,
+  diagnosticTag, diagnosticText, type DiagnosticSubject } from './compatibility-report';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { release } from 'node:os';
 
-import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Sample, type Severity, type Settings, type Snapshot } from './model';
+import { canProbeBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type CompatibilitySelection, type CommandResult, type DiagnosticDevice, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 import { accumulateHistoryDay, historyStart } from './history-plot';
 
 const executeFile = promisify(execFile);
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
+
+function validReading(reading: Reading | null | undefined): reading is Reading {
+  return !!reading && Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
+    reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
+    ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
+    ['hid', 'windows', 'ble'].includes(reading.source);
+}
 
 // A local reading is only a last-known value. Never restore a live status from disk.
 function cachedDevice(value: unknown): Device | null {
@@ -20,11 +30,7 @@ function cachedDevice(value: unknown): Device | null {
       typeof connection !== 'string' || typeof watched !== 'boolean') return null;
   const safeArt = art && ['mouse', 'keyboard', 'dualsense', 'xbox', 'controller', 'headset', 'earbuds', 'stylus', 'unknown'].includes(art)
     ? art : classify(name);
-  const hasReading = reading && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0 &&
-    Number.isFinite(reading.low) && Number.isFinite(reading.high) && Number.isFinite(reading.raw) &&
-    reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
-    ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
-    ['hid', 'windows'].includes(reading.source);
+  const hasReading = validReading(reading) && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0;
   return { id, name, connection, art: safeArt, watched, status: 'stale', reason: '等待新读数',
     reading: hasReading ? reading : null, lastRead: hasReading ? lastRead : null };
 }
@@ -113,6 +119,8 @@ export class Monitor {
     this.collector = new Collector(executable, (occupied, error) => {
       if (this.closed) return;
       this.totals.childExits++;
+      this.diagnosticEpoch++;
+      this.diagnosticDevices.clear();
       this.state.collector = occupied ? 'occupied' : 'retrying';
       this.state.error = error ? collectorStartupError : this.state.error === collectorStartupError ? undefined : this.state.error;
       if (error) this.log(error);
@@ -125,6 +133,8 @@ export class Monitor {
   start() { void this.poll(true); }
   close() {
     this.closed = true;
+    this.compatibilityDraft.clear();
+    this.diagnosticDevices.clear();
     clearTimeout(this.timer);
     this.collector.close();
     this.markStale();
@@ -133,6 +143,8 @@ export class Monitor {
   async closeForMaintenance() {
     if (!this.persist()) return '无法保存设置或电量历史。';
     this.closed = true;
+    this.compatibilityDraft.clear();
+    this.diagnosticDevices.clear();
     clearTimeout(this.timer);
     if (!await this.collector.closeGracefully()) {
       this.collector.allowRestartAfterClose();
@@ -217,31 +229,104 @@ export class Monitor {
     }));
   }
 
-  private exporting?: Promise<string>;
+  private compatibilityDraft = new CompatibilityDraft();
+  private diagnosticDevices = new Map<string, { display: DiagnosticDevice; target?: string; nativeId?: string }>();
+  private diagnosticDeadline = 0;
+  private diagnosticEpoch = 0;
+  private diagnosticScan = 0;
 
-  exportCompatibility(context: string, version: string) {
-    this.exporting ??= this.writeCompatibility(context, version).finally(() => { this.exporting = undefined; });
-    return this.exporting;
+  async listDiagnosticDevices(): Promise<DiagnosticDevice[]> {
+    let result: unknown;
+    const epoch = this.diagnosticEpoch;
+    const scan = ++this.diagnosticScan;
+    this.diagnosticDevices.clear();
+    if (this.state.collector !== 'ready') return [];
+    try { result = await this.collector.request('diagnostic_devices'); } catch { return []; }
+    if (this.closed || epoch !== this.diagnosticEpoch || scan !== this.diagnosticScan || !Array.isArray(result)) return [];
+    const next = new Map<string, { display: DiagnosticDevice; target?: string; nativeId?: string }>();
+    for (const candidate of result.slice(0, 256)) {
+      if (!candidate || typeof candidate !== 'object') continue;
+      const model = diagnosticText(candidate.model, diagnosticModelLimit);
+      const label = diagnosticText(candidate.label, diagnosticModelLimit);
+      if (!model && !label) continue;
+      const key = randomUUID();
+      const nativeId = typeof candidate.id === 'string' && candidate.id.length <= 600 ? candidate.id : undefined;
+      const display = { key, model, label, firmwareReadable: !!nativeId && candidate.firmwareReadable === true, firmware: diagnosticText(candidate.firmware, diagnosticFirmwareLimit),
+        connection: diagnosticConnection(candidate.connection), connected: candidate.connected === true };
+      next.set(key, { display, nativeId, target: diagnosticTag(candidate.target) });
+    }
+    this.diagnosticDevices = next;
+    this.diagnosticDeadline = performance.now() + 10 * 60_000;
+    return [...next.values()].map(item => item.display);
   }
 
-  private async writeCompatibility(context: string, version: string) {
-    let report: Record<string, unknown>;
+  async readDiagnosticFirmware(key: string): Promise<NonNullable<Extract<CommandResult, { ok: true }>['diagnosticFirmware']>> {
+    const chosen = performance.now() < this.diagnosticDeadline ? this.diagnosticDevices.get(key) : undefined;
+    if (!chosen?.nativeId || !chosen.display.firmwareReadable || this.state.collector !== 'ready') return { status: 'unavailable' };
+    if (chosen.display.firmware) return { status: 'ready', firmware: chosen.display.firmware };
+    try {
+      const result = await this.collector.request<{ status?: unknown; firmware?: unknown }>('diagnostic_firmware', { id: chosen.nativeId });
+      if (this.diagnosticDevices.get(key) !== chosen) return { status: 'unavailable' };
+      const firmware = diagnosticText(result?.firmware, diagnosticFirmwareLimit);
+      if (result?.status === 'ready' && firmware) {
+        chosen.display.firmware = firmware;
+        return { status: 'ready', firmware };
+      }
+      if (result?.status === 'pending' || result?.status === 'busy') return { status: result.status };
+    } catch { /* Manual entry remains available. */ }
+    return { status: 'unavailable' };
+  }
+
+  private diagnosticSubject(selection: CompatibilitySelection): DiagnosticSubject {
+    const chosen = selection.kind === 'device' && performance.now() < this.diagnosticDeadline
+      ? this.diagnosticDevices.get(selection.deviceKey) : undefined;
+    if (selection.kind === 'device' && !chosen) throw new Error('设备列表已失效，请重新扫描。');
+    const model = chosen?.display.model ?? diagnosticText(selection.model, diagnosticModelLimit);
+    if (!model) throw new Error('请选择设备型号或填写未识别的型号。');
+    const firmware = chosen?.display.firmware ?? diagnosticText(selection.firmware, diagnosticFirmwareLimit);
+    return {
+      model, modelSource: chosen?.display.model ? 'device' : 'manual',
+      firmware, firmwareSource: chosen?.display.firmware ? 'device' : firmware ? 'manual' : undefined,
+      connection: chosen?.display.connection, connected: chosen?.display.connected, target: chosen?.target,
+    };
+  }
+
+  async previewCompatibility(selection: CompatibilitySelection, version: string) {
+    const subject = this.diagnosticSubject(selection);
+    const epoch = this.diagnosticEpoch;
+    let report: unknown;
     let capture: 'live' | 'inventory' = 'live';
     try {
       if (this.state.collector !== 'ready') throw new Error('Collector unavailable');
-      report = await this.collector.request<Record<string, unknown>>('compatibility');
+      report = await this.collector.request('compatibility');
     } catch {
       capture = 'inventory';
-      const inventory = await executeFile(this.executable, ['--inventory'], { windowsHide: true, timeout: 10_000,
-        maxBuffer: 768 * 1024, encoding: 'utf8' });
-      report = JSON.parse(inventory.stdout);
+      try {
+        const inventory = await executeFile(this.executable, ['--inventory'], { windowsHide: true, timeout: 10_000,
+          maxBuffer: 768 * 1024, encoding: 'utf8' });
+        report = JSON.parse(inventory.stdout);
+      } catch {
+        // A typed model is still useful when the collector cannot inventory the host.
+        report = { windowsQuerySucceeded: false };
+      }
     }
-    const file = join(this.directory, 'compatibility-report.json');
-    const metadata = { generatedAt: new Date().toISOString(), appVersion: version, windowsRelease: release(),
-      capture, collectorStatus: this.state.collector, context };
-    writeFileSync(file + '.tmp', JSON.stringify({ ...metadata, ...report }, null, 2), 'utf8');
-    renameSync(file + '.tmp', file);
-    return file;
+    if (this.closed) throw new Error('应用正在退出');
+    return this.compatibilityDraft.create(compatibilityJson({
+      appVersion: version, windowsRelease: release(), capture, collectorStatus: this.state.collector, context: '',
+    }, report, new Date(), capture === 'live' && epoch === this.diagnosticEpoch ? subject : { ...subject, target: undefined }));
+  }
+
+  exportCompatibility(token: string) {
+    this.compatibilityDraft.save(token, json => {
+      const target = join(this.directory, 'compatibility-report.json');
+      const temporary = join(this.directory, 'compatibility-report-' + token + '.tmp');
+      try {
+        writeFileSync(temporary, json, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+        renameSync(temporary, target);
+      } finally {
+        try { rmSync(temporary, { force: true }); } catch { /* target is either unchanged or fully replaced */ }
+      }
+    });
   }
 
   async discover() {
@@ -259,7 +344,7 @@ export class Monitor {
   }
   add(id: string) {
     const input = this.found.get(id);
-    if (!input?.reading || !input.connected || input.automatic || this.data.watched.some(item => item.id === id)) {
+    if (!input?.connected || (!input.reading && input.batteryCandidate !== 'ble_bas') || input.automatic || this.data.watched.some(item => item.id === id)) {
       throw new Error('该设备无法添加或已经在监测中');
     }
     if (this.data.watched.length >= 128) throw new Error('监测设备已达到上限');
@@ -349,7 +434,8 @@ export class Monitor {
       for (const observation of results) {
         if (!observation.automatic && observation.art === 'unknown' && !watched.has(observation.id)) continue;
         seen.add(observation.id);
-        changed = this.accept(observation, sampledAt, watched.has(observation.id), !force ? sequence : undefined) || changed;
+        changed = this.accept(observation, sampledAt, watched.has(observation.id) && !observation.automatic,
+          !force ? sequence : undefined) || changed;
       }
       for (const [id, row] of this.rows) {
         if (!seen.has(id) && row.device.status !== 'offline') {
@@ -380,6 +466,10 @@ export class Monitor {
       row = { device: { id, name, connection, art: art === 'unknown' ? classify(name) : art, status: 'stale',
         reason: '等待新读数', reading: null, lastRead: null, watched }, due: 0, failures: 0 };
       this.rows.set(id, row);
+      changed = this.dirty = true;
+    }
+    if (row.device.watched !== watched) {
+      row.device.watched = watched;
       changed = this.dirty = true;
     }
     if (row.device.name !== name) {
@@ -452,7 +542,7 @@ export class Monitor {
     return true;
   }
   private setSample(row: Row, sample: Sample, time: number) {
-    if (sample.status === 'current' && !sample.reading) {
+    if (sample.status === 'current' && !validReading(sample.reading)) {
       sample = { status: 'unavailable', reason: '未取得有效电量读数', reading: null };
     }
     this.dirty = true;

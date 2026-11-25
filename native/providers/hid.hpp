@@ -40,6 +40,7 @@ struct Device {
     std::uint32_t unit{};
     unsigned kind{255};
     std::wstring label{};
+    std::wstring parentEndpoint{};
 };
 
 struct HidInterface {

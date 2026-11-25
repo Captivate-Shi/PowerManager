@@ -1,6 +1,8 @@
 #include "hid.hpp"
 #include "peripheral_protocol.hpp"
 #include "device_search.hpp"
+#include "ble_battery.hpp"
+#include "gamepad_battery.hpp"
 #include "json.hpp"
 
 #include <windows.h>
@@ -16,6 +18,8 @@
 #include <iostream>
 #include <deque>
 #include <stdexcept>
+#include <set>
+#include <cwctype>
 
 using nlohmann::json;
 using namespace pm;
@@ -63,7 +67,7 @@ json reading(const std::optional<Reading>& value)
     const char* power[] = {"discharging", "charging", "full", "unknown"};
     return {{"low", value->low}, {"high", value->high}, {"raw", value->raw},
             {"power", power[static_cast<int>(value->power)]},
-            {"source", value->source == ReadingSource::hid ? "hid" : "windows"}};
+            {"source", value->source == ReadingSource::hid ? "hid" : value->source == ReadingSource::ble ? "ble" : "windows"}};
 }
 
 json sample(const Sample& value)
@@ -207,7 +211,69 @@ json processMetrics()
         {"handles", haveHandles ? json(handles) : json(nullptr)}};
 }
 
-json inventory()
+bool genericDeviceLabel(std::string_view name)
+{
+    return name.starts_with("兼容") || name == "Logitech HID++ 外设" || name == "HID 键盘" ||
+        name == "HID Keyboard Device" || name == "HID-compliant mouse" || name == "USB Input Device" ||
+        name == "HID-compliant device" || name == "USB 输入设备" || name == "符合 HID 标准的鼠标";
+}
+
+std::wstring endpointContainer(std::wstring_view value)
+{
+    const auto colon = value.find(L':');
+    if (colon == std::wstring_view::npos || colon == 0 ||
+        !std::ranges::all_of(value.substr(0, colon), [](wchar_t c) { return c >= L'0' && c <= L'9'; })) return {};
+    const auto guid = value.substr(colon + 1);
+    if (guid.size() != 38 || guid.front() != L'{' || guid.back() != L'}') return {};
+    std::wstring result(guid);
+    std::ranges::transform(result, result.begin(), [](wchar_t c) { return std::towlower(c); });
+    return result;
+}
+
+std::set<std::wstring> claimedContainers(const std::vector<Device>& endpoints)
+{
+    std::set<std::wstring> seen;
+    for (const auto& endpoint : endpoints) {
+        auto id = endpointContainer(endpoint.endpointKey);
+        if (id.empty()) id = endpointContainer(endpoint.parentEndpoint);
+        if (!id.empty()) seen.insert(std::move(id));
+    }
+    return seen;
+}
+
+using ReportTargets = std::map<std::wstring, std::string>;
+
+std::string reportTarget(ReportTargets& targets, const std::wstring& id)
+{
+    const auto found = targets.find(id);
+    if (found != targets.end()) return found->second;
+    if (targets.size() >= 512) return {};
+    const auto value = "W" + std::to_string(targets.size() + 1);
+    targets.emplace(id, value);
+    return value;
+}
+
+json gamepadInventory()
+{
+    const auto pads = inspectGamepadBatteries();
+    const auto serialize = [](const auto& source) {
+        json rows = json::array();
+        for (const auto& value : source) {
+            const char* power[] = {"discharging", "charging", "full", "unknown"};
+            rows.push_back({{"slot", value.slot}, {"vid", value.vid}, {"pid", value.pid},
+                {"detail", value.detail}, {"status", gamepadBatteryStatusName(value.status)},
+                {"level", gamepadBatteryLevelName(value.level)}, {"power", power[static_cast<int>(value.power)]},
+                {"percent", value.percent ? json(*value.percent) : json(nullptr)},
+                {"remainingMwh", value.remainingMwh ? json(*value.remainingMwh) : json(nullptr)},
+                {"fullMwh", value.fullMwh ? json(*value.fullMwh) : json(nullptr)}});
+        }
+        return rows;
+    };
+    return {{"wgiStatus", pads.wgiStatus}, {"xinputStatus", pads.xinputStatus},
+        {"windowsGamingInput", serialize(pads.windowsGamingInput)}, {"xinput", serialize(pads.xinput)}};
+}
+
+json inventory(ReportTargets& targets)
 {
     std::vector<HidInterface> descriptors;
     HidMonitor monitor;
@@ -221,15 +287,25 @@ json inventory()
             {"candidateProvider", item.provider ? json(utf8(providerName(*item.provider))) : json(nullptr)}});
     }
     const auto devices = findWindowsDevices();
+    const auto ble = inspectBleBatteryServices();
     json windows = json::array();
     if (devices) {
         for (const auto& device : *devices) {
             if (windows.size() >= 256) break;
-            windows.push_back({{"connection", utf8(device.connection)}, {"connected", device.connected},
-                {"battery", reading(device.battery)}});
+            const Sample observed{Status::unavailable, device.battery, 0, static_cast<unsigned>(device.batteryDetail)};
+            const auto found = ble.counts.find(device.id);
+            const auto services = found == ble.counts.end() ? 0u : found->second;
+            windows.push_back({{"target", reportTarget(targets, device.id)}, {"connection", utf8(device.connection)},
+                {"connected", device.connected}, {"battery", reading(device.battery)},
+                {"reasonCode", windowsBatteryReason(observed)},
+                {"bleBasListed", services == 1},
+                {"bleReasonCode", !ble.complete ? "ble_interface_enumeration_failed" :
+                    services > 1 ? "ble_multiple_battery_services" : services == 1 ? "ble_candidate" :
+                    device.connection == L"蓝牙" ? "ble_no_battery_service" : "ble_not_bluetooth"}});
         }
     }
-    return {{"schemaVersion", 1}, {"hidInterfaces", hid}, {"windowsDevices", windows}, {"windowsQuerySucceeded", devices.has_value()}};
+    return {{"schemaVersion", 2}, {"hidInterfaces", hid}, {"windowsDevices", windows},
+        {"windowsQuerySucceeded", devices.has_value()}, {"bleEnumerationError", ble.error}, {"gamepads", gamepadInventory()}};
 }
 
 const wchar_t* label(const Device& device)
@@ -260,6 +336,8 @@ public:
         if (action == "tone") return {{"played", Beep(880, 145) != FALSE}};
         if (action == "discover") return discover();
         if (action == "compatibility") return compatibility();
+        if (action == "diagnostic_devices") return diagnosticDevices();
+        if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("id").get<std::string>()));
         if (action == "bluetooth") return bluetooth(wide(request.at("key").get<std::string>()));
         if (action == "poll") return poll(request);
         throw std::runtime_error("Unknown action");
@@ -268,28 +346,122 @@ public:
 private:
     HidMonitor monitor_;
     std::deque<json> recent_;
+    ReportTargets targets_;
+    std::set<std::wstring> bleContainers_;
+    std::chrono::steady_clock::time_point bleRefresh_{};
+    std::chrono::steady_clock::time_point windowsRefresh_{};
+    std::vector<FoundDevice> windowsDevices_;
+    std::map<std::wstring, std::wstring> diagnosticFirmwareTargets_;
+
+    const std::vector<FoundDevice>& defaultWindowsDevices(bool force)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (force || now >= windowsRefresh_) {
+            if (auto observed = findWindowsDevices()) windowsDevices_ = std::move(*observed);
+            windowsRefresh_ = now + 30s;
+        }
+        return windowsDevices_;
+    }
+
+    json diagnosticDevices()
+    {
+        json result = json::array();
+        std::set<std::wstring> seen;
+        diagnosticFirmwareTargets_.clear();
+        const auto firmwareServices = bleFirmwareContainers();
+        auto firmwareCandidate = [&](const std::wstring& id, const std::wstring& container) {
+            if (container.empty() || !firmwareServices.contains(container)) return false;
+            diagnosticFirmwareTargets_.try_emplace(id, container);
+            return true;
+        };
+        for (const auto& endpoint : endpoints_) {
+            if (result.size() >= 128) break;
+            if (!seen.insert(endpoint.key).second) continue;
+            // Shared protocol fallback labels are not exact model names.
+            const auto name = utf8(label(endpoint));
+            const bool generic = genericDeviceLabel(name);
+            const bool canReadFirmware = endpoint.transport == Transport::dualsense_bluetooth &&
+                firmwareCandidate(endpoint.key, endpointContainer(endpoint.endpointKey));
+            result.push_back({{"id", utf8(endpoint.key)}, {"target", reportTarget(targets_, endpoint.key)},
+                {"label", name}, {"model", generic ? json(nullptr) : json(name)},
+                {"connection", utf8(transportName(endpoint.transport))}, {"revision", endpoint.revision},
+                {"connected", true}, {"firmwareReadable", canReadFirmware}});
+        }
+        const auto claimed = claimedContainers(endpoints_);
+        for (const auto& device : defaultWindowsDevices(true)) {
+            if (result.size() >= 128) break;
+            if (claimed.contains(device.id) || !seen.insert(device.id).second) continue;
+            const bool canReadFirmware = device.connected && device.knownBluetooth &&
+                firmwareCandidate(device.id, device.id);
+            const auto name = utf8(device.name);
+            result.push_back({{"id", utf8(device.id)}, {"target", reportTarget(targets_, device.id)},
+                {"label", name}, {"model", genericDeviceLabel(name) ? json(nullptr) : json(name)}, {"connection", utf8(device.connection)},
+                {"connected", device.connected}, {"firmwareReadable", canReadFirmware}});
+        }
+        return result;
+    }
+
+    json diagnosticFirmware(const std::wstring& id)
+    {
+        const auto found = diagnosticFirmwareTargets_.find(id);
+        if (found == diagnosticFirmwareTargets_.end()) return {{"status", "unavailable"}};
+        const auto connection = readWindowsDevice(found->second);
+        const auto detail = static_cast<WindowsBatteryDetail>(connection.detail);
+        if (!connection.reading && detail != WindowsBatteryDetail::missingProperty &&
+            detail != WindowsBatteryDetail::invalidPercent) return {{"status", "unavailable"}};
+        const auto result = readBleFirmware(found->second);
+        switch (result.status) {
+        case BleFirmwareStatus::pending: return {{"status", "pending"}};
+        case BleFirmwareStatus::busy: return {{"status", "busy"}};
+        case BleFirmwareStatus::ready: return {{"status", "ready"}, {"firmware", result.revision}};
+        default: return {{"status", "unavailable"}};
+        }
+    }
+
+    const std::set<std::wstring>& refreshBleCandidates(bool force = false)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (force || now >= bleRefresh_) {
+            bleContainers_ = bleBatteryContainers();
+            bleRefresh_ = now + 30s;
+        }
+        return bleContainers_;
+    }
 
     json compatibility()
     {
-        auto report = inventory();
+        auto report = inventory(targets_);
         json scans = json::array();
         for (const auto& attempt : monitor_.receiverAttempts()) {
             scans.push_back({{"vid", attempt.vid}, {"pid", attempt.pid}, {"slot", attempt.slot},
                 {"unixSeconds", attempt.unixSeconds}, {"identityAvailable", attempt.identityAvailable},
                 {"outcome", sample(attempt.outcome)}});
         }
+        json native = json::array();
+        std::set<std::wstring> seen;
+        for (const auto& device : endpoints_) {
+            if (native.size() >= 128) break;
+            if (!seen.insert(device.key).second) continue;
+            native.push_back({{"target", reportTarget(targets_, device.key)}, {"vid", device.vid}, {"pid", device.pid},
+                {"revision", device.revision}, {"slot", device.slot}, {"provider", utf8(providerName(device.transport))},
+                {"transport", utf8(transportName(device.transport))}});
+        }
+        report["nativeDevices"] = std::move(native);
         report["logitechSlotAttempts"] = std::move(scans);
         report["recentSamples"] = recent_;
         return report;
     }
 
-    void record(const Device& device, const json& measured, std::chrono::steady_clock::time_point start)
+    void record(const Device& device, const json& measured, std::chrono::steady_clock::time_point start,
+        const std::string& target = {}, const char* route = nullptr, const std::string& reason = {})
     {
         if (recent_.size() == 160) recent_.pop_front();
         const auto now = std::chrono::system_clock::now().time_since_epoch();
         recent_.push_back({{"unixMs", std::chrono::duration_cast<std::chrono::milliseconds>(now).count()},
             {"vid", device.vid}, {"pid", device.pid}, {"revision", device.revision}, {"slot", device.slot},
-            {"transport", utf8(transportName(device.transport))}, {"provider", utf8(providerName(device.transport))},
+            {"transport", utf8(transportName(device.transport))},
+            {"provider", route ? std::string(route) : utf8(providerName(device.transport))},
+            {"target", target}, {"reasonCode", !reason.empty() ? reason : "hid_" + measured.value("status", std::string("unavailable"))},
             {"elapsedMs", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()},
             {"outcome", measured}});
     }
@@ -301,14 +473,19 @@ private:
     {
         const auto found = findWindowsDevices();
         if (!found) throw std::runtime_error("Windows device enumeration failed");
+        const auto& bleCandidates = refreshBleCandidates(true);
+        const auto endpoints = monitor_.enumerate();
+        const auto claimed = claimedContainers(endpoints);
         json result = json::array();
         for (const auto& device : *found) {
-            if (device.automaticallyMonitored) continue;
+            if (claimed.contains(device.id)) continue;
+            const bool bas = device.knownBluetooth && bleCandidates.contains(device.id);
             result.push_back({{"id", utf8(device.id)}, {"name", utf8(device.name)}, {"connection", utf8(device.connection)},
-                {"connected", device.connected}, {"automatic", device.automaticallyMonitored},
-                {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading}});
+                {"connected", device.connected}, {"automatic", defaultPeripheralMonitoring(device, bas, false)},
+                {"reading", reading(device.battery)}, {"offerBluetooth", device.offerBluetoothReading},
+                {"batteryCandidate", device.connected && device.inputOrHeadset && !device.battery && bas ?
+                    json("ble_bas") : json(nullptr)}});
         }
-        const auto endpoints = monitor_.enumerate();
         std::map<std::wstring, const Device*> byDevice;
         for (const auto& endpoint : endpoints) {
             if (!byDevice.contains(endpoint.key) || endpoint.transport == Transport::dualsense_usb) {
@@ -376,18 +553,20 @@ private:
             if (disconnected(*source) || shouldRead(id)) {
                 const auto started = std::chrono::steady_clock::now();
                 auto measured = disconnected(*source) ? Sample{Status::offline} : monitor_.sample(*source);
+                record(*source, sample(measured), started, reportTarget(targets_, key));
                 const auto* preferred = source;
                 for (const auto* endpoint : group) {
                     if (measured.reading) break;
                     if (endpoint == preferred || disconnected(*endpoint)) continue;
+                    const auto attempt = std::chrono::steady_clock::now();
                     const auto alternate = monitor_.sample(*endpoint);
+                    record(*endpoint, sample(alternate), attempt, reportTarget(targets_, key));
                     if (alternate.reading || (measured.status == Status::offline && alternate.status != Status::offline)) {
                         source = endpoint;
                         measured = alternate;
                     }
                 }
                 value = sample(measured);
-                record(*source, value, started);
                 const auto now = std::chrono::steady_clock::now();
                 const auto last = voltageTimes_.find(key);
                 if (voltageEnabled && measured.status != Status::offline && isDualSense(source->transport) &&
@@ -406,16 +585,59 @@ private:
                 {"sample", value}, {"art", art(*source)}, {"automatic", true}, {"voltage", voltage}});
         }
 
+        const auto claimed = claimedContainers(endpoints);
+        const bool force = request.value("force", false);
+        const auto& basCandidates = refreshBleCandidates(force);
+        const auto& windows = defaultWindowsDevices(force);
+        struct GenericTarget { std::string id, name, connection; bool automatic; };
+        std::map<std::wstring, GenericTarget> targets;
         for (const auto& device : request.at("watched")) {
             const auto id = device.at("id").get<std::string>();
+            const auto key = wide(id);
+            if (claimed.contains(key)) continue;
+            targets.try_emplace(key, GenericTarget{id, device.at("name").get<std::string>(),
+                device.at("connection").get<std::string>(), false});
+        }
+        unsigned automaticCount = 0;
+        for (const auto& device : windows) {
+            if (automaticCount >= 32) break;
+            if (!defaultPeripheralMonitoring(device, basCandidates.contains(device.id), claimed.contains(device.id))) continue;
+            targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
+            ++automaticCount;
+        }
+        // Deferred endpoints remain due. A bounded batch protects the collector
+        // from many connected BLE devices multiplying latency.
+        unsigned basBudget = 2;
+        for (const auto& [container, device] : targets) {
+            const auto& id = device.id;
             json value = nullptr;
             if (shouldRead(id)) {
                 const auto started = std::chrono::steady_clock::now();
-                value = sample(readWindowsDevice(wide(id)));
-                record(Device{{}, Transport::windows_battery, 0, {}, {}}, value, started);
+                auto measured = readWindowsDevice(container);
+                const auto target = reportTarget(targets_, container);
+                const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
+                record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));
+                const auto windowsDetail = static_cast<WindowsBatteryDetail>(measured.detail);
+                // These two statuses are returned only after Windows confirms
+                // Connected. A failed property query is not connection evidence.
+                const bool useBas = (windowsDetail == WindowsBatteryDetail::missingProperty ||
+                    windowsDetail == WindowsBatteryDetail::invalidPercent) &&
+                    basCandidates.contains(container);
+                if (useBas && basBudget > 0) {
+                    --basBudget;
+                    const auto attempt = std::chrono::steady_clock::now();
+                    measured = readBleBattery(container);
+                    auto report = sample(measured);
+                    report.erase("reportId");
+                    if (measured.report) report["errorCode"] = measured.report;
+                    record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(measured.detail)));
+                    value = sample(measured);
+                } else if (!useBas) {
+                    value = sample(measured);
+                }
             }
-            rows.push_back({{"id", id}, {"name", device.at("name")}, {"connection", device.at("connection")},
-                {"aliases", json::array()}, {"sample", value},
+            rows.push_back({{"id", id}, {"name", device.name}, {"connection", device.connection},
+                {"aliases", json::array()}, {"sample", value}, {"automatic", device.automatic},
                 {"art", "unknown"}, {"voltage", nullptr}});
         }
         return rows;
@@ -426,7 +648,10 @@ private:
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string_view(argv[1]) == "--inventory") {
-        std::cout << inventory().dump(2, ' ', false, json::error_handler_t::replace) << '\n';
+        const auto apartment = RoInitialize(RO_INIT_MULTITHREADED);
+        ReportTargets targets;
+        std::cout << inventory(targets).dump(2, ' ', false, json::error_handler_t::replace) << '\n';
+        if (SUCCEEDED(apartment)) RoUninitialize();
         return 0;
     }
     if (argc != 1) return 2;

@@ -1,5 +1,6 @@
+import type { CompatibilityPreview } from './compatibility-report';
 export type Power = 'discharging' | 'charging' | 'full' | 'unknown';
-export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' };
+export type Reading = { low: number; high: number; raw: number; power: Power; source: 'hid' | 'windows' | 'ble' };
 export type Status = 'current' | 'offline' | 'no_radio_reply' | 'busy' | 'timeout' | 'bad_report' |
   'unavailable' | 'basic_bluetooth' | 'charging_error' | 'stale' | 'unreachable';
 export type Sample = { status: Status; reason: string; reading: Reading | null };
@@ -12,8 +13,14 @@ export type Device = {
 };
 export type Found = {
   id: string; name: string; connection: string; connected: boolean; automatic: boolean;
-  reading: Reading | null; offerBluetooth: boolean;
+  reading: Reading | null; offerBluetooth: boolean; batteryCandidate?: 'ble_bas';
 };
+export type DiagnosticDevice = {
+  key: string; model?: string; label?: string; firmware?: string; firmwareReadable?: boolean; connection?: string; connected: boolean;
+};
+export type CompatibilitySelection =
+  | { kind: 'device'; deviceKey: string; model?: string; firmware?: string }
+  | { kind: 'manual'; model: string; firmware?: string };
 export type Settings = {
   low: number; critical: number; repeat: number; snooze: number; fullscreenSound: boolean;
   soundOnly: boolean; voltage: boolean; startup: boolean;
@@ -59,16 +66,18 @@ export type MainView = {
   mode?: 'stage' | 'list';
 };
 export type Command =
-  | { type: 'refresh' | 'discover' | 'diagnostics' | 'mute' | 'pin' | 'closeSurface' }
+  | { type: 'refresh' | 'discover' | 'diagnostics' | 'diagnosticDevices' | 'mute' | 'pin' | 'closeSurface' }
+  | { type: 'diagnosticFirmware'; deviceKey: string }
   | { type: 'open'; id?: string }
-  | { type: 'compatibility'; context: string }
+  | { type: 'compatibility'; selection: CompatibilitySelection }
+  | { type: 'compatibility'; reportToken: string }
   | { type: 'history'; id: string; range?: HistoryRange }
   | { type: 'add' | 'remove' | 'bluetooth' | 'snooze' | 'ignore'; id: string }
   | { type: 'settings'; patch: Partial<Settings>; confirmHistoryShorten?: boolean }
   | { type: 'toggleAlertSetting'; key: AlertSwitch }
   | { type: 'deviceSettings'; id: string; patch: DeviceSettings }
   | { type: 'preview'; severity: Severity; id?: string };
-export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean } |
+export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean; compatibility?: CompatibilityPreview; diagnosticDevices?: DiagnosticDevice[]; diagnosticFirmware?: { status: 'pending' | 'ready' | 'unavailable' | 'busy'; firmware?: string } } |
   { ok: false; error: string };
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;

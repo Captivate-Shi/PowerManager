@@ -3,6 +3,8 @@
 #include "hid.hpp"
 
 #include <algorithm>
+#include <cwctype>
+#include <string_view>
 #include <numeric>
 
 namespace pm {
@@ -25,6 +27,21 @@ inline bool isVgn(Transport transport)
 {
     return transport == Transport::vgn_usb || transport == Transport::vgn_receiver ||
         transport == Transport::vgn_v3_usb || transport == Transport::vgn_v3_receiver;
+}
+
+// Weisheng's VID/PID are shared by VGN and ATK. Use a product string
+// allowlist instead of assigning the protocol vendor as the product brand.
+inline const wchar_t* sharedKeyboardLabel(Transport transport, std::wstring_view product)
+{
+    std::wstring name(product);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    const bool receiver = transport == Transport::vgn_receiver;
+    if (name == L"atk v75x" || (receiver && name == L"atk v75x dongle"))
+        return receiver ? L"ATK V75X 接收器" : L"ATK V75X";
+    if (name == L"vgn v98 pro" || name == L"vgn v98 pro v2" ||
+        (receiver && name == L"vgn v98 pro dongle"))
+        return receiver ? L"VGN V98 Pro / V2 接收器" : L"VGN V98 Pro / V2";
+    return receiver ? L"兼容键盘接收器" : L"兼容 USB 键盘";
 }
 
 inline bool vgnChannel(Transport transport, const Collection& channel)

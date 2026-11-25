@@ -472,7 +472,7 @@ function canAccess(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>): S
   return surface as Surface;
 }
 const actions: Record<Surface, string[]> = {
-  main: ['refresh', 'discover', 'diagnostics', 'compatibility', 'mute', 'open', 'history', 'add', 'remove', 'bluetooth',
+  main: ['refresh', 'discover', 'diagnostics', 'diagnosticDevices', 'diagnosticFirmware', 'compatibility', 'mute', 'open', 'history', 'add', 'remove', 'bluetooth',
     'snooze', 'ignore', 'settings', 'toggleAlertSetting', 'deviceSettings', 'preview'],
   tray: ['mute', 'pin', 'refresh', 'open', 'closeSurface'],
   toast: ['open', 'closeSurface'],
@@ -582,11 +582,28 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
   const device = 'id' in command ? snapshot.devices.find(item => item.id === command.id) : undefined;
   switch (command.type) {
     case 'refresh': await monitor?.poll(true); break;
+    case 'diagnosticDevices': return { ok: true, diagnosticDevices: monitor ? await monitor.listDiagnosticDevices() : [] };
+    case 'diagnosticFirmware':
+      if (typeof command.deviceKey !== 'string' || !/^[0-9a-f-]{36}$/.test(command.deviceKey))
+        throw new Error('设备列表已失效，请重新扫描。');
+      return { ok: true, diagnosticFirmware: monitor ? await monitor.readDiagnosticFirmware(command.deviceKey) : { status: 'unavailable' } };
     case 'compatibility': {
       if (!monitor) throw new Error('请在实机模式生成兼容性报告');
-      if (typeof command.context !== 'string' || command.context.length > 240) throw new Error('反馈说明最多 240 字');
-      await monitor.exportCompatibility(command.context.trim(), app.getVersion());
-      return { ok: true, message: '兼容性报告已保存，可在诊断目录查看' };
+      if ('reportToken' in command) {
+        if (typeof command.reportToken !== 'string' || !/^[0-9a-f-]{36}$/.test(command.reportToken))
+          throw new Error('预览已失效，请重新生成。');
+        monitor.exportCompatibility(command.reportToken);
+        return { ok: true, message: '兼容性报告已保存，可在诊断目录查看' };
+      }
+      const selection = command.selection;
+      if (!object(selection) ||
+          (selection.model !== undefined && (typeof selection.model !== 'string' || selection.model.length > 80)) ||
+          (selection.firmware !== undefined && (typeof selection.firmware !== 'string' || selection.firmware.length > 48)) ||
+          (selection.kind !== 'manual' && selection.kind !== 'device') ||
+          (selection.kind === 'manual' && typeof selection.model !== 'string') ||
+          (selection.kind === 'device' && (typeof selection.deviceKey !== 'string' || !/^[0-9a-f-]{36}$/.test(selection.deviceKey))))
+        throw new Error('请选择设备或填写有效的型号、固件。');
+      return { ok: true, compatibility: await monitor.previewCompatibility(selection, app.getVersion()) };
     }
     case 'diagnostics': {
       const error = await shell.openPath(dataDir);

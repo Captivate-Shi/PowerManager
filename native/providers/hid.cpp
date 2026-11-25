@@ -633,7 +633,7 @@ const wchar_t* deviceName(Transport transport)
     if (transport == Transport::razer_shared_keyboard) {
         return L"Razer BlackWidow V4 Low-profile TKL HyperSpeed";
     }
-    if (transport == Transport::vgn_usb || transport == Transport::vgn_receiver) return L"VGN V98 Pro / V2";
+    if (transport == Transport::vgn_usb || transport == Transport::vgn_receiver) return sharedKeyboardLabel(transport, {});
     if (isVgn(transport)) return L"VGN V98 Pro V3";
     if (transport == Transport::logitech_receiver) return L"Logitech HID++ 外设";
     return transport == Transport::windows_battery ? L"Windows 外设" : L"DualSense";
@@ -791,6 +791,14 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         auto [it, inserted] = devices.try_emplace(key, Device{key, *transport, attributes.VersionNumber,
                                                                bluetooth ? windowsBattery(devInfo.DevInst)
                                                                          : std::nullopt, {}, key, vid, pid});
+        if ((*transport == Transport::vgn_usb || *transport == Transport::vgn_receiver) && info.valid() &&
+            (it->second.label.empty() || it->second.label == sharedKeyboardLabel(*transport, {}))) {
+            std::array<wchar_t, 126> product{};
+            if (HidD_GetProductString(info.value, product.data(), static_cast<ULONG>(sizeof(product)))) {
+                product.back() = 0;
+                it->second.label = sharedKeyboardLabel(*transport, product.data());
+            }
+        }
         if (bluetooth && inserted) {
             if (auto identity = bluetoothIdentity(devInfo.DevInst); !identity.empty()) {
                 it->second.key = std::move(identity);
@@ -830,6 +838,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 if (identity && (child == receiver.children.end() || child->second.unit != identity)) {
                     auto paired = device;
                     paired.key = L"logitech-hidpp:" + std::to_wstring(identity);
+                    paired.parentEndpoint = device.endpointKey;
                     paired.endpointKey.clear();
                     paired.slot = slot;
                     paired.unit = identity;

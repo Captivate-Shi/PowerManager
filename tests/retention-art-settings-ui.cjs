@@ -67,7 +67,7 @@ async function main() {
           const bound = node => node.getBoundingClientRect();
           const box = bound(el), host = bound(el.parentElement);
           const appearance = bound(document.querySelector('#settings-appearance'));
-          const settingsInput = bound(document.querySelector('#compat-context'));
+          const settingsInput = bound(el.querySelector('[data-compat-report]'));
           const controls = bound(document.querySelector('#settings-appearance form > div'));
           return { leftDelta:Math.abs(box.left-host.left), width:appearance.width,
             scroll:document.documentElement.scrollWidth, rightDelta:Math.abs(appearance.right-settingsInput.right),
