@@ -85,6 +85,39 @@ int main()
     assert(!boltOfficeIdentity(0x046d, 0xc52b, L"MX Keys S"));
     assert(!boltOfficeIdentity(0x046d, 0xc548, L"MX Keys"));
     assert(!boltOfficeIdentity(0x046d, 0xc548, L"Logi Bolt Receiver"));
+    // A full reply from the actual paired device, not the receiver name.
+    std::uint8_t boltInfo[20] = {0x11, 2, 4, 0x0b, 3, 0x11, 0x22, 0x33, 0x44, 0, 2, 0xb0, 0x42};
+    const auto boltInfoReply = parseLogitechReply(boltInfo, 2, 4, 0x0b);
+    assert(boltInfoReply && boltOfficeModel(boltInfoReply->params) == 0xb042);
+    assert(!parseLogitechReply(boltInfo, 1, 4, 0x0b));
+    assert(!parseLogitechReply(boltInfo, 2, 4, 0x0a));
+    assert(!boltOfficeModel(boltInfoReply->params.first(12)));
+    boltInfo[10] = 1;
+    assert(!boltOfficeModel(boltInfoReply->params));
+    boltInfo[10] = 2;
+    boltInfo[13] = 1;
+    assert(!boltOfficeModel(boltInfoReply->params));
+
+    struct BoltCase { unsigned model; const wchar_t* deviceName; const wchar_t* label; unsigned kind; };
+    constexpr BoltCase namedBatches[] = {
+        {0xb042, L"MX Master 4", L"MX Master 4", 3},
+        {0xb037, L"MX Anywhere 3S", L"MX Anywhere 3S", 3},
+        {0xb369, L"MX KEYS MINI", L"MX Keys Mini", 0},
+        {0xb031, L"LIFT VERTICAL ERGONOMIC MOUSE", L"Lift Vertical Ergonomic Mouse", 3},
+        {0xb02a, L"Signature M650 Mouse", L"Signature M650", 3},
+    };
+    for (const auto& entry : namedBatches) {
+        const auto named = boltBatch11Identity(0x046d, 0xc548, entry.model, entry.deviceName, entry.kind);
+        assert(named && named->label == std::wstring_view(entry.label) && named->kind == entry.kind);
+        assert(!boltBatch11Identity(0x046d, 0xc548, 0, entry.deviceName, entry.kind));
+        assert(!boltBatch11Identity(0x046d, 0xc52b, entry.model, entry.deviceName, entry.kind));
+        assert(!boltBatch11Identity(0x1234, 0xc548, entry.model, entry.deviceName, entry.kind));
+        assert(!boltBatch11Identity(0x046d, 0xc548, entry.model, entry.deviceName, entry.kind == 0 ? 3 : 0));
+    }
+    assert(!boltBatch11Identity(0x046d, 0xc548, 0xb02a, L"Signature M650 L Mouse", 3));
+    assert(!boltBatch11Identity(0x046d, 0xc548, 0xb02a, L"Logi M650", 3));
+    assert(!boltBatch11Identity(0x046d, 0xc548, 0xb037, L"MX Anywhere 3S for Business", 3));
+    assert(!boltBatch11Identity(0x046d, 0xc548, 0xb038, L"MX Anywhere 3S", 3));
     // The two slots on one receiver return distinct battery values.
     const std::uint8_t keysBattery[20] = {0x11, 1, 8, 0x1a, 40, 4, 0};
     const std::uint8_t mouseBattery[20] = {0x11, 2, 8, 0x1a, 76, 4, 1};

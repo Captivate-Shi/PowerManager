@@ -329,7 +329,8 @@ const char* art(const Device& device)
         device.transport == Transport::gamesir_super_nova_receiver) return "controller";
     if (isVgn(device.transport) || device.transport == Transport::razer_shared_keyboard ||
         device.transport == Transport::aula_f87v2d_receiver) return "keyboard";
-    if (device.transport == Transport::razer_receiver || device.transport == Transport::rapoo_receiver ||
+    if (device.transport == Transport::razer_receiver || device.transport == Transport::razer_pro_receiver ||
+        device.transport == Transport::rapoo_receiver ||
         device.transport == Transport::logitech_usb || device.transport == Transport::supported_mouse_receiver ||
         device.transport == Transport::mchose_g3v2_receiver || device.transport == Transport::aula_sc580_receiver) return "mouse";
     if (device.transport == Transport::logitech_receiver) {

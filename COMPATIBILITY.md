@@ -148,3 +148,21 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 | 狼蛛 F87 Pro V2D | `0C45:FEFE`、精确产品名 `AULA F87ProV2D Dongle`、接口 3、唯一 `FF60:0061` | 只读对应状态页电量，不推断充电状态；不接共用 ID 的黑爵或其他 F87。参考 [BatteryMonitor 实测](https://github.com/JKWTCN/BatteryMonitor/blob/master/README.en.md#verified-devices)、[MyFinder 报文](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md#L2043-L2070)。 |
 
 三条监测路径都只匹配原装 2.4G 接收器，不发设置命令。使用余电的实物验收仍待进行。
+
+## 赛睿 Aerox 3 / 5 Wireless
+
+原装 2.4G 接收器分别为 `1038:1838` 和 `1038:1852`。沿用 Aerox 9 的单次 D2 电量查询，但匹配各自的产品 ID、物理 USB 父节点及唯一 `MI03 / FFC0:0001` HID 集合。查询前清理该读取句柄的缓冲队列；休眠、断链、空回包不生成当前电量。按设备的 5% 档位读取，不推断充电状态。不覆盖蓝牙、有线、Gen 2 或联名接收器。
+
+依据：[Aerox 3 实机报告及描述符](https://alloy.szymon-wilczek.me/protocol/steelseries-aerox3-wireless.html) · [Windows 上游实现](https://github.com/notjiccu/wireless-device-battery-monitor/blob/main/src/drivers/steelseries.cpp#L1033-L1138) · [Aerox 5 同型号记录](https://github.com/LennardKittner/Aerox_5)。余电真机需验证 Aerox 5 的描述符、休眠前后和与 SteelSeries GG 同开的读数。
+
+## 雷蛇三款 Pro 鼠标的原装接收器
+
+仅在匹配物理 USB 容器、且只有一个符合 HID 描述符的鼠标集合时读取：Viper V3 Pro `1532:00C1`、DeathAdder V3 Pro `1532:00B7`、Basilisk V3 Pro `1532:00AB`。只发一次电量查询，校验事务、校验和和返回状态；接口忙或无无线响应时不重发、不生成电量。充电状态不推断。既有 `00B8` 和共享键盘路径不变；不覆盖有线、35K、`00C3` 或通用 HyperPolling 接收器。
+
+依据：[Viper V3 Pro Windows 读取](https://github.com/damianyoko/viper-tray) · [DeathAdder 原装接收器实机](https://github.com/OpenMouse-Project/mouse-protocol/blob/main/docs/razer-testing.md#deathadder-v3-pro-153200b6-wired-153200b7-receiver--verified-firmware-21) · [Basilisk 接收器记录](https://github.com/justinthevoid/uncoil/blob/main/devices/razer-basilisk-v3-pro.toml) · [Windows 型号清单](https://github.com/xzeldon/razer-battery-report#supported-mice)。余电需真机核对电量、关机和 Synapse 并行。
+
+## 罗技 Bolt 五款办公键鼠
+
+在已有的 `046D:C548` 路径上，按活跃槽位、Unit ID、HID++ 型号 ID 和设备实时名称匹配；接收器型号本身不够。新增 MX Master 4（B042）、MX Anywhere 3S（B037）、MX Keys Mini（B369）、Lift（B031）、Signature M650（B02A）。只用 `0x1004` 的百分比能力；采样前后复核同一槽位的 Unit ID 和型号。休眠、回复忙或更换配对设备时，不发送当前读数。不带上直连蓝牙、Unifying、企业名称变体或 M650 L。
+
+依据：[MX Master 4 Windows 读数](https://github.com/JKWTCN/BatteryMonitor/blob/25c221326391e26b62ae2b7db8e72ce8538ff909/README.en.md#verified-devices) · [MX Anywhere 3S Bolt 报告](https://github.com/AprilNEA/OpenLogi/pull/1962) · [MX Keys Mini](https://github.com/pwr-Solaar/Solaar/issues/2127) · [Lift](https://github.com/pwr-Solaar/Solaar/issues/2968) · [Signature M650](https://openlogi.uxatom.com/devices/signature-m650)。余电真机需验证多设备共用接收器时的重新配对、休眠唤醒和 Options+ 并行。

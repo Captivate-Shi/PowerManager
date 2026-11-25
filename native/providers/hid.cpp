@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include "razer_pro_receiver.hpp"
 #include "cn_mouse_codecs.hpp"
 #include "cn_tail_codecs.hpp"
 #include "gamesir_battery.hpp"
@@ -177,6 +178,8 @@ std::optional<Transport> candidate(const std::wstring& path)
         return Transport::gamesir_super_nova_receiver;
     const auto vid = hexId(path, L"vid_", 4).value_or(0);
     const auto pid = hexId(path, L"pid_", 4).value_or(0);
+    if (razerProReceiverName(vid, pid) && path.find(L"rzvirtual") == std::wstring::npos)
+        return Transport::razer_pro_receiver;
     if (vid == 0x3837 && pid == 0x4245) return Transport::mchose_g3v2_receiver;
     if (vid == 0x089d && pid == 0x062f) return Transport::aula_sc580_receiver;
     if (vid == 0x0c45 && pid == 0xfefe) return Transport::aula_f87v2d_receiver;
@@ -507,12 +510,14 @@ public:
         return response.empty() ? 0 : response.front();
     }
 
-    std::uint32_t unit()
+    std::uint32_t unit(unsigned* boltModel = nullptr)
     {
+        if (boltModel) *boltModel = 0;
         const auto index = feature(3);
         if (!index) return 0;
         const auto info = read(index, 0);
         if (info.size() < 5) return 0;
+        if (boltModel) *boltModel = boltOfficeModel(info);
         std::uint32_t identity = 0;
         for (unsigned i = 1; i <= 4; ++i) identity = (identity << 8) | info[i];
         return identity == 0xffffffff ? 0 : identity;
@@ -579,9 +584,12 @@ Sample readLogitech(const Device& device, unsigned& order)
     const auto channel = std::ranges::find_if(device.collections, logitechChannel);
     if (channel == device.collections.end()) return {Status::unavailable};
     LogitechQuery query(*channel, shortLogitechChannel(device), device.slot, order, Clock::now() + 900ms);
-    const auto identity = query.unit();
+    unsigned model = 0;
+    const auto identity = query.unit(device.boltNamedModel ? &model : nullptr);
     if (identity != device.unit) return identity ? Sample{Status::offline} : query.failure(3);
+    if (device.boltNamedModel && model != device.boltNamedModel) return {Status::unavailable};
     for (const unsigned feature : {0x1004u, 0x1000u, 0x1001u}) {
+        if (device.boltNamedModel && feature != 0x1004) break;
         const auto index = query.feature(feature);
         if (!index) {
             if (query.winError || query.protocolError) return query.failure(feature);
@@ -592,7 +600,17 @@ Sample readLogitech(const Device& device, unsigned& order)
             if (caps.size() < 2) return query.failure(feature);
             if (caps[1] & 2) {
                 const auto data = query.read(index, 1);
-                return data.empty() ? query.failure(feature) : logitechBattery(feature, true, data);
+                if (data.empty()) return query.failure(feature);
+                const auto reading = logitechBattery(feature, true, data);
+                if (device.boltNamedModel && reading.reading) {
+                    // The receiver remains attached even when its slot is
+                    // replaced. Reject a reply if the identity changed (or
+                    // became unreachable) during the live sample.
+                    const auto verified = query.unit(&model);
+                    if (verified != identity) return verified ? Sample{Status::offline} : query.failure(3);
+                    if (model != device.boltNamedModel) return {Status::unavailable};
+                }
+                return reading;
             }
             continue;
         }
@@ -608,7 +626,8 @@ Sample readLogitech(const Device& device, unsigned& order)
     return {Status::unavailable};
 }
 
-Sample readRazer(const Collection& collection, Clock::time_point deadline, RazerQuery query)
+Sample readRazer(const Collection& collection, Clock::time_point deadline, RazerQuery query,
+                 bool singleRequest = false)
 {
     const auto request = makeRazerQuery(query);
     const auto command = request[8];
@@ -657,7 +676,7 @@ Sample readRazer(const Collection& collection, Clock::time_point deadline, Razer
         if (result.status != Status::busy) {
             return result;
         }
-        if (attempt == 2 && result.detail == 2) {
+        if (!singleRequest && attempt == 2 && result.detail == 2) {
             if (const auto error = send()) {
                 return ioFailure(error, command);
             }
@@ -810,6 +829,7 @@ const wchar_t* deviceName(Transport transport)
     if (transport == Transport::razer_receiver) {
         return L"Razer Viper V3 HyperSpeed";
     }
+    if (transport == Transport::razer_pro_receiver) return L"Razer 游戏鼠标";
     if (transport == Transport::razer_shared_keyboard) {
         return L"Razer BlackWidow V4 Low-profile TKL HyperSpeed";
     }
@@ -824,6 +844,7 @@ const wchar_t* deviceName(Transport transport)
 const wchar_t* transportName(Transport transport)
 {
     switch (transport) {
+    case Transport::razer_pro_receiver:
     case Transport::razer_receiver: return L"2.4 GHz";
     case Transport::razer_shared_keyboard: return L"2.4 GHz 共享接收器";
     case Transport::sony_gamepad_usb:
@@ -855,6 +876,7 @@ const wchar_t* providerName(Transport transport)
     switch (transport) {
     case Transport::razer_receiver:
     case Transport::razer_shared_keyboard: return L"razer-1532-00b8";
+    case Transport::razer_pro_receiver: return L"razer-pro-receiver";
     case Transport::sony_gamepad_usb: return L"sony-gamepad-usb";
     case Transport::sony_gamepad_bluetooth: return L"sony-gamepad-bluetooth";
     case Transport::switch_pro_bluetooth: return L"nintendo-switch-pro-bluetooth";
@@ -983,9 +1005,16 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         }
         const auto vid = attributes.VendorID ? attributes.VendorID : hexId(normalized, L"vid_", 4).value_or(0);
         const auto pid = attributes.ProductID ? attributes.ProductID : hexId(normalized, L"pid_", 4).value_or(0);
+        const bool rzPro = transport == Transport::razer_pro_receiver;
+        const auto rzProCollection = [&] {
+            return haveCaps && attributes.VendorID == 0x1532 && attributes.ProductID == hexId(normalized, L"pid_", 4).value_or(0) &&
+                razerProBatteryCollection(vid, pid, hexId(normalized, L"&mi_", 2).value_or(255),
+                    caps.UsagePage, caps.Usage, caps.FeatureReportByteLength);
+        };
         if (inventory) {
             const auto interfaceNumber = hexId(normalized, L"&mi_", 2);
             auto reportedProvider = transport;
+            if (rzPro && !rzProCollection()) reportedProvider.reset();
             if (transport == Transport::dareu_em901x_inventory && (!haveCaps || interfaceNumber != 1 ||
                 !((caps.UsagePage == 0xff01 && caps.Usage == 0 && caps.InputReportByteLength == 17) ||
                   (caps.UsagePage == 0xff02 && caps.Usage == 2 && caps.FeatureReportByteLength == 17))))
@@ -1036,6 +1065,23 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                     name.back() != 0 || std::wstring_view(name.data()) != L"AULA-V9Pro+") continue;
             }
         }
+        if (rzPro) {
+            if (!rzProCollection()) continue;
+            bool physicalReceiver = false;
+            DEVINST node = devInfo.DevInst;
+            for (int depth = 0; depth < 9; ++depth) {
+                const auto id = nodeId(node);
+                if (id.starts_with(L"usb\\vid_") && id.find(L"&mi_") == std::wstring::npos &&
+                    hexId(id, L"vid_", 4) == 0x1532 && hexId(id, L"pid_", 4) == pid) {
+                    physicalReceiver = true;
+                    break;
+                }
+                DEVINST parent{};
+                if (CM_Get_Parent(&parent, node, 0) != CR_SUCCESS) break;
+                node = parent;
+            }
+            if (!physicalReceiver) continue;
+        }
         const bool pro3 = *transport == Transport::eightbitdo_pro3_bluetooth;
         if (pro3 && (attributes.VendorID != 0x2dc8 || attributes.ProductID != 0x6009 ||
                      !haveCaps || caps.UsagePage != 1 || (caps.Usage != 4 && caps.Usage != 5) ||
@@ -1054,7 +1100,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         const bool bluetooth = *transport == Transport::dualsense_bluetooth;
         const auto key = deviceKey(devInfo.DevInst, *transport, normalized);
         // Report the receiver only when Windows supplied a physical container.
-        if ((cn || superNova || switchPro || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
+        if ((cn || superNova || switchPro || rzPro || *transport == Transport::rapoo_receiver || *transport == Transport::supported_mouse_receiver) &&
             !key.ends_with(L'}')) continue;
         auto [it, inserted] = devices.try_emplace(key, Device{key, *transport, attributes.VersionNumber,
                                                                bluetooth ? windowsBattery(devInfo.DevInst)
@@ -1067,6 +1113,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 it->second.label = sharedKeyboardLabel(*transport, product.data());
             }
         }
+        if (rzPro && inserted) it->second.label = razerProReceiverName(vid, pid);
         if (pro3 && inserted) it->second.label = L"8BitDo Pro 3";
         if (superNova && inserted) it->second.label = L"GameSir Super Nova";
         if (cn && inserted) {
@@ -1100,8 +1147,9 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             device.collections.size() != 1) continue;
         if (device.transport == Transport::supported_mouse_receiver) {
             if (device.collections.size() != 1) continue;
-            device.label = supportedMouse(device.vid, device.pid) == SupportedMouse::aerox9
-                ? L"SteelSeries Aerox 9 Wireless" : L"AULA V9Pro+";
+            const auto kind = supportedMouse(device.vid, device.pid);
+            if (!kind) continue;
+            device.label = supportedMouseName(*kind);
         }
         if (device.transport == Transport::rapoo_receiver) {
             const auto vendorCollection = [](const Collection& c) { return c.page == 0xff00 && c.usage == 2; };
@@ -1146,6 +1194,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         if (device.transport == Transport::logitech_receiver) {
             const auto channel = std::ranges::find_if(device.collections, logitechChannel);
             if (channel == device.collections.end()) continue;
+            const bool bolt = device.vid == 0x046d && device.pid == 0xc548;
+            if (bolt && std::ranges::count_if(device.collections, logitechChannel) != 1) continue;
             auto& receiver = receivers_[key];
             const auto now = Clock::now();
             if (now >= receiver.due) {
@@ -1153,15 +1203,19 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 receiver.nextSlot = slot % 6 + 1;
                 receiver.due = now + 4s;
                 LogitechQuery query(*channel, shortLogitechChannel(device), slot, logitechRequestId_, now + 750ms);
-                const auto identity = query.unit();
+                unsigned model = 0;
+                const auto identity = query.unit(bolt ? &model : nullptr);
                 const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count();
                 if (receiverAttempts_.size() == 96) receiverAttempts_.erase(receiverAttempts_.begin());
                 receiverAttempts_.push_back({device.vid, device.pid, slot, stamp, identity != 0,
                     identity ? Sample{Status::current, {}, 0x11, 0, 3} : query.failure(3)});
                 auto child = receiver.children.find(slot);
-                const bool newIdentity = child == receiver.children.end() || child->second.unit != identity;
-                if (identity && (newIdentity || child->second.label.empty() || child->second.kind == 255)) {
+                const bool newIdentity = child == receiver.children.end() || child->second.unit != identity ||
+                    (child->second.boltNamedModel && model && child->second.boltNamedModel != model);
+                const bool confirmBolt = !newIdentity && !child->second.boltNamedModel &&
+                    boltBatch11Identity(device.vid, device.pid, model, child->second.label, child->second.kind);
+                if (identity && (newIdentity || confirmBolt || child->second.label.empty() || child->second.kind == 255)) {
                     // Preserve metadata already proven by the same unit. A
                     // partial name/type read on discovery is retried on rotation.
                     auto paired = newIdentity ? device : child->second;
@@ -1176,7 +1230,11 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                         if (!type.empty()) paired.kind = type.front();
                         if (auto name = logitechName(query, nameIndex); !name.empty())
                             paired.label = std::move(name);
-                        if (const auto office = boltOfficeIdentity(device.vid, device.pid, paired.label)) {
+                        if (const auto batch11 = boltBatch11Identity(device.vid, device.pid, model, paired.label, paired.kind)) {
+                            paired.label = batch11->label;
+                            paired.kind = batch11->kind;
+                            paired.boltNamedModel = model;
+                        } else if (const auto office = boltOfficeIdentity(device.vid, device.pid, paired.label)) {
                             paired.label = office->label;
                             if (paired.kind == 255) paired.kind = office->kind;
                         }
@@ -1192,6 +1250,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             }
             continue;
         }
+        if (device.transport == Transport::razer_pro_receiver && device.collections.size() != 1) continue;
         if (device.transport == Transport::razer_receiver) {
             std::ranges::sort(device.collections, {}, razerRank);
             const auto control = std::ranges::find_if(device.collections, [](const Collection& collection) {
@@ -1252,6 +1311,18 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
     if (isVgn(device.transport)) return readVgn(device);
     if (device.transport == Transport::logitech_receiver || device.transport == Transport::logitech_usb)
         return readLogitech(device, logitechRequestId_);
+    if (device.transport == Transport::razer_pro_receiver) {
+        if (device.collections.size() != 1) return {Status::unavailable};
+        const auto& collection = device.collections.front();
+        if (!razerProBatteryCollection(device.vid, device.pid,
+                hexId(collection.description, L"&mi_", 2).value_or(255),
+                collection.page, collection.usage, collection.featureLength)) return {Status::unavailable};
+        // One read-only exchange per scan. Don't re-send into a shared command
+        // channel if Synapse has it busy or an unrelated reply is observed.
+        auto result = readRazer(collection, Clock::now() + 400ms, RazerQuery::mouseBattery, true);
+        if (result.reading) result.reading->power = Power::unknown;
+        return result;
+    }
     const bool keyboard = device.transport == Transport::razer_shared_keyboard;
     const bool razer = device.transport == Transport::razer_receiver || keyboard;
     const bool pro3 = device.transport == Transport::eightbitdo_pro3_bluetooth;

@@ -1,4 +1,5 @@
 #include "battery.hpp"
+#include "razer_pro_receiver.hpp"
 #include "dashboard.hpp"
 #include "device_identity.hpp"
 #include "device_transport.hpp"
@@ -24,6 +25,21 @@ Sample level(int low, int high, Power power = Power::discharging)
 
 int main()
 {
+    static_assert(razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x00b7, 0, 1, 2, 91));
+    static_assert(razerProBatteryCollection(0x1532, 0x00ab, 0, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00b7, 1, 1, 2, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00ab, 0, 1, 6, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00c1, 0, 0xff00, 1, 91));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 90));
+    static_assert(!razerProBatteryCollection(0x1532, 0x00c1, 0, 1, 2, 92));
+    static_assert(!razerProReceiverName(0x0500, 0x00c1));
+    static_assert(!razerProReceiverName(0x1532, 0x00c0)); // Viper cable
+    static_assert(!razerProReceiverName(0x1532, 0x00c3)); // Different DeathAdder receiver
+    static_assert(!razerProReceiverName(0x1532, 0x00b3)); // Generic HyperPolling
+    static_assert(!razerProReceiverName(0x1532, 0x00b8)); // Existing Viper V3 HyperSpeed
+    static_assert(!razerProReceiverName(0x1532, 0x00cd)); // Basilisk 35K
+
     std::array<std::uint8_t, 49> switchFull{0x30, 0, 0x8e};
     const auto fullBand = parseSwitchProBluetoothReport(switchFull);
     assert(fullBand.reading && fullBand.reading->low == 76 && fullBand.reading->high == 100);

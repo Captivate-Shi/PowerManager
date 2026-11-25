@@ -21,7 +21,7 @@ struct Handle {
 
 Sample failed(SupportedMouse kind, Status status, SupportedMouseReason reason, unsigned code = 0)
 {
-    return {status, {}, kind == SupportedMouse::aerox9 ? 0xd2u : 0x1au, static_cast<unsigned>(reason), code};
+    return {status, {}, isAeroxReceiver(kind) ? 0xd2u : 0x1au, static_cast<unsigned>(reason), code};
 }
 
 template<typename Caps, typename ReadCaps>
@@ -59,9 +59,9 @@ bool descriptor(HANDLE file, SupportedMouse kind, int iface, HIDP_CAPS& caps)
     PHIDP_PREPARSED_DATA prep{};
     if (!HidD_GetPreparsedData(file, &prep)) return false;
     const auto length = [&](unsigned bytes) {
-        return bytes == 64 || (kind == SupportedMouse::aerox9 && bytes == 65);
+        return bytes == 64 || (isAeroxReceiver(kind) && bytes == 65);
     };
-    const unsigned report = kind == SupportedMouse::aerox9 ? 0 : 4;
+    const unsigned report = isAeroxReceiver(kind) ? 0 : 4;
     const bool valid = HidP_GetCaps(prep, &caps) == HIDP_STATUS_SUCCESS
         && supportedMouseCollection(kind, iface, caps.UsagePage, caps.Usage)
         && length(caps.InputReportByteLength) && length(caps.OutputReportByteLength)
@@ -96,7 +96,7 @@ DWORD transfer(HANDLE file, HANDLE event, Clock::time_point deadline, DWORD& byt
 
 Sample readSupportedMouseBattery(SupportedMouse kind, int iface, const std::wstring& path)
 {
-    const auto expectedIface = kind == SupportedMouse::aerox9 ? 3 : 1;
+    const auto expectedIface = isAeroxReceiver(kind) ? 3 : 1;
     if (path.empty() || iface != expectedIface)
         return failed(kind, Status::unavailable, SupportedMouseReason::descriptor);
     const Handle file{CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -112,6 +112,9 @@ Sample readSupportedMouseBattery(SupportedMouse kind, int iface, const std::wstr
     const auto request = supportedMouseQuery(kind);
     for (std::size_t i = 0; i < request.size(); ++i) out[i] = request[i];
     const auto deadline = Clock::now() + 300ms;
+    // Clear buffered input on this handle before asking for a fresh reply.
+    if (isAeroxReceiver(kind) && !HidD_FlushQueue(file.value))
+        return failed(kind, Status::unavailable, SupportedMouseReason::read, GetLastError());
     DWORD count{};
     const auto write = transfer(file.value, event.value, deadline, count, [&](OVERLAPPED* op) {
         return WriteFile(file.value, out.data(), caps.OutputReportByteLength, &count, op);
@@ -133,6 +136,8 @@ Sample readSupportedMouseBattery(SupportedMouse kind, int iface, const std::wstr
         }
         const auto sample = parseSupportedMouseReply(kind, std::span(frame).first(count));
         if (sample.reading) return sample;
+        if (isAeroxReceiver(kind) && sample.status == Status::no_radio_reply && frame[1] == 0x40)
+            return failed(kind, Status::no_radio_reply, SupportedMouseReason::silent);
         invalid = invalid || sample.status == Status::bad_report;
         // A request echo should not mask a subsequent actual response.
     }

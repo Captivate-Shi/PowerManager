@@ -171,6 +171,36 @@ inline std::optional<BoltOfficeIdentity> boltOfficeIdentity(unsigned receiverVid
     return {};
 }
 
+// The first two bytes of the six-byte HID++ Device FW Version model ID
+// distinguish these Bolt models. They all report four trailing zero bytes.
+inline unsigned boltOfficeModel(std::span<const std::uint8_t> deviceInfo)
+{
+    if (deviceInfo.size() < 13 || (deviceInfo[6] & 0x07) != 0x02 ||
+        !std::ranges::all_of(deviceInfo.subspan(9, 4), [](auto b) { return b == 0; })) return 0;
+    return (static_cast<unsigned>(deviceInfo[7]) << 8) | deviceInfo[8];
+}
+
+inline std::optional<BoltOfficeIdentity> boltBatch11Identity(unsigned receiverVid, unsigned receiverPid,
+                                                              unsigned model, std::wstring_view pairedLabel,
+                                                              unsigned kind)
+{
+    if (receiverVid != 0x046d || receiverPid != 0xc548) return {};
+    std::wstring name(pairedLabel);
+    std::ranges::transform(name, name.begin(), [](wchar_t c) { return std::towlower(c); });
+    if (model == 0xb369 && (kind == 0 || kind == 255) && name == L"mx keys mini")
+        return BoltOfficeIdentity{L"MX Keys Mini", 0};
+    if (kind != 3 && kind != 255) return {};
+    if (model == 0xb042 && name == L"mx master 4") return BoltOfficeIdentity{L"MX Master 4", 3};
+    if (model == 0xb037 && name == L"mx anywhere 3s") return BoltOfficeIdentity{L"MX Anywhere 3S", 3};
+    if (model == 0xb031 && name == L"lift vertical ergonomic mouse")
+        return BoltOfficeIdentity{L"Lift Vertical Ergonomic Mouse", 3};
+    // The M650 and M650 L can share the model ID. Only the plain unit's
+    // DEVICE NAME value counts here; neither the codename nor a prefix does.
+    if (model == 0xb02a && name == L"signature m650 mouse")
+        return BoltOfficeIdentity{L"Signature M650", 3};
+    return {};
+}
+
 // Restrict the empirical 0x1001 curve to the paired product name, not the
 // receiver PID (the same receiver may serve multiple devices). Never apply it
 // to ADC features, keyboards or unverified generations.
