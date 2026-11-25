@@ -179,3 +179,14 @@ GPW 初代上游证据：[Solaar #2330（WPID 4079 / USB C088，0x1001）](https
 依据：[LIGHTSPEED 接收器与设备](https://pwr-solaar.github.io/Solaar/devices/) · [G502 X PLUS 电量](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md) · [SUPERLIGHT 原版](https://github.com/pwr-Solaar/Solaar/issues/3005) · [G305](https://github.com/pwr-Solaar/Solaar/issues/850) · [G613](https://github.com/pwr-Solaar/Solaar/issues/1610) · [Unifying HID++ 跨设备验证](https://github.com/pwr-Solaar/Solaar/issues/1070) · [A7 V2 Pro Windows 记录](https://github.com/JKWTCN/BatteryMonitor/blob/25c221326391e26b62ae2b7db8e72ce8538ff909/README.en.md#verified-devices)。
 
 暂不计入接入：G915 / G915 TKL（[有电压报文](https://github.com/pwr-Solaar/Solaar/issues/1462)，缺各自可验证的电量换算）、Signature K650（[官方支持 Bolt](https://hub.sync.logitech.com/mx-anywhere-3/post/logi-bolt-mice-keyboards-and-combos-features-and-information-zaeyQiSs2UKlECd)，缺零售机型的实际电量报文）、黑爵 MK87PRO（诊断只识别候选 HID 接口，不主动查询；上游的工作模式字段不能证明无线链路在线）。余电实物验收仍待进行。
+
+## 第 13 批：雷蛇、ROG、ATK 和雷柏
+
+| 路径 | 当前范围 |
+| --- | --- |
+| 雷蛇 Orochi V2 / DeathStalker V2 Pro TKL | 原装接收器 `1532:0094` / `1532:0296`；准确产品名、唯一 HID Feature 集合及独立物理容器。只读设备电量，接口忙不重发，零、静默、断连均不报新电量。DeathStalker 全尺寸、BlackWidow V3 Mini 和 V4 TKL 的本型号 Feature 集合缺实证，不启用。 [TKL 实机](https://github.com/HeyOkay/HaloBattery/issues/106) · [Orochi 读取记录](https://github.com/sanicxt/orochi-monitor) |
+| ROG Azoth 原版 / Falchion RX Low Profile | Azoth 只接 `0B05:1A85` 原装；Falchion 只接同时持有唯一身份、读数接口的 `0B05:1ACE` OMNI，其实时配对列表须确认 `1B06`，在电量读取后再复核；关机拒绝回复不报电量。不猜共享接收器身份。 [Azoth 证据](https://github.com/wushuai0802/myfinder-device-battery/issues/317) · [Falchion 读数与断连抓包](https://github.com/Humblemonk/rogctl/blob/de007e06974fc630e9299516153ea202ab94282f/src/protocol.rs#L985-L1036) |
+| ATK V75X | 有线 `320F:5055` 只匹配确切型号、唯一 `FF1C:0092` 集合及有效事务回显。无线 `5088` 的确切 ATK 设备只做诊断，不沿用 VGN 通用查询；实物尚未证明不会唤醒键盘或返回旧读数。 [有线抓包](https://github.com/HeyOkay/HaloBattery/pull/368) · [协议及休眠限制](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md#atk-v75x) |
+| 雷柏 VT3S MAX / 迈从 G87 | `24AE:1421` 仅从指定集合被动监听 19 字节无线在线报文，不主动查询。迈从 G87 的接收器可能在休眠时长期返回旧电量，查询会话可能与 M HUB 互斥，继续待接入。 [VT3S MAX 设备报告](https://github.com/wushuai0802/myfinder-device-battery/issues/86) · [G87 休眠缓存实测](https://github.com/evren-oct/vigil-watt/blob/main/docs/hardware/brands/mchose.md) |
+
+本批新增路径均需余电实物验收。Xbox 的三款 × 两种连接仅完成接口核对与[验证方案](docs/xbox-battery-validation.md)，不启用新采集。

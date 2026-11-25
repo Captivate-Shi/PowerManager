@@ -16,6 +16,7 @@ constexpr const wchar_t* rapooReceiverName(unsigned vid, unsigned pid)
     switch (pid) {
     case 0x1411: return L"Rapoo VT3S";
     case 0x1412: return L"Rapoo VT3 双8K";
+    case 0x1421: return L"Rapoo VT3S MAX";
     case 0x14a1: return L"Rapoo VT0 Air MAX";
     case 0x1b13: return L"Rapoo VT2S Air Max";
     default: return nullptr;
@@ -43,6 +44,13 @@ constexpr Sample parseRapooBatteryReport(std::span<const std::uint8_t> report, u
     // Silence and invalid frames do not imply a disconnect.
     if (pid == 0x1412 && (report[1] & 0x0f) == 0 && report[18] == 0x7f)
         return {Status::offline, {}, 0x07};
+    // A HUB independently maps 1421 to the same passive Input 07 decoder.
+    // Only report current battery for the wireless, RF-connected shape
+    // documented for this shared report layout. An uncertain link or power
+    // state is not evidence that this exact mouse is offline.
+    if (pid == 0x1421 && (report[7] < 1 || report[7] > 3 ||
+        (report[1] & 0x0f) != 0 || (report[18] & 0x80) == 0))
+        return {Status::unavailable, {}, 0x07};
     if (report[8] > 100) return {Status::bad_report};
     const auto power = report[7] == 1 ? Power::discharging :
         report[7] == 2 || report[7] == 3 ? Power::charging : Power::unknown;

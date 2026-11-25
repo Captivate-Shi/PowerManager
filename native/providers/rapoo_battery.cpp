@@ -121,6 +121,8 @@ Sample RapooBatteryReader::read(const std::wstring& path)
             ? parseRapooBatteryReport(endpoint.report, endpoint.pid)
             : Sample{Status::bad_report};
         if (parsed.reading || parsed.status == Status::offline) newest = parsed;
+        else if (endpoint.pid == 0x1421 && parsed.status == Status::unavailable)
+            newest = rapooStatus(Status::unavailable, RapooDetail::noFreshReport);
         else if (!newest.reading && newest.status != Status::offline) newest = rapooStatus(Status::bad_report, RapooDetail::invalidReport, bytes);
     }
     return newest;

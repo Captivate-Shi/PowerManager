@@ -1,5 +1,6 @@
 #include "../native/providers/rapoo_battery.hpp"
 #include <cassert>
+#include <string_view>
 
 int main()
 {
@@ -9,6 +10,9 @@ int main()
     static_assert(!isRapooReceiver(0x24ae, 0x4611) && !isRapooReceiver(0x24ae, 0x14a9));
     static_assert(!isRapooReceiver(0x1234, 0x1412));
     static_assert(isRapooReceiver(0x24ae, 0x1b13));
+    static_assert(isRapooReceiver(0x24ae, 0x1421));
+    static_assert(std::wstring_view(rapooReceiverName(0x24ae, 0x1421)) == L"Rapoo VT3S MAX");
+    static_assert(!isRapooReceiver(0x24ae, 0x4621) && !isRapooReceiver(0x24ae, 0x144b));
     static_assert(!isRapooReceiver(0x24ae, 0x4b13) && !isRapooReceiver(0x24ae, 0x4827));
     static_assert(isRapooBatteryCollection(0xff00, 2, 19));
     static_assert(!isRapooBatteryCollection(0xff00, 0xe, 19) && !isRapooBatteryCollection(0xff00, 2, 20));
@@ -46,4 +50,27 @@ int main()
     report[18] = 0;
     report[7] = 2;
     assert(parseRapooBatteryReport(report, 0x1412).reading->power == Power::charging);
+    // Synthetic 1421 fixtures follow the A HUB Input 07 layout; these are not
+    // hardware captures for this exact model.
+    assert(!parseRapooBatteryReport(report, 0x1421).reading); // wired mode
+    report[1] = 0x10;
+    report[18] = 0xd2;
+    assert(parseRapooBatteryReport(report, 0x1421).reading->power == Power::charging);
+    report[7] = 1;
+    assert(parseRapooBatteryReport(report, 0x1421).reading->low == 68);
+    assert(!parseRapooBatteryReport(std::span(report).first(18), 0x1421).reading);
+    report[7] = 0;
+    assert(parseRapooBatteryReport(report, 0x1421).status == Status::unavailable);
+    report[7] = 4;
+    assert(!parseRapooBatteryReport(report, 0x1421).reading);
+    report[7] = 1;
+    report[8] = 101;
+    assert(parseRapooBatteryReport(report, 0x1421).status == Status::bad_report);
+    report[1] = 0x10;
+    report[8] = 68;
+    report[18] = 0x7f;
+    const auto ambiguous = parseRapooBatteryReport(report, 0x1421);
+    report[18] = 0x33; // RF link bit still low, not a fresh sample
+    assert(!parseRapooBatteryReport(report, 0x1421).reading);
+    assert(ambiguous.status == Status::unavailable && !ambiguous.reading);
 }
