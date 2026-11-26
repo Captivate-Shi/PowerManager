@@ -1,4 +1,5 @@
 #include "device_search.hpp"
+#include "hid.hpp"
 #include "windows_bt_peripherals.hpp"
 #include <cassert>
 
@@ -23,6 +24,10 @@ int main()
     candidate.battery = Reading{0, 0, Power::unknown, 0, ReadingSource::windows};
     candidate.knownBluetooth = false;
     assert(defaultPeripheralMonitoring(candidate, false)); // actual Windows value, including zero
+    // Before successful native identity resolution, an exact Windows value
+    // for the wired device can surface. A receiver must not supply a slot's value.
+    assert(defaultPeripheralMonitoring(candidate, reservesWindowsContainerBeforeProbe(Transport::logitech_usb)));
+    assert(!defaultPeripheralMonitoring(candidate, reservesWindowsContainerBeforeProbe(Transport::logitech_receiver)));
     candidate.connected = false;
     assert(!defaultPeripheralMonitoring(candidate, false)); // stale/offline never enroll
     FoundDevice rapoo{L"{receiver}", L"Rapoo 2.4G Wireless Device", L"USB", true, false, {}};

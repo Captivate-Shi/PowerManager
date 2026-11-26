@@ -3,12 +3,13 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { demoDiscovery, demoHistory, demoSnapshot, previewDevice } from './demo';
-import { classify, isHistoryRange, isHistoryRangeWithin, isMuteDuration, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type DeviceSettings, type HistoryDay, type Settings,
+import { classify, isHistoryRange, isHistoryRangeWithin, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type HistoryDay,
   type MainView, type Severity, type Snapshot, type Surface, type Toast } from './model';
 import { Monitor } from './monitor';
 import { startMetrics } from './metrics';
 import { HiddenSurface } from './hidden-surface';
 import { accumulateHistoryDay } from './history-plot';
+import { patchDeviceSettings, patchSettings } from './settings-validation';
 
 const isDemo = process.argv.includes('--demo');
 const local = process.env.LOCALAPPDATA || app.getPath('appData');
@@ -484,48 +485,12 @@ const actions: Record<Surface, string[]> = {
 function validId(id: unknown): id is string {
   return typeof id === 'string' && id.length > 0 && id.length <= 4096;
 }
-function ranged(value: unknown, minimum: number, maximum: number): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum;
-}
 function object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 function saveSettings(patch: unknown, confirmHistoryShorten = false) {
-  if (!object(patch)) throw new Error('设置格式有误');
   const previous = { ...snapshot.settings };
-  const next = { ...previous };
-  for (const [key, value] of Object.entries(patch)) {
-    switch (key) {
-      case 'low': case 'critical':
-        if (!ranged(value, 1, 95)) throw new Error('阈值需在 1%–95% 之间');
-        next[key] = value;
-        break;
-      case 'repeat': case 'snooze':
-        if (!ranged(value, key === 'repeat' ? 0 : 5, 180)) throw new Error('时间间隔无效');
-        next[key] = value;
-        break;
-      case 'muteMinutes':
-        if (!isMuteDuration(value)) throw new Error('全局静音时长无效');
-        next.muteMinutes = value;
-        break;
-      case 'historyRetention':
-        if (!isHistoryRange(value)) throw new Error('记录范围无效');
-        next.historyRetention = value;
-        break;
-      case 'zoom': case 'trayZoom':
-        if (!ranged(value, 75, 150)) throw new Error('缩放比例需在 75%–150% 之间');
-        next[key] = value;
-        break;
-      case 'fullscreenSound': case 'soundOnly': case 'voltage': case 'startup': case 'desktopToasts':
-        if (typeof value !== 'boolean') throw new Error('设置格式有误');
-        next[key] = value;
-        break;
-      default: throw new Error('未知设置');
-    }
-  }
-  if (!isHistoryRangeWithin(previous.historyRetention, next.historyRetention) && !confirmHistoryShorten)
-    throw new Error('缩短保留期限需要确认清理旧记录');
-  if (next.critical >= next.low) throw new Error('告急阈值必须低于低电量阈值');
+  const next = patchSettings(previous, patch, confirmHistoryShorten);
   const startupChanged = !isDemo && next.startup !== previous.startup;
   if (startupChanged) {
     if (!app.isPackaged) throw new Error('请使用打包版设置随 Windows 登录启动');
@@ -545,29 +510,7 @@ function saveSettings(patch: unknown, confirmHistoryShorten = false) {
   queueAlerts();
 }
 function saveDeviceSettings(id: string, patch: unknown) {
-  if (!object(patch)) throw new Error('设备设置格式有误');
-  const next: DeviceSettings = { ...snapshot.deviceSettings[id] };
-  for (const [key, value] of Object.entries(patch)) {
-    switch (key) {
-      case 'alias': {
-        if (typeof value !== 'string') throw new Error('设备备注格式有误');
-        const alias = value.trim();
-        if ([...alias].length > 50) throw new Error('设备备注最多 50 个字符');
-        next.alias = alias || undefined;
-        break;
-      }
-      case 'low':
-        if (value === null || value === undefined) { delete next.low; break; }
-        if (!ranged(value, 1, 50)) throw new Error('设备阈值需在 1%–50% 之间');
-        next.low = value;
-        break;
-      case 'muted':
-        if (typeof value !== 'boolean') throw new Error('设备设置格式有误');
-        next.muted = value;
-        break;
-      default: throw new Error('未知设备设置');
-    }
-  }
+  const next = patchDeviceSettings(snapshot.deviceSettings[id], patch);
   if (monitor && !monitor.saveDeviceSettings(id, next)) throw new Error('无法保存设备设置，请重试');
   if (next.muted && toast?.device.id === id && !toast.preview) closeToast();
   if (monitor) monitor.publish();

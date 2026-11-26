@@ -1,6 +1,7 @@
 #include "hid.hpp"
 #include "hid_batches.hpp"
 #include "discovery_job.hpp"
+#include "discovery_scope.hpp"
 #include "diagnostic_scope.hpp"
 #include "razer_pro_receiver.hpp"
 #include "peripheral_protocol.hpp"
@@ -422,7 +423,10 @@ public:
             });
             const bool vendorPending = vendorTask_ &&
                 vendorTask_->result.wait_for(0ms) != std::future_status::ready;
+            json absent = json::array();
+            for (const auto& id : discoveryOmissions_.absent) absent.push_back(utf8(id));
             return {{"rows", std::move(rows)}, {"discoveryPending", discoveryPending_},
+                {"discoveryAbsent", std::move(absent)},
                 {"workPending", hidPending || vendorPending || hasOutstandingDiscovery() ||
                 bleBatteryWorkExpired(std::chrono::steady_clock::duration::zero())}};
         }
@@ -642,6 +646,8 @@ private:
     std::int64_t discoveryRequested_{-1};
     std::int64_t discoveryApplied_{-1};
     bool discoveryPending_{};
+    HidDiscoveryScope discoveryScope_;
+    HidDiscoveryScope::Omissions discoveryOmissions_;
     std::wstring nextDiscovery_;
     bool asyncMode_{};
 
@@ -758,15 +764,24 @@ private:
             return parent->key;
         }), order.end());
 
-        discoveryPending_ = discoveryApplied_ != generation || !inventoryCache_.complete;
+        const bool completeInventory = discoveryApplied_ == generation && inventoryCache_.complete;
+        discoveryPending_ = !completeInventory;
         endpoints_ = inventoryCache_.passive;
+        std::set<std::wstring> presentParents;
+        std::set<std::wstring> resolvedParents;
+        for (const auto& endpoint : inventoryCache_.passive) {
+            presentParents.insert(physicalKey(endpoint));
+            resolvedParents.insert(physicalKey(endpoint));
+        }
         for (const auto* found : order) {
+            presentParents.insert(physicalKey(*found));
             auto it = discoveryLanes_.try_emplace(found->key, *found).first;
             auto& lane = it->second;
             if (!sameParent(lane.parent, *found) && !lane.task.outstanding()) lane = DiscoveryLane{*found};
             const bool match = sameParent(lane.parent, *found);
             if (match) endpoints_.insert(endpoints_.end(), lane.endpoints.begin(), lane.endpoints.end());
             if (!match || lane.applied != generation) discoveryPending_ = true;
+            else resolvedParents.insert(physicalKey(*found));
             if (!match || lane.task.outstanding() || discoveryApplied_ != generation || active >= 4 ||
                 (lane.requested == generation && now < lane.due)) continue;
 
@@ -796,7 +811,10 @@ private:
         // Dispatch rotation is for fairness, not a change in device identity
         // or the signature used for already in-flight sampling.
         std::ranges::stable_sort(endpoints_, {}, physicalKey);
-        if (inventoryCache_.complete) monitor_.forgetOffline(endpoints_);
+        HidDiscoveryScope::Parents verified;
+        for (const auto& endpoint : endpoints_) verified[endpoint.key].insert(physicalKey(endpoint));
+        discoveryOmissions_ = discoveryScope_.observe(verified, presentParents, resolvedParents, completeInventory);
+        if (completeInventory && discoveryOmissions_.uncertain.empty()) monitor_.forgetOffline(endpoints_);
     }
 
     std::vector<Device> endpoints_;
@@ -855,6 +873,7 @@ private:
         std::map<std::wstring, json> readyRows;
         Time started{};
         std::vector<std::wstring> resources;
+        std::vector<std::wstring> members;
         std::vector<std::wstring> signature;
         std::int64_t generation{-1};
         std::optional<std::int64_t> regularSequence;
@@ -1027,10 +1046,28 @@ private:
             }
         }
         const auto batches = groupHidResources(logicalResources);
-        // A disappeared lane still holds its physical reservation until IO
-        // finishes. Retire ready lanes before calculating worker availability.
+        const auto uncertain = [&](const HidLane& lane) {
+            return async && std::ranges::any_of(lane.members, [&](const auto& id) {
+                return discoveryOmissions_.uncertain.contains(id);
+            });
+        };
+        std::set<std::wstring> unresolvedResources;
+        for (auto& [_, lane] : hidLanes_) {
+            if (!uncertain(lane)) continue;
+            // Do not split/replace a previously proven receiver group merely
+            // because a partial scan omitted a member or one of its bindings.
+            // Drop pending readings (not the lane) and give it a fresh read
+            // once the physical bindings can be confirmed again.
+            if (lane.task.valid() && lane.task.wait_for(0ms) == std::future_status::ready) (void)lane.task.get();
+            lane.generation = -1;
+            lane.completed.clear();
+            lane.readyRows.clear();
+            unresolvedResources.insert(lane.resources.begin(), lane.resources.end());
+        }
+        // Only a proven removal retires a ready lane. True in-flight I/O
+        // always retains its physical reservation until it has finished.
         std::erase_if(hidLanes_, [&](const auto& entry) {
-            return !batches.contains(entry.first) &&
+            return !batches.contains(entry.first) && !uncertain(entry.second) &&
                 (!entry.second.task.valid() || entry.second.task.wait_for(0ms) == std::future_status::ready);
         });
         // Retain discovery reservations when rebuilding active sample reservations.
@@ -1081,6 +1118,14 @@ private:
             json aliases = json::array();
             for (const auto* item : group) {
                 if (!item->endpointKey.empty() && item->endpointKey != key) aliases.push_back(utf8(item->endpointKey));
+                // Windows can have published this direct device by container
+                // while HID++ was still probing. Merge only a unique exact
+                // owner, never the receiver container of a paired child.
+                if (item->transport == Transport::logitech_usb) {
+                    const auto container = endpointContainer(item->endpointKey);
+                    const auto owner = containerOwners.find(container);
+                    if (owner != containerOwners.end() && owner->second == key) aliases.push_back(utf8(container));
+                }
             }
             json value = nullptr;
             json voltage = nullptr;
@@ -1184,6 +1229,10 @@ private:
                 continue;
             }
 
+            if (!hidResourcesAvailable(resources, unresolvedResources)) {
+                publishPending();
+                continue;
+            }
             auto& lane = hidLanes_[batchKey];
             if (lane.task.valid() && lane.task.wait_for(0ms) == std::future_status::ready) {
                 auto finished = lane.task.get();
@@ -1231,6 +1280,7 @@ private:
                     lane.generation = generation;
                     lane.regularSequence = force ? std::nullopt : std::optional<std::int64_t>{sequence};
                     lane.signature = std::move(signature);
+                    lane.members = memberKeys;
                     lane.resources.assign(resources.begin(), resources.end());
                     busy.insert(lane.resources.begin(), lane.resources.end());
                     ++active;
@@ -1243,8 +1293,10 @@ private:
 
         auto claimed = claimedContainers(endpoints);
         if (asyncMode_) {
-            auto knownParents = claimedContainers(inventoryCache_.active);
-            claimed.merge(knownParents);
+            for (const auto& candidate : inventoryCache_.active) {
+                if (!reservesWindowsContainerBeforeProbe(candidate.transport)) continue;
+                if (auto id = endpointContainer(candidate.endpointKey); !id.empty()) claimed.insert(std::move(id));
+            }
         }
         std::map<std::wstring, rfcomm_battery::Model> vendorDevices;
         for (const auto& candidate : windows) {
