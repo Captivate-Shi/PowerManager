@@ -65,7 +65,7 @@ test('load repairs threshold order without losing independently valid settings',
 test('startup sanitization and the IPC patch use the same setting field validators', () => {
   for (const invalid of [
     { critical: 101 }, { low: '50' }, { repeat: -1 }, { snooze: 4 }, { zoom: 150.5 },
-    { trayZoom: 151 }, { muteMinutes: 14 }, { historyRetention: 'forever' }, { soundOnly: 'true' },
+    { trayZoom: 151 }, { muteMinutes: 14 }, { historyRetention: 'forever' }, { desktopSound: 'true' },
   ]) {
     assert.deepEqual(loadSettings({ ...defaults, ...invalid }), defaults);
     assert.throws(() => patchSettings(defaults, invalid));

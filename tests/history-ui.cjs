@@ -19,7 +19,7 @@ async function main() {
         id: name, name, art: 'unknown', status: 'current', reason: '读数正常', reading: read(58 + i),
         lastRead: now - 800, watched: false, connection: '无线',
       })), settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true,
-        soundOnly: false, voltage: false, startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60 },
+        desktopSound: false, voltage: false, startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60 },
         deviceSettings: {}, collector: 'ready', refreshing: false, mutedUntil: 0, alerts: {}, demo: true };
       const observations = {
         Alpha: [{ time: now - 95_000, reading: read(54) }, { time: now - 65_000, reading: null },

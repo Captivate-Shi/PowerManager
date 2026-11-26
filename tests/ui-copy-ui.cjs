@@ -15,7 +15,7 @@ const entry = pathToFileURL(resolve(process.env.POWER_RENDERER_BUILD || resolve(
     const mouse = { id: 'mouse', name: '无线鼠标', art: 'mouse', connection: 'USB', watched: true,
       status: 'current', lastRead: Date.now(), reading: { low: 79, high: 79, raw: 79, power: 'discharging', source: 'hid' } };
     const state = { collector: 'ready', devices: [], settings: { low: 20, critical: 10, repeat: 0, snooze: 30,
-      fullscreenSound: true, soundOnly: false, voltage: false, startup: false, zoom: 100, trayZoom: 100,
+      fullscreenSound: true, desktopSound: false, voltage: false, startup: false, zoom: 100, trayZoom: 100,
       desktopToasts: true, muteMinutes: 60 }, deviceSettings: {}, alerts: {}, refreshing: false, mutedUntil: 0, demo: false };
     let notify;
     window.copyReview = { calls: [], publishDevice: () => { state.devices = [mouse]; notify?.(structuredClone(state)); } };

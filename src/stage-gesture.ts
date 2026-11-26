@@ -13,9 +13,20 @@ export function stageVelocity(samples: StageSample[]) {
 }
 
 export function stageLanding(dx: number, width: number, velocity: number) {
-  const projected = dx + Math.max(-width * .22, Math.min(width * .22, velocity * .15));
+  const direction = Math.sign(dx);
+  if (!direction) return 0;
   const threshold = Math.max(44, Math.min(88, width * .16));
-  return Math.abs(projected) >= threshold ? (projected < 0 ? 1 : -1) : 0;
+  // Release momentum can complete a short flick, but must never reverse its side.
+  const boost = Math.max(0, Math.min(width * .22, direction * velocity * .15));
+  return Math.abs(dx) + boost >= threshold ? (direction < 0 ? 1 : -1) : 0;
+}
+
+export function stageReleaseLead(velocity: number, direction: 1 | -1) {
+  return -direction * Math.max(0, Math.min(34, -direction * velocity * .024));
+}
+
+export function canReuseStageEntry(x: number, direction: 1 | -1) {
+  return x * direction > 0;
 }
 
 export type StagePose = { transform: string; opacity: number };

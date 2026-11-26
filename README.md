@@ -2,7 +2,9 @@
 
 余电是 Windows 11 x64 的外设电量监测工具。它在系统托盘后台运行，手柄、鼠标、键盘或无线耳机快没电时会提醒你。
 
-[下载安装包或便携版](https://github.com/Captivate-Shi/PowerManager/releases)
+[下载最新版](https://github.com/Captivate-Shi/PowerManager/releases/latest)
+
+从 Electron 或早期 WebView2 测试版升级时，先在 Windows 设置中卸载旧版，再运行安装包。卸载时保留数据。
 
 ## 功能
 
@@ -20,6 +22,8 @@
 ![托盘快览，模拟数据](docs/screenshots/quick-panel-mock.webp)
 
 ## 性能
+
+0.2.0 使用系统 WebView2。安装包约 7 MB，首次安装时如缺少运行库需联网补装。下表为旧 Electron 版的实测，供对照。
 
 | Windows 11 实测（1.6.1） | 平均 CPU | 平均工作集 | 平均私有内存 |
 | --- | ---: | ---: | ---: |

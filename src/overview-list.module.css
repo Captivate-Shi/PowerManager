@@ -62,7 +62,6 @@
   grid-template-columns: clamp(50px, 6.3vw, 92px) minmax(0,1fr);
   min-height: clamp(60px, 7.2vh, 80px);
 }
-.modeDesk[data-mode="stage"] .entry > .selectRow:hover { background: color-mix(in srgb, var(--blue) 5%, transparent); }
 .modeDesk[data-mode="stage"] .selectRow[aria-pressed="true"] b {
   text-shadow: 0 1px 8px color-mix(in srgb, var(--blue) 30%, transparent);
 }

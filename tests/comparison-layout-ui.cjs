@@ -13,10 +13,10 @@ async function run() {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH,
     args: ['--allow-file-access-from-files', '--no-sandbox'] });
   try {
-    for (const width of [1250, 760, 520]) {
+    for (const width of [1250, 1024, 760, 520, 480]) {
       const page = await browser.newPage({ viewport: { width, height: 650 }, reducedMotion: 'reduce' });
       try {
-        await page.addInitScript(installMock, { portable: true });
+        await page.addInitScript(installMock, { portable: true, longComparisonNames: true });
         await page.goto(app);
         await page.evaluate(() => {
           window.studioReview.ready();
@@ -76,12 +76,29 @@ async function run() {
         await page.evaluate(() => window.scrollTo(0, 0));
         const before = await rects();
         await controller.getByRole('button', { name: '对比设备', exact: true }).click();
-        await page.getByRole('menuitemcheckbox', { name: '机械键盘', exact: true }).click();
+        await page.getByRole('menuitemcheckbox', { name: /^Razer BlackWidow/ }).click();
         await waiting('keyboard');
         await expect(section.getByText('正在更新，暂显示已有记录')).toBeVisible();
         await expect(summary.locator('[data-summary-device="keyboard"]')).toHaveAttribute('data-pending', 'true');
         const add = await rects();
         compareStable(before, add);
+        const geometry = await controller.evaluate(group => {
+          const toolbar = group.parentElement.getBoundingClientRect();
+          const range = toolbar && group.parentElement.querySelector('[aria-label="记录范围"]').getBoundingClientRect();
+          const buttons = [...group.querySelectorAll('button')].map(button => {
+            const { x, y, right, height } = button.getBoundingClientRect();
+            return { x, right, centerY: y + height / 2 };
+          });
+          return { toolbarRight: toolbar.right, range: { right: range.right, centerY: range.y + range.height / 2 }, buttons };
+        });
+        expect(geometry.buttons).toHaveLength(4);
+        let last = geometry.range.right;
+        for (const button of geometry.buttons) {
+          expect(Math.abs(button.centerY - geometry.range.centerY)).toBeLessThan(2);
+          expect(button.x).toBeGreaterThanOrEqual(last - 1);
+          expect(button.right).toBeLessThanOrEqual(geometry.toolbarRight + 1);
+          last = button.right;
+        }
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '03-add-loading.png'), fullPage: true });
         await page.evaluate(() => window.scrollTo(0, 120));
         const addScroll = await rects();
@@ -89,8 +106,9 @@ async function run() {
         await finish('keyboard');
         await expect(plot).toHaveAttribute('aria-busy', 'false');
         expect(await rects()).toEqual(addScroll);
+        if (output) await page.screenshot({ path: resolve(output, `compare-three-${width}.png`) });
         await page.evaluate(() => window.scrollTo(0, 0));
-        await controller.getByRole('button', { name: '移除对比：机械键盘' }).click();
+        await controller.getByRole('button', { name: /^移除对比：Razer BlackWidow/ }).click();
         expect(await rects()).toEqual(before);
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '04-removed.png'), fullPage: true });
         console.log(width + 'px: comparison shell, legend, summary top, footer and scroll stayed stable.');

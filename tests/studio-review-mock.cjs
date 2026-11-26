@@ -5,9 +5,9 @@ function installMock(options = {}) {
   const toastQuery = new URLSearchParams(location.search);
   const scenario = options.scenario || (options.walkthrough && toastQuery.get('scenario') === 'warm' ? 'warm' : options.walkthrough ? 'cold' : 'legacy');
   const catalog = [
-      { id: 'mouse', art: 'mouse', name: '无线鼠标', reading: value(92), connection: '无线 2.4G' },
+      { id: 'mouse', art: 'mouse', name: options.longComparisonNames ? 'Razer Viper V3 HyperSpeed' : '无线鼠标', reading: value(92), connection: '无线 2.4G' },
       { id: 'dual', art: 'dualsense', name: 'DualSense', reading: value(10, 20), connection: '蓝牙' },
-      { id: 'keyboard', art: 'keyboard', name: '机械键盘', reading: value(67), connection: '无线 2.4G' },
+      { id: 'keyboard', art: 'keyboard', name: options.longComparisonNames ? 'Razer BlackWidow V4 Low-profile TKL HyperSpeed' : '机械键盘', reading: value(67), connection: '无线 2.4G' },
       { id: 'headset', art: 'headset', name: '头戴耳机', reading: value(9), connection: '蓝牙' },
       { id: 'xbox', art: 'xbox', name: 'Xbox 无线手柄', reading: value(46), connection: '蓝牙' },
     ].map(item => ({ ...item, status: 'current', lastRead: now, watched: true, reason: '设备读数正常' }));
@@ -16,7 +16,7 @@ function installMock(options = {}) {
   const state = {
     devices: scenario === 'cold' && !toastQuery.has('detail') ? []
       : scenario === 'warm' ? [{ ...catalog[1], status: 'stale', lastRead: now - 3_600_000, reason: '等待读数' }] : copies(),
-    settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, soundOnly: false, voltage: false,
+    settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, desktopSound: false, voltage: false,
       startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60, historyRetention: options.historyRetention || 'year' },
     deviceSettings: {}, alerts: {}, collector: 'starting', refreshing: false, mutedUntil: 0, demo: true,
   };
