@@ -28,11 +28,15 @@ $target = 'x86_64-pc-windows-msvc'
 cargo build --manifest-path "$tauri/Cargo.toml" --release --locked --target $target
 Check-Native
 $app = (Resolve-Path "$tauri/target/$target/release/powermanager-tauri-lab.exe").Path
-$dll = @(Get-ChildItem "$tauri/target/$target/release/build" -Directory -Filter 'webview2-com-sys-*' | ForEach-Object {
-    Get-Item (Join-Path $_.FullName 'out\x64\WebView2Loader.dll') -ErrorAction SilentlyContinue
-} | Select-Object -First 1)
-if ($dll.Count -ne 1) { throw 'Missing WebView2 SDK loader' }
-Copy-Item $dll[0].FullName $payload
+$cargoMetadata = cargo metadata --manifest-path "$tauri/Cargo.toml" --locked --format-version 1 --filter-platform $target
+Check-Native
+$sdk = @(($cargoMetadata | ConvertFrom-Json).packages | Where-Object name -eq 'webview2-com-sys')
+if ($sdk.Count -ne 1 -or $sdk[0].version -ne '0.39.1') { throw 'Unexpected pinned WebView2 SDK' }
+$dll = Join-Path (Split-Path $sdk[0].manifest_path -Parent) 'x64/WebView2Loader.dll'
+if ((Get-FileHash -LiteralPath $dll).Hash -ne '86545B66CDB0603BC26B626FB9AD610CB6E71F28D468F5EA66DF23B03DDA96D5') {
+    throw 'Unexpected WebView2 SDK loader SHA-256'
+}
+Copy-Item -LiteralPath $dll -Destination $payload
 $env:PATH = "$payload;$env:PATH"
 cargo test --manifest-path "$tauri/Cargo.toml" --release --locked --target $target
 Check-Native
