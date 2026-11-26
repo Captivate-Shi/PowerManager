@@ -23,7 +23,7 @@ export type CompatibilitySelection =
   | { kind: 'manual'; model: string; firmware?: string };
 export type Settings = {
   low: number; critical: number; repeat: number; snooze: number; fullscreenSound: boolean;
-  soundOnly: boolean; voltage: boolean; startup: boolean;
+  desktopSound: boolean; voltage: boolean; startup: boolean;
   zoom: number; trayZoom: number; desktopToasts: boolean; muteMinutes: MuteMinutes;
   historyRetention: HistoryRange;
 };
@@ -46,7 +46,7 @@ export type AlertState = {
   lowAt?: number; criticalAt?: number; snoozeUntil?: number; ignored?: Severity; recovery?: number; lastNoticeAt?: number;
 };
 export type Toast = { device: Device; severity: Severity; preview: boolean; detailId?: string };
-export type AlertSwitch = 'fullscreenSound' | 'soundOnly' | 'desktopToasts';
+export type AlertSwitch = 'fullscreenSound' | 'desktopSound' | 'desktopToasts';
 export type Snapshot = {
   devices: Device[]; settings: Settings; deviceSettings: Record<string, DeviceSettings>;
   collector: 'starting' | 'ready' | 'occupied' | 'retrying'; refreshing: boolean;
@@ -82,6 +82,10 @@ export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: 
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;
   toast(): Promise<Toast | null>;
+  toastPresent?(): Promise<void>;
+  trayPresent?(): Promise<void>;
+  mainPresent?(): Promise<void>;
+  windowAction?(action: 'drag' | 'minimize' | 'maximize' | 'close'): Promise<void>;
   mainView?(): Promise<MainView | undefined>;
   rememberMainView?(view: MainView): Promise<void>;
   command(command: Command): Promise<CommandResult>;
@@ -95,7 +99,7 @@ export const muteDurationLabel = (minutes: MuteMinutes) =>
   minutes >= 60 ? (minutes / 60) + ' 小时' : minutes + ' 分钟';
 export const defaults: Settings = {
   low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true,
-  soundOnly: false, voltage: false, startup: false,
+  desktopSound: false, voltage: false, startup: false,
   zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60,
   historyRetention: 'year',
 };

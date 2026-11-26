@@ -8,3 +8,9 @@ out/
 test-results/
 qa/.profiles/
 qa/**/.profiles/
+
+/experiments/tauri/src-tauri/target/
+/experiments/tauri/src-tauri/gen/
+/experiments/tauri/src-tauri/payload/
+/verified-inputs/
+/.native-identity/

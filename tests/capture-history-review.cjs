@@ -21,7 +21,7 @@ function mock() {
       { id: 'keyboard', art: 'keyboard', name: '机械键盘', reading: value(67), connection: '无线 2.4G' },
       { id: 'headset', art: 'headset', name: '头戴耳机', reading: value(52), connection: '蓝牙' },
     ].map(item => ({ ...item, status: 'current', lastRead: now, watched: true, reason: '设备读数正常' })),
-    settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, soundOnly: false, voltage: false,
+    settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, desktopSound: false, voltage: false,
       startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60 },
     deviceSettings: {}, alerts: {}, collector: 'starting', refreshing: false, mutedUntil: 0, demo: true,
   };

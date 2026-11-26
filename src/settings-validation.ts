@@ -30,7 +30,7 @@ function setSetting(settings: Settings, key: string, value: unknown): string | u
       if (!integer(value, 75, 150)) return '缩放比例需在 75%–150% 之间';
       settings[key] = value;
       return;
-    case 'fullscreenSound': case 'soundOnly': case 'voltage': case 'startup': case 'desktopToasts':
+    case 'fullscreenSound': case 'desktopSound': case 'voltage': case 'startup': case 'desktopToasts':
       if (typeof value !== 'boolean') return '设置格式有误';
       settings[key] = value;
       return;
@@ -41,6 +41,10 @@ function setSetting(settings: Settings, key: string, value: unknown): string | u
 
 export function loadSettings(saved: Record<string, unknown>): Settings {
   const settings = { ...defaults };
+  if (typeof saved.desktopSound !== "boolean" && saved.soundOnly === true) {
+    // A legacy sound-only preference must never gain a popup when upgraded.
+    settings.desktopSound = true;
+  }
   let savedLowValid = false;
   for (const [key, value] of Object.entries(saved)) {
     const error = setSetting(settings, key, value);
@@ -52,6 +56,7 @@ export function loadSettings(saved: Record<string, unknown>): Settings {
     if (savedLowValid) settings.critical = Math.min(defaults.critical, settings.low - 1);
     else settings.low = settings.critical + 1;
   }
+  if (typeof saved.desktopSound !== "boolean" && saved.soundOnly === true) settings.desktopToasts = false;
   return settings;
 }
 

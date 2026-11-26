@@ -24,7 +24,7 @@ const button = (scope, name) => scope.getByRole('button', { name, exact: true })
             collector: 'ready', demo: false, refreshing: false, mutedUntil: 0, deviceSettings: {}, alerts: {},
             devices: [{ id: 'one', name: '蓝牙鼠标', connection: '蓝牙', art: 'mouse', status: 'current', reason: '',
               reading: { low: 30, high: 30, raw: 30, power: 'unknown', source: 'ble' }, lastRead: Date.now(), watched: true }],
-            settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, soundOnly: false, voltage: false,
+            settings: { low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, desktopSound: false, voltage: false,
               startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60, historyRetention: 'year' },
           };
           window.powerManager = {

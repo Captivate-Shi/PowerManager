@@ -19,7 +19,7 @@ const { pathToFileURL } = require('node:url');
       const live = data.map(([id,name,art,status,low,high]) => ({id,name,art,status,connection:'蓝牙',reading:low == null ? null : {
         low,high,raw:low,power:'discharging',source:'hid' },watched:true,lastRead:now-3_600_000,reason:status==='offline'?'未连接':'设备读数正常'}));
       let state = { devices:[{ ...live[0], status:'stale' }], collector:'starting', refreshing:false, mutedUntil:0,
-        settings:{low:20,critical:10,repeat:0,snooze:30,fullscreenSound:true,soundOnly:false,voltage:false,startup:false,zoom:100,trayZoom:100,desktopToasts:true,muteMinutes:60},
+        settings:{low:20,critical:10,repeat:0,snooze:30,fullscreenSound:true,desktopSound:false,voltage:false,startup:false,zoom:100,trayZoom:100,desktopToasts:true,muteMinutes:60},
         deviceSettings:{},alerts:{},demo:false };
       let notify, settle;
       const publish=patch => { state={ ...state, ...patch }; notify?.(state); };

@@ -1,0 +1,6 @@
+{
+  "identifier": "lab-local-windows",
+  "description": "Only local app surfaces can receive app events",
+  "windows": ["main", "tray", "toast"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

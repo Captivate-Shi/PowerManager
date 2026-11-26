@@ -1,39 +1,35 @@
 # 余电 PowerManager
 
-余电是 Windows 11 x64 的外设电量监测工具。它在系统托盘后台运行，手柄、鼠标、键盘或无线耳机快没电时会提醒你。
+余电在 Windows 托盘里监测外设电量。打游戏或开会时，手柄、鼠标、键盘和无线耳机快没电了，不用等断开才发现。
 
-[下载安装包或便携版](https://github.com/Captivate-Shi/PowerManager/releases)
+[下载最新版](https://github.com/Captivate-Shi/PowerManager/releases/latest) · [查看支持设备](COMPATIBILITY.md)
+
+![余电总览，使用示例数据](docs/media/overview.webp)
+
+[播放操作演示（MP4，示例数据）](https://raw.githubusercontent.com/Captivate-Shi/PowerManager/main/docs/media/powermanager-demo.mp4)
+
+## 安装
+
+1. 在发布页下载 `PowerManager-Setup-<版本>.exe`。适用于 Windows x64。
+2. 选择安装位置。默认是 `%LOCALAPPDATA%\Programs\PowerManager`，可选创建桌面快捷方式。
+3. 安装完成后，可以勾选「立即启动 PowerManager」。关闭主窗口后，余电继续在托盘监测。
+
+从 Electron 或早期 WebView2 测试版升级时，先从 Windows 设置卸载旧版。卸载 WebView2 测试版不会删除设置和电量历史，新版会沿用它们。首次安装时，如果电脑没有 WebView2 运行库，安装器会从微软下载。
 
 ## 功能
 
-- **电量总览**：在展台或列表中查看电量、连接状态和上次读数。设备连接后可在「设备 → 查找设备」查看。
-- **托盘快览**：单击托盘图标看电量，双击打开主窗口。
-- **低电量提醒**：可按设备设置阈值，也可设为全屏时只播放提示音。
-- **电量记录**：对比最多 3 台设备的电量变化，支持 24 小时、7 天、30 天和 365 天。记录保存在本机，保留天数可在设置里调整。
+- **总览**：展台或列表查看连接状态、电量和最近更新时间。托盘单击打开快览，双击打开主窗口。
+- **设备**：查看单个外设的读数和趋势。读数按设备上报显示百分比或区间；断开时不会把上次读数当成实时电量。
+- **提醒**：自定义低电量阈值。桌面弹窗、桌面提示音和全屏提示音可以单独开关。
+- **记录**：同图比较最多三台设备，查看电量曲线、充电采样和无数据时段。记录保存在本机，保留期限可调。
+- **设置**：调整主题、界面缩放、采集与存储选项，按需开启登录自启。
 
-## 截图
+![三台设备的电量对比，使用示例数据](docs/media/comparison.webp)
 
-![Windows 实机总览](docs/screenshots/windows-overview.webp)
+## 包体和后台占用
 
-![三台设备的电量对比，模拟数据](docs/screenshots/history-mock.webp)
-
-![托盘快览，模拟数据](docs/screenshots/quick-panel-mock.webp)
-
-## 性能
-
-| Windows 11 实测（1.6.1） | 平均 CPU | 平均工作集 | 平均私有内存 |
-| --- | ---: | ---: | ---: |
-| 主窗口打开，静置 | 0.0185% | 389.2 MiB | 351.9 MiB |
-| 主窗口释放，仅后台监测 | 0.0062% | 293.4 MiB | 282.3 MiB |
-
-[测试条件](qa/README.md)
+0.2.0 使用系统 WebView2，不再随安装包分发 Electron。x64 安装包约 7 MB，不含系统 WebView2 运行库。关闭主窗口后，渲染窗口会释放，托盘和设备采集继续运行。
 
 ## 设备反馈
 
-找不到设备、电量读不到或读数不对时：
-
-1. 打开「设置 → 诊断 → 生成兼容性报告」，选择有问题的设备。列表里没有设备时，可手动填写型号。
-2. 点击「预览兼容性报告」，确认后「保存到本地」。
-3. 把报告附到 [GitHub Issues](https://github.com/Captivate-Shi/PowerManager/issues)，写一下连接方式和遇到的问题。
-
-报告不会自动发送。
+在「设置 → 诊断 → 生成兼容性报告」选择外设，找不到型号时可手动填写。预览后保存，再附到 [GitHub Issues](https://github.com/Captivate-Shi/PowerManager/issues)，注明连接方式和现象。报告不会自动发送。

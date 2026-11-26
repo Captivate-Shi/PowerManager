@@ -17,7 +17,7 @@ const { resolve } = require('node:path');
           status: 'basic_bluetooth', reason: '蓝牙当前未提供电量', reading: null, lastRead: null, watched: false,
         }],
         settings: {
-          low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, soundOnly: false, voltage: false,
+          low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true, desktopSound: false, voltage: false,
           startup: false, zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60, historyRetention: 'year',
         },
       };

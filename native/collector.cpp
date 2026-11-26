@@ -10,6 +10,7 @@
 #include "battery_fallback.hpp"
 #include "gamepad_battery.hpp"
 #include "rfcomm_battery_transport.hpp"
+#include "device_identity.hpp"
 #include "json.hpp"
 
 #include <windows.h>
@@ -406,7 +407,7 @@ public:
         if (action == "discover") return discover();
         if (action == "compatibility") return compatibility();
         if (action == "diagnostic_devices") return diagnosticDevices();
-        if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("id").get<std::string>()));
+        if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("deviceId").get<std::string>()));
         if (action == "poll") {
             const auto now = std::chrono::steady_clock::now();
             const bool vendorExpired = vendorTask_ && now - vendorTask_->started >= 5min &&
@@ -1119,9 +1120,10 @@ private:
             for (const auto* item : group) {
                 if (!item->endpointKey.empty() && item->endpointKey != key) aliases.push_back(utf8(item->endpointKey));
                 // Windows can have published this direct device by container
-                // while HID++ was still probing. Merge only a unique exact
+                // before the native provider was ready. Merge only a unique exact
                 // owner, never the receiver container of a paired child.
-                if (item->transport == Transport::logitech_usb) {
+                if (item->transport == Transport::logitech_usb ||
+                    (item->transport == Transport::dualsense_bluetooth && verifiedDualSenseAddressKey(key))) {
                     const auto container = endpointContainer(item->endpointKey);
                     const auto owner = containerOwners.find(container);
                     if (owner != containerOwners.end() && owner->second == key) aliases.push_back(utf8(container));
@@ -1328,7 +1330,7 @@ private:
         for (const auto& device : request.at("watched")) {
             const auto id = device.at("id").get<std::string>();
             const auto key = wide(id);
-            if (claimed.contains(key)) continue;
+            if (claimed.contains(key) || groups.contains(key)) continue;
             targets.try_emplace(key, GenericTarget{id, device.at("name").get<std::string>(),
                 device.at("connection").get<std::string>(), false});
         }

@@ -440,20 +440,24 @@ async function drainAlerts() {
     let delivered = false;
     if (scene.mode === 'fullscreen') {
       if (snapshot.settings.fullscreenSound && scene.allowed !== false) delivered = await owner.tone();
-    } else if (snapshot.settings.soundOnly && scene.allowed !== false) {
-      delivered = await owner.tone();
-    } else if (snapshot.settings.desktopToasts && (scene.allowed === true || (scene.allowed === null && scene.shellAccepts))) {
-      if (windows.toast) return;
-      delivered = await showToast({ device, severity: item.level, preview: false, detailId: device.id }, scene.point, valid);
-    }
-    if (!delivered && valid() && scene.mode === 'desktop' && !snapshot.settings.soundOnly && scene.allowed !== false) {
-      balloonDeviceId = device.id;
-      tray.displayBalloon({
-        title: item.level === 'critical' ? '外设电量告急' : '外设电量较低',
-        content: device.name + ' · 剩余 ' + percent(device.reading),
-        iconType: 'warning', noSound: true, respectQuietTime: true,
-      });
-      delivered = true;
+    } else if (scene.mode === 'desktop' && scene.allowed !== false) {
+      const wantsPopup = snapshot.settings.desktopToasts;
+      const wantsSound = snapshot.settings.desktopSound;
+      let visual = false;
+      if (wantsPopup && (scene.allowed === true || (scene.allowed === null && scene.shellAccepts)) && !windows.toast) {
+        visual = await showToast({ device, severity: item.level, preview: false, detailId: device.id }, scene.point, valid);
+      }
+      if (wantsPopup && !visual && !windows.toast && valid()) {
+        balloonDeviceId = device.id;
+        tray.displayBalloon({
+          title: item.level === 'critical' ? '设备电量告急' : '设备电量偏低',
+          content: device.name + ' · 剩余 ' + percent(device.reading),
+          iconType: 'warning', noSound: true, respectQuietTime: true,
+        });
+        visual = true;
+      }
+      const sounded = wantsSound && valid() ? await owner.tone() : false;
+      delivered = visual || sounded;
     }
     if (delivered) {
       const state = snapshot.alerts[item.id] ?? {};
@@ -602,7 +606,7 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
     case 'settings': saveSettings(command.patch, command.confirmHistoryShorten === true); break;
     case 'toggleAlertSetting': {
       const { key } = command;
-      if (key !== 'fullscreenSound' && key !== 'soundOnly' && key !== 'desktopToasts') throw new Error('提醒开关无效');
+      if (key !== 'fullscreenSound' && key !== 'desktopSound' && key !== 'desktopToasts') throw new Error('提醒开关无效');
       saveSettings({ [key]: !snapshot.settings[key] });
       break;
     }

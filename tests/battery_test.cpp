@@ -376,6 +376,9 @@ int main()
     constexpr std::array<std::uint8_t, 20> pairing{0x09, 0x6f, 0x5e, 0x4d, 0x3c, 0x2b, 0x1a};
     const auto identity = dualSenseUsbIdentity(pairing);
     require(identity == L"dualsense:1a2b3c4d5e6f", "USB pairing report uses reversed address bytes");
+    require(verifiedDualSenseAddressKey(identity), "canonical DualSense address permits exact alias");
+    require(!verifiedDualSenseAddressKey(L"dualsense:000000000000"), "zero address is not identity evidence");
+    require(!verifiedDualSenseAddressKey(L"dualsense:controller"), "nickname is not identity evidence");
     require(dualSenseBluetoothIdentity(L"bthenum\\dev_1a2b3c4d5e6f\\7&1234&0") == identity,
             "USB and Bluetooth derive one physical DualSense identity");
     require(dualSenseBluetoothIdentity(L"bthenum\\{00001124-0000-1000-8000-00805f9b34fb}"

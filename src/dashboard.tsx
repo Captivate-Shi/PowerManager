@@ -14,6 +14,8 @@ import { allowOverviewMotion, OverviewModeMotion } from './overview-mode-motion'
 import { LiquidSelection } from './liquid-selection';
 import { JellyNav } from './jelly-nav';
 import { SceneBattery, SceneStage } from './device-scene';
+import { compareDevices, rememberSortConnections } from './device-order';
+import { DeviceRowMotion } from './device-row-motion';
 import { DeviceThreshold } from './device-threshold';
 import { HelpTip } from './help-tip';
 import { ZoomControl } from './zoom';
@@ -23,7 +25,7 @@ import { compareLimit, historyAnchor, historyRangeLabels, historyStart, toggleHi
 import { historyStorageEstimate } from './history-storage';
 import { applyMainPalette, palettes, readPalette, savePalette, type Palette } from './theme';
 import { DetentSlider } from './detent-slider';
-import { paintStage, shifted, stageLanding, stagePose, stageRest, stageTravel, stageVelocity, type StagePose, type StageSample } from './stage-gesture';
+import { canReuseStageEntry, paintStage, shifted, stageLanding, stagePose, stageReleaseLead, stageRest, stageTravel, stageVelocity, type StagePose, type StageSample } from './stage-gesture';
 import { animateDetailPhoto, detailPhoto, fadeReflection, freezeReflection, stageReflection } from './device-art-motion';
 
 const pages = [
@@ -67,6 +69,9 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   const [filter, setFilter] = useState<Filter>('all');
   const [query, search] = useState('');
   const [deviceSort, setDeviceSort] = useState('state');
+  const lastSortConnections = useRef<ReadonlyMap<string, boolean>>(new Map());
+  const sortConnections = rememberSortConnections(state.devices, lastSortConnections.current);
+  useLayoutEffect(() => { lastSortConnections.current = sortConnections; }, [sortConnections]);
   const settingsPosition = useRef({ category: 'appearance', top: 0 });
   const [finding, setFinding] = useState(false);
   const [currentHistoryRange, setCurrentHistoryRange] = useState<HistoryRange>();
@@ -223,11 +228,18 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     style={{ '--studio-stage': `url("${studioPath('stage.webp')}")`, '--alert-stage': `url("${studioPath('alerts-stage.webp')}")` } as CSSProperties}>
     <ColdStartMotion cold={inventory === 'cold'} visible={page === 'overview' && !detailed} />
     <a className={s.skipLink} href="#main-content">跳到主要内容</a>
-    <header className={s.topbar + ' ' + look.topbar}>
+    <header className={s.topbar + ' ' + look.topbar}
+      onMouseDown={event => { if (event.button === 0 && event.detail === 1 && api.windowAction && !(event.target as HTMLElement).closest?.('button, nav, a')) void api.windowAction('drag').catch(() => {}); }}
+      onDoubleClick={event => { if (api.windowAction && !(event.target as HTMLElement).closest?.('button, nav, a')) void api.windowAction('maximize').catch(() => {}); }}>
       <Brand />
       <JellyNav current={page}>{pages.map(([id, label]) => <button key={id} className={s.navItem + ' ' + look.navItem}
         aria-label={label} aria-current={page === id ? 'page' : undefined} onClick={() => navigate(id)}><span>{label}</span>
         {id === 'alerts' && low.length > 0 && <i aria-hidden="true" />}</button>)}</JellyNav>
+      {api.windowAction && <div className={s.captionControls}>
+        <button type="button" aria-label="最小化" onClick={() => void api.windowAction?.('minimize').catch(() => {})}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8" /></svg></button>
+        <button type="button" aria-label="最大化或还原" onClick={() => void api.windowAction?.('maximize').catch(() => {})}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5h7v7h-7z" /></svg></button>
+        <button type="button" aria-label="关闭窗口" onClick={() => void api.windowAction?.('close').catch(() => {})}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" /></svg></button>
+      </div>}
     </header>
     <main className={s.content + ' ' + look.content} id="main-content" tabIndex={-1} ref={main}>
       <div className={s.pageBody} hidden={!!detailed}>
@@ -250,7 +262,7 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
         chosen={featured} choose={chooseFeatured} mode={overviewMode} setMode={setOverviewMode} />}
       {page === 'devices' && (inventory === 'cold' ? <DeviceSkeleton /> :
         inventory === 'unavailable' ? <Empty button={() => setFinding(true)}>暂无法读取设备，等待采集恢复</Empty> :
-        <Devices state={state} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} sort={deviceSort} setSort={setDeviceSort} clearSearch={() => search('')} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
+        <Devices state={state} sortConnections={sortConnections} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} sort={deviceSort} setSort={setDeviceSort} clearSearch={() => search('')} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
       {page === 'alerts' && <Alerts state={state} run={run} open={openDetail} />}
       {page === 'history' && <History state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={viewRange} retention={historyRetention} chooseRange={chooseHistoryRange} slots={historySlots} setSlots={setHistorySlots} />}
       {page === 'settings' && <Settings state={state} run={run} palette={palette} choosePalette={choosePalette} retention={historyRetention} position={settingsPosition} />}
@@ -541,7 +553,12 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
       setRevealId(undefined);
       choose(device.id);
     });
-    const enter = live.get(device.id) ?? {
+    const previousEntry = live.get(device.id);
+    // A quick wrap can bring back the layer still leaving on the other side.
+    // Only resume its pose if it is on this gesture's incoming side.
+    const reuseEntry = previousEntry && (!gesture || canReuseStageEntry(
+      new DOMMatrixReadOnly(previousEntry.transform === 'none' ? undefined : previousEntry.transform).m41, direction));
+    const enter = (reuseEntry ? previousEntry : undefined) ?? {
       transform: gesture ? `perspective(1000px) translate3d(${38 * direction}%, 3%, -175px) rotateY(${-25 * direction}deg) scale(.83)`
         : `translateX(${8 * direction}px)`,
       opacity: 0,
@@ -554,7 +571,7 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
         ? `perspective(1000px) translate3d(${-48 * direction}%, 4%, -205px) rotateY(${28 * direction}deg) scale(.8)`
         : `translateX(${-8 * direction}px)` };
       // First 24 ms inherit pointer speed without jumping away from the last visible pose.
-      const lead = Math.max(-34, Math.min(34, velocity * .024));
+      const lead = stageReleaseLead(velocity, direction);
       frames.set(outgoing.id, gesture && Math.abs(lead) > 1 ? [
         { ...out, offset: 0 }, { ...shifted(out, lead), offset: .052, easing: 'cubic-bezier(.26,.55,.29,1)' }, { ...exit, offset: 1 },
       ] : [{ ...out, easing: 'cubic-bezier(.24,.62,.3,1)' }, exit]);
@@ -752,8 +769,8 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
   </div>;
 }
 
-function Devices({ state, selected, pick, filter, setFilter, query, sort, setSort, clearSearch, openDetail, run, find }: {
-  state: Snapshot; selected?: string; pick: (id?: string) => void; filter: Filter; setFilter: (value: Filter) => void; query: string; sort: string; setSort: (value: string) => void; clearSearch: () => void; openDetail: (id: string, source?: HTMLElement) => void; run: Run; find: () => void;
+function Devices({ state, sortConnections, selected, pick, filter, setFilter, query, sort, setSort, clearSearch, openDetail, run, find }: {
+  state: Snapshot; sortConnections: ReadonlyMap<string, boolean>; selected?: string; pick: (id?: string) => void; filter: Filter; setFilter: (value: Filter) => void; query: string; sort: string; setSort: (value: string) => void; clearSearch: () => void; openDetail: (id: string, source?: HTMLElement) => void; run: Run; find: () => void;
 }) {
   const split = useRef<HTMLDivElement>(null);
   const { devices, alerts } = state;
@@ -767,9 +784,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, sort, setSor
   const needle = query.trim().toLocaleLowerCase();
   const visible = groups[filter].filter(device => [device.name, device.recognizedName, device.connection, device.art]
     .some(value => value?.toLocaleLowerCase().includes(needle)));
-  const readingOrder = (device: Device) => device.reading?.low ?? 101;
-  visible.sort((a, b) => sort === 'low' ? readingOrder(a) - readingOrder(b) :
-    sort === 'name' ? a.name.localeCompare(b.name, 'zh-CN') : Number(isConnected(b)) - Number(isConnected(a)));
+  visible.sort((a, b) => compareDevices(a, b, sort, sortConnections));
   const detail = visible.find(device => device.id === selected) ?? (state.demo && !selected && filter === 'all' && !needle
     ? visible.find(device => device.art === 'dualsense') : visible[0]);
   function openPreview(device: Device) {
@@ -784,16 +799,16 @@ function Devices({ state, selected, pick, filter, setFilter, query, sort, setSor
         onChange={value => { setFilter(value as Filter); pick(undefined); }}
         choices={menus.map(([value, label]) => ({ value, label: label + ' ' + groups[value].length }))} /></div>
       <SelectControl label="设备排序" value={sort} onChange={setSort} choices={[
-          { value: 'state', label: '按状态排序' }, { value: 'low', label: '按电量排序' }, { value: 'name', label: '按名称排序' },
+          { value: 'state', label: '已连接优先' }, { value: 'low', label: '按电量排序' }, { value: 'name', label: '按名称排序' },
         ]} />
     </div>
     <div ref={split} className={s.deviceSplit + ' ' + look.deviceSplit}>
       <section className={s.deviceListing + ' ' + look.deviceListing} data-scroll-pane="">
         {visible.length ? <table className={s.deviceTable + ' ' + look.deviceTable}><caption>设备（{visible.length}）</caption>
           <thead><tr><th scope="col">设备</th><th scope="col">连接</th><th scope="col">电量</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
-          <tbody>{visible.map(device => {
+          <DeviceRowMotion ids={visible.map(device => device.id)} scope={filter + '\0' + needle}>{visible.map(device => {
             const alert = level(device, state);
-            return <tr key={device.id} data-selected={device.id === detail?.id}
+            return <tr key={device.id} data-device-row={device.id} data-selected={device.id === detail?.id}
             onClick={() => pick(device.id)} onDoubleClick={() => openPreview(device)}>
             <td>{device.id === detail?.id && <LiquidSelection />}<button className={s.deviceName} type="button" aria-pressed={device.id === detail?.id} title={device.name}
               aria-description="选择后在右侧预览，可用查看详情按钮打开完整页面"
@@ -807,7 +822,7 @@ function Devices({ state, selected, pick, filter, setFilter, query, sort, setSor
             <td><StatusTag device={device} state={state} /></td>
             <td onDoubleClick={event => event.stopPropagation()}><button className={s.iconButton} aria-label={'查看详情 · ' + device.name} title="查看详情"
               onClick={event => { event.stopPropagation(); openPreview(device); }}><ChevronRight size={17} /></button></td>
-          </tr>; })}</tbody>
+          </tr>; })}</DeviceRowMotion>
         </table> : <Empty button={devices.length ? () => { setFilter('all'); clearSearch(); } : find} action={devices.length ? '清除筛选' : '查找设备'}>{devices.length ? '未找到匹配设备' : '暂无受监测设备'}</Empty>}
       </section>
       {detail && <Details key={detail.id} device={detail} state={state} run={run} openFull={source => openDetail(detail.id, source)} />}
@@ -956,9 +971,9 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
         <div className={preferences.previewSwitch} role="group" aria-label="通知预览级别">{(['low', 'critical'] as const).map(value => <button key={value} aria-pressed={preview === value} onClick={() => setPreview(value)}>{value === 'low' ? '低电量' : '电量告急'}</button>)}</div>
       </div>
       <details className={preferences.morePreferences}><summary>通知与静音 <ChevronDown size={16} /></summary>
-        <SettingRow title="右下角弹窗" hint="关闭后改用 Windows 通知。"><SwitchControl label="右下角弹窗" checked={state.settings.desktopToasts} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopToasts' }); }} /></SettingRow>
+        <SettingRow title="桌面弹窗"><SwitchControl label="桌面弹窗" checked={state.settings.desktopToasts} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopToasts' }); }} /></SettingRow>
         <SettingRow title="全屏提示音"><SwitchControl label="全屏提示音" checked={state.settings.fullscreenSound} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'fullscreenSound' }); }} /></SettingRow>
-        <SettingRow title="仅提示音" hint="非全屏时也只播放提示音，不弹窗。"><SwitchControl label="仅提示音" checked={state.settings.soundOnly} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'soundOnly' }); }} /></SettingRow>
+        <SettingRow title="桌面提示音"><SwitchControl label="桌面提示音" checked={state.settings.desktopSound} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopSound' }); }} /></SettingRow>
         <SettingRow title="稍后提醒"><SelectControl label="稍后提醒时间" value={String(state.settings.snooze)} onChange={value => patch({ snooze: Number(value) })} choices={minutes([5, 15, 30, 60])} /></SettingRow>
         <SettingRow title="静音时长"><SelectControl label="全局静音时长" value={String(state.settings.muteMinutes)} onChange={value => { const duration = Number(value); if (isMuteDuration(duration)) patch({ muteMinutes: duration }); }} choices={muteDurations.map(value => ({ value: String(value), label: muteDurationLabel(value) }))} /></SettingRow>
         <SettingRow title={muted ? '提醒已静音' : '暂停提醒'} status={muted ? '静音至 ' + dateLabel(state.mutedUntil) : undefined}><button className={s.button} onClick={() => { void run({ type: 'mute' }); }}>{muted ? '恢复提醒' : '静音 ' + muteDurationLabel(state.settings.muteMinutes)}</button></SettingRow>
@@ -992,6 +1007,7 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
   const toggle = (id: string) => setSlots(toggleHistorySlots(visibleSlots, id));
   const single = selected.length === 1 ? selected[0] : undefined;
   const now = historyAnchor(clock, selected.map(item => item.lastRead), Date.now());
+  const dateSpan = `${historyClock.format(historyStart(now, range))} – ${historyClock.format(now)}`;
   return <section className={s.history} aria-label="电量对比记录">
     <div className={s.historyToolbar}>
       <div className={s.historySpan}><div className={s.historyRangeGroup}>
@@ -999,7 +1015,7 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
             ({ ...choice, disabled: !isHistoryRangeWithin(choice.value, retention) }))} onChange={chooseRange} />
           {retention !== 'year' && <HelpTip label="可查看范围" text={`目前最多保留 ${historyRangeLabels[retention]}。可在设置 → 记录调整；延长期限不会找回已清理的记录。`} />}
         </div>
-        <span aria-label="实际查看时段">{historyClock.format(historyStart(now, range))} – {historyClock.format(now)}</span></div>
+        <span aria-label="实际查看时段" title={dateSpan}>{dateSpan}</span></div>
       <div className={s.historyChoices} role="group" aria-label="选择对比设备">
         {selected.map(item => <button type="button" key={item.id} className={s.historyChoice}
           data-series={seriesSlots.get(item.id)} data-device={item.id} disabled={activeIds.length === 1}

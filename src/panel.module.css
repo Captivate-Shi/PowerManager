@@ -597,7 +597,6 @@
   .laneEvent[data-event="charging"] { width: 17px; height: 17px; }
 }
 .chartSrOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.historyChoices { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 3px; max-height: 86px; overflow-y: auto; }
 .historyChoice { min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: transparent; }
 .historyChoice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .historyChoice i { flex: none; width: 11px; height: 2px; color: inherit; border-top: 2px solid currentColor; opacity: .75; }
@@ -615,17 +614,18 @@
 .heading[data-history="true"] h1 { font-size: clamp(21px, 2vw, 29px); font-weight: 580; }
 .heading[data-history="true"] p { border-inline-start: 1px solid #ffffff28; padding-inline-start: 15px; margin: 0; font-size: 13px; }
 .history { border: 0; border-radius: 0; padding: 0; background: transparent; }
-.historyToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.historyToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px clamp(8px, 1.5vw, 24px); flex-wrap: nowrap; }
 .historySpan, .historyChoices { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.historySpan { flex-wrap: wrap; }
+.historySpan { flex: 0 1 auto; flex-wrap: nowrap; }
 .historySpan b, .historyAdd, .historyChoice { border: 1px solid var(--line-strong); border-radius: 8px; min-height: 38px; background: var(--panel); }
 .historySpan b { background: var(--raised); padding: 8px 12px; font-weight: 600; }
-.historySpan > span { white-space: nowrap; font-size: 13px; color: var(--muted); }
-.historyChoices { justify-content: flex-end; margin: 0; padding: 0; max-height: none; overflow: visible; }
-.historyChoice { min-width: 0; max-width: min(36vw, 240px); color: var(--ink); gap: 8px; padding: 4px 9px; }
+.historySpan > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); }
+.historyChoices { flex: 0 1 auto; flex-wrap: nowrap; justify-content: flex-end; }
+.historyChoice { flex: 0 1 auto; min-width: 0; max-width: min(36vw, 240px); color: var(--ink); gap: 8px; padding: 4px 9px; }
 .historyChoice[aria-pressed="true"] { background: var(--panel); }
 .historyChoice:disabled[aria-pressed="true"] { opacity: 1; }
 .historyChoice .art { width: 39px; height: 26px; min-width: 39px; flex: none; }
+.historyChoice > svg { flex: none; }
 .historyChoice .art img { width: 100%; height: 100%; }
 .historyChoice i { width: 8px; height: 8px; border-radius: 99px; border: 0; background: currentColor; opacity: 1; }
 .historyChoice[data-series="0"] i { color: #c5e4f6; }
@@ -633,7 +633,7 @@
 .historyChoice[data-series="2"] i { color: #a2c9ba; }
 .historyChoice:hover:not(:disabled), .historyAdd:hover { border-color: var(--selection-border); background: var(--hover-surface); }
 .historyRemove { color: var(--quiet); }
-.historyAdd { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; }
+.historyAdd { display: inline-flex; flex: none; white-space: nowrap; align-items: center; gap: 6px; padding: 4px 12px; }
 .historyMenu { z-index: 10; min-width: 168px; max-width: min(470px, 88vw); max-height: 300px; overflow-y: auto; background: var(--raised); border: 1px solid var(--line-strong); padding: 5px; border-radius: 9px; box-shadow: 0 8px 22px var(--ui-shadow); }
 .historyMenu .menuOption { display: flex; justify-content: space-between; gap: 14px; }
 .historyMenu .menuOption[data-disabled] { opacity: .5; }
@@ -820,8 +820,8 @@
   .historyChoice .art { display: none; }
   .historyChoice, .historyAdd { min-height: 28px; padding: 3px 6px; }
   .history .historySummary small { display: none; }
-  .historySpan { gap: 5px; }
-  .historySpan > span { white-space: normal; font-size: 11px; }
+  .historySpan { flex: none; gap: 5px; }
+  .historySpan > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 @media (max-height: 465px) {
   .pageBody .heading h1 { font-size: 20px; }
@@ -837,7 +837,6 @@
 @media (max-width: 620px) and (max-height: 465px) {
   .deviceToolbar .filters { display: none; }
   .compactFilters { display: block; }
-  .historySpan > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .historySpan .select { min-height: 28px; padding-block: 3px; }
   .history .chartGuide { gap: 3px 7px; font-size: 10px; }
   .history .chartMeta { gap: 1px; }
@@ -848,18 +847,18 @@
 .initialRow > div > .placeholderRule + .placeholderRule { width: 45%; margin-top: 8px; opacity: .65; }
 .overviewTop[data-load-state="refreshing"] .heroReadout .track { overflow: hidden; position: relative; }
 .overviewTop[data-load-state="refreshing"] .heroReadout .track::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(102deg, transparent 0%, #f5c16f95 50%, transparent 100%); transform: translateX(-100%); animation: history-shimmer 1.25s ease-in-out 2; }
-/* Allocate the compact toolbar's second line before any device is added. */
-@media (max-width: 980px) {
-  .historyToolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .historyChoices { justify-content: flex-start; flex-wrap: nowrap; }
-  .historyChoice { flex: 0 1 auto; max-width: 47vw; }
-  .historyAdd { flex: none; }
+@media (max-width: 1100px) {
+  .historyChoices { gap: 6px; }
+  .historyChoice { gap: 5px; padding-inline: 6px; }
+  .historyChoice .art { width: 30px; min-width: 30px; }
+}
+@media (max-width: 760px) {
+  .historyChoice .art { display: none; }
+  .historySpan > span { max-width: 100px; }
 }
 @media (max-width: 590px) {
   .chartSkeletonGrid { inset-inline: 39px 10px; width: calc(100% - 49px); }
   .historyChoices { justify-content: flex-start; gap: 6px; }
-  .historyChoice { max-width: 47vw; }
-  .historyChoice .art { width: 26px; min-width: 26px; }
   .historySummary td, .historySummary th { font-size: 11px; }
   .historySummary .art { display: none; }
 }
@@ -867,7 +866,7 @@
   .initialArt::after, .overviewTop[data-load-state="refreshing"] .heroReadout .track::after { animation: none; }
 }
 
-.historyRangeGroup { display: inline-flex; align-items: center; gap: 6px; }
+.historyRangeGroup { display: inline-flex; flex: none; align-items: center; gap: 6px; }
 .option[data-disabled] { color: var(--muted); opacity: .48; cursor: not-allowed; }
 .confirmActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .deleteAction { min-height: 34px; padding: 5px 11px; border-radius: 7px; color: var(--red);
@@ -881,3 +880,10 @@
   min-block-size: 36px;
 }
 .optionDetail { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.captionControls { position:absolute; inset:0 0 auto auto; height:48px; z-index:2; display:flex; app-region:no-drag; }
+.captionControls button { display:grid; place-items:center; width:46px; height:100%; padding:0; border:0; background:transparent; color:var(--text); cursor:default; }
+.captionControls button:hover { background:#ffffff18; }
+.captionControls button:last-child:hover { background:#c42b1c; color:#fff; }
+.captionControls svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1; }
+:global(body[data-surface="toast"]) { background:transparent; }

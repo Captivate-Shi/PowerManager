@@ -18,6 +18,12 @@ inline std::wstring dualSenseAddressKey(std::wstring_view address)
     return std::wstring(L"dualsense:") + std::wstring(address);
 }
 
+inline bool verifiedDualSenseAddressKey(std::wstring_view key)
+{
+    constexpr std::wstring_view prefix = L"dualsense:";
+    return key.starts_with(prefix) && !dualSenseAddressKey(key.substr(prefix.size())).empty();
+}
+
 inline std::wstring dualSenseUsbIdentity(std::span<const std::uint8_t> report)
 {
     if (report.size() < 7 || report.front() != 0x09) {
