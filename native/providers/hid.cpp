@@ -1,9 +1,11 @@
+#include <atomic>
 #include "hid.hpp"
 #include "langtu_t98.hpp"
 #include "headset_battery.hpp"
 #include "verified_mouse.hpp"
 #include "atk_v75x.hpp"
 #include "razer_pro_receiver.hpp"
+#include "razer_collection_fallback.hpp"
 #include "battery_fallback.hpp"
 #include "rog_keyboard_battery.hpp"
 #include "cn_mouse_codecs.hpp"
@@ -1040,18 +1042,20 @@ Sample readVgn(const Device& device)
     return result;
 }
 
+std::atomic<unsigned> logitechRequestId{};
+
 class LogitechQuery {
 public:
     LogitechQuery(const Collection& channel, const Collection* shortChannel, unsigned slot,
-                  unsigned& order, Clock::time_point end)
-        : exchange_(channel), end_(end), slot_(slot), order_(order)
+                  Clock::time_point end)
+        : exchange_(channel), end_(end), slot_(slot)
     {
         if (shortChannel) short_.emplace(*shortChannel, GENERIC_READ);
     }
 
     std::vector<std::uint8_t> read(unsigned index, unsigned function, unsigned a = 0, unsigned b = 0)
     {
-        const unsigned tagged = function * 16 + 8 + order_++ % 8;
+        const unsigned tagged = function * 16 + 8 + logitechRequestId.fetch_add(1, std::memory_order_relaxed) % 8;
         std::array<std::uint8_t, 20> query{0x11, static_cast<std::uint8_t>(slot_),
             static_cast<std::uint8_t>(index), static_cast<std::uint8_t>(tagged),
             static_cast<std::uint8_t>(a), static_cast<std::uint8_t>(b)};
@@ -1107,7 +1111,6 @@ private:
     std::optional<HidExchange> short_;
     Clock::time_point end_;
     unsigned slot_;
-    unsigned& order_;
 };
 
 bool logitechChannel(const Collection& channel)
@@ -1144,11 +1147,11 @@ std::wstring logitechName(LogitechQuery& query, unsigned index)
     return label;
 }
 
-Sample readLogitech(const Device& device, unsigned& order)
+Sample readLogitech(const Device& device)
 {
     const auto channel = std::ranges::find_if(device.collections, logitechChannel);
     if (channel == device.collections.end()) return {Status::unavailable};
-    LogitechQuery query(*channel, shortLogitechChannel(device), device.slot, order, Clock::now() + 900ms);
+    LogitechQuery query(*channel, shortLogitechChannel(device), device.slot, Clock::now() + 900ms);
     unsigned model = 0;
     const bool named = device.logitechNamedModel != 0;
     const bool uniqueChannel = std::ranges::count_if(device.collections, logitechChannel) == 1;
@@ -1622,7 +1625,8 @@ std::wstring timestamp()
     return value;
 }
 
-std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vector<HidInterface>* inventory)
+std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vector<HidInterface>* inventory,
+    const std::set<std::wstring>& busyReceivers)
 {
     GUID hidGuid{};
     HidD_GetHidGuid(&hidGuid);
@@ -1980,8 +1984,8 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             const auto now = Clock::now();
             constexpr unsigned directIndex = 0xff; // HID++ 2.0, no receiver slot.
             auto child = direct.children.find(directIndex);
-            if (now >= direct.due) {
-                LogitechQuery query(*channel, shortLogitechChannel(device), directIndex, logitechRequestId_, now + 750ms);
+            if (now >= direct.due && !busyReceivers.contains(key)) {
+                LogitechQuery query(*channel, shortLogitechChannel(device), directIndex, now + 750ms);
                 const auto id = query.unit();
                 direct.due = now + (id ? 30s : 5s);
                 if (id) {
@@ -2011,11 +2015,11 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             if (bolt && channels != 1) continue;
             auto& receiver = receivers_[key];
             const auto now = Clock::now();
-            if (now >= receiver.due) {
+            if (now >= receiver.due && !busyReceivers.contains(key)) {
                 const auto slot = receiver.nextSlot;
                 receiver.nextSlot = slot % 6 + 1;
                 receiver.due = now + 4s;
-                LogitechQuery query(*channel, shortLogitechChannel(device), slot, logitechRequestId_, now + 750ms);
+                LogitechQuery query(*channel, shortLogitechChannel(device), slot, now + 750ms);
                 unsigned model = 0;
                 const auto identity = query.unit(channels == 1 ? &model : nullptr, bolt ? 2 : 4);
                 const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
@@ -2117,11 +2121,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
     if (device.transport == Transport::atk_v75x_usb) return readAtkV75XUsb(device, atkV75XSequence_);
     if (device.transport==Transport::verified_mouse_usb || device.transport==Transport::verified_mouse_receiver) {
         auto reading=readVerifiedMouse(device,hasteReady_);
-        const auto model=verified_mouse::kind(device.vid,device.pid);
-        if (model==verified_mouse::Kind::vxeCable || model==verified_mouse::Kind::vxeReceiver) {
-            if (reading.reading) confirmedVxe_.insert(device.key);
-            else confirmedVxe_.erase(device.key);
-        }
+        rememberVerifiedMouse(device, reading);
         return reading;
     }
     if (device.transport == Transport::rog_keyboard_receiver) return readRogKeyboard(device);
@@ -2139,7 +2139,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
     }
     if (isVgn(device.transport)) return readVgn(device);
     if (device.transport == Transport::logitech_receiver || device.transport == Transport::logitech_usb)
-        return readLogitech(device, logitechRequestId_);
+        return readLogitech(device);
     if (device.transport == Transport::razer_pro_receiver) {
         if (device.collections.size() != 1) return {Status::unavailable};
         const auto& collection = device.collections.front();
@@ -2167,18 +2167,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
                            device.transport == Transport::dualsense_bluetooth ||
                            device.transport == Transport::sony_gamepad_bluetooth;
     const auto deadline = Clock::now() + 1800ms;
-    const auto cached = razerCollections_.find(device.key);
-    const auto attempt = [&](const Collection& collection) {
-        auto result = razer ? readRazer(collection, deadline,
-                                        keyboard ? RazerQuery::keyboardBattery : RazerQuery::mouseBattery)
-                            : readPassiveGamepad(collection, bluetooth, device.vid == 0x054c &&
-                                  (device.pid == 0x05c4 || device.pid == 0x09cc), eightBitDoReport, switchPro, deadline);
-        if (keyboard && result.reading) {
-            const auto charging = readRazer(collection, deadline, RazerQuery::keyboardCharging);
-            if (charging.status == Status::current) {
-                result.reading->power = charging.detail ? Power::charging : Power::discharging;
-            }
-        }
+    const auto logAttempt = [&](const Collection& collection, Sample result) {
         if (diagnostics) {
             *diagnostics << L"  " << collection.description << L" usage=" << std::hex
                          << collection.page << L":" << collection.usage << std::dec
@@ -2188,20 +2177,34 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
         }
         return result;
     };
-    if (cached != razerCollections_.end()) {
-        const auto found = std::ranges::find(device.collections, cached->second, &Collection::path);
-        if (found != device.collections.end()) {
-            return attempt(*found);
-        }
-        razerCollections_.erase(cached);
+    if (razer) {
+        const auto cached = razerCollections_.find(device.key);
+        const std::wstring_view preferred =
+            cached == razerCollections_.end() ? std::wstring_view{} : std::wstring_view(cached->second);
+        const auto [result, winner] = readRazerCollections(device.collections, preferred, deadline,
+            [] { return Clock::now(); }, [&](const Collection& collection, Clock::time_point cutoff) {
+                auto sample = readRazer(collection, cutoff,
+                    keyboard ? RazerQuery::keyboardBattery : RazerQuery::mouseBattery);
+                if (keyboard && hasBatteryReading(sample) && Clock::now() + 65ms < cutoff) {
+                    const auto charging = readRazer(collection, cutoff, RazerQuery::keyboardCharging);
+                    if (charging.status == Status::current) {
+                        sample.reading->power = charging.detail ? Power::charging : Power::discharging;
+                    }
+                }
+                return logAttempt(collection, sample);
+            });
+        if (winner) razerCollections_[device.key] = winner->path;
+        else razerCollections_.erase(device.key);
+        return result;
     }
+    const auto attempt = [&](const Collection& collection) {
+        return logAttempt(collection, readPassiveGamepad(collection, bluetooth, device.vid == 0x054c &&
+            (device.pid == 0x05c4 || device.pid == 0x09cc), eightBitDoReport, switchPro, deadline));
+    };
     Sample result{Status::unavailable};
     Sample radioSilent{Status::unavailable};
     for (const auto& collection : device.collections) {
-        if (!razer && (!gamepad(collection) || collection.inputLength < 10)) {
-            continue;
-        }
-        if (razer && collection.featureLength < 91) {
+        if (!gamepad(collection) || collection.inputLength < 10) {
             continue;
         }
         if (Clock::now() >= deadline) {
@@ -2231,9 +2234,6 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
             }
         }
         if (result.reading) {
-            if (razer) {
-                razerCollections_[device.key] = collection.path;
-            }
             return result;
         }
         if (result.status == Status::basic_bluetooth || result.status == Status::charging_error) {
@@ -2320,6 +2320,16 @@ VoltageSample HidMonitor::sampleVoltage(const Device& device, const Sample& pair
         }
     }
     return {VoltageStatus::timeout};
+}
+
+void HidMonitor::rememberVerifiedMouse(const Device& device, const Sample& reading)
+{
+    if (device.transport != Transport::verified_mouse_usb && device.transport != Transport::verified_mouse_receiver) return;
+    const auto model = verified_mouse::kind(device.vid, device.pid);
+    if (model == verified_mouse::Kind::vxeCable || model == verified_mouse::Kind::vxeReceiver) {
+        if (reading.reading) confirmedVxe_.insert(device.key);
+        else confirmedVxe_.erase(device.key);
+    }
 }
 
 void HidMonitor::forgetOffline(const std::vector<Device>& devices)

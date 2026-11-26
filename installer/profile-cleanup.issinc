@@ -1,0 +1,68 @@
+function GetFileAttributes(Name: String): LongWord;
+  external 'GetFileAttributesW@kernel32.dll stdcall';
+
+function CleanPath(Path: String): String;
+begin
+  Result := RemoveBackslashUnlessRoot(ExpandFileName(Path));
+end;
+
+function LinkedPath(Path: String): Boolean;
+var
+  Attr: LongWord;
+  Parent: String;
+begin
+  Result := False;
+  Path := CleanPath(Path);
+  while Path <> '' do
+  begin
+    Attr := GetFileAttributes(Path);
+    if (Attr <> InvalidAttributes) and ((Attr and ReparsePoint) <> 0) then
+    begin
+      Result := True;
+      Exit;
+    end;
+    Parent := ExtractFileDir(Path);
+    if CompareText(Parent, Path) = 0 then Exit;
+    Path := Parent;
+  end;
+end;
+
+function SafeProfileTree(Path: String; Depth: Integer): Boolean;
+var
+  Entry: TFindRec;
+begin
+  Result := False;
+  if Depth > 64 then Exit;
+  if not FindFirst(AddBackslash(Path) + '*', Entry) then Exit;
+  try
+    repeat
+      if (Entry.Name <> '.') and (Entry.Name <> '..') then
+      begin
+        if (Entry.Attributes and ReparsePoint) <> 0 then Exit;
+        if ((Entry.Attributes and DirectoryAttribute) <> 0) and
+          not SafeProfileTree(AddBackslash(Path) + Entry.Name, Depth + 1) then Exit;
+      end;
+    until not FindNext(Entry);
+    Result := True;
+  finally
+    FindClose(Entry);
+  end;
+end;
+
+function ApplyProfileCleanup(Profile: String; Confirmed: Boolean): Boolean;
+begin
+  Result := True;
+  if not Confirmed then Exit;
+  if LinkedPath(Profile) then
+  begin
+    Result := False;
+    Exit;
+  end;
+  if not DirExists(Profile) then Exit;
+  if not SafeProfileTree(Profile, 0) then
+  begin
+    Result := False;
+    Exit;
+  end;
+  Result := DelTree(Profile, True, True, True);
+end;

@@ -85,7 +85,9 @@ std::wstring timestamp();
 
 class HidMonitor {
 public:
-    std::vector<Device> enumerate(bool includePairedBluetooth = false, std::vector<HidInterface>* inventory = nullptr);
+    std::vector<Device> enumerate(bool includePairedBluetooth = false, std::vector<HidInterface>* inventory = nullptr,
+        const std::set<std::wstring>& busyReceivers = {});
+    void rememberVerifiedMouse(const Device& device, const Sample& reading);
     Sample sample(const Device& device, std::wostream* diagnostics = nullptr);
     VoltageSample sampleVoltage(const Device& device, const Sample& pairedReading);
     void forgetOffline(const std::vector<Device>& devices);
@@ -104,7 +106,6 @@ private:
     RapooBatteryReader rapoo_;
     std::map<std::wstring, Receiver> receivers_;
     std::map<std::wstring, std::chrono::steady_clock::time_point> dualSenseFullRequestDue_;
-    unsigned logitechRequestId_{};
     unsigned atkV75XSequence_{};
     std::map<std::wstring,std::chrono::steady_clock::time_point> hasteReady_;
     std::set<std::wstring> confirmedVxe_;

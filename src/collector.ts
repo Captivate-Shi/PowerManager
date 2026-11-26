@@ -74,7 +74,7 @@ export class Collector {
         this.pending.delete(id);
         reject(new Error('电量查询超时，正在重新连接'));
         child.kill();
-      }, 30_000);
+      }, action === 'poll' ? 60_000 : 30_000);
       this.pending.set(id, { resolve: value => resolve(value as T), reject, timer });
       child.stdin.write(JSON.stringify({ id, action, ...fields }) + '\n');
     });

@@ -42,7 +42,7 @@ type StateFile = {
 };
 type Observation = {
   id: string; name: string; connection: string; aliases: string[]; art: Device['art']; automatic?: boolean;
-  sample: Sample | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
+  sample: Sample | null; sampleSequence?: number | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
 };
 export type Scene = { mode: 'desktop' | 'fullscreen' | 'quiet'; allowed: boolean | null; shellAccepts?: boolean; point: { x: number; y: number } | null };
 type Row = { device: Device; due: number; failures: number };
@@ -58,11 +58,12 @@ export class Monitor {
   private found = new Map<string, Found>();
   private timer?: NodeJS.Timeout;
   private polling?: Promise<void>;
-  private forceNext = false;
+  private pollGeneration = 0;
   private pollSequence = 0;
   private thresholdEdits = new Map<string, number>();
   private thresholdAlertRevisions = new Map<string, number>();
   private closed = false;
+  private maintenancePaused = false;
   private suspended = false;
   private readyOnce = false;
   private dirty = false;
@@ -142,16 +143,28 @@ export class Monitor {
   }
   async closeForMaintenance() {
     if (!this.persist()) return '无法保存设置或电量历史。';
+    this.maintenancePaused = true;
     this.closed = true;
     this.compatibilityDraft.clear();
     this.diagnosticDevices.clear();
     clearTimeout(this.timer);
-    if (!await this.collector.closeGracefully()) {
-      this.collector.allowRestartAfterClose();
-      this.closed = false;
-      this.schedule(5000, true);
-      return '等待采集程序退出超时。';
-    }
+    if (!await this.collector.closeGracefully()) return '等待采集程序退出超时。';
+  }
+  resumeAfterMaintenance() {
+    if (!this.maintenancePaused) return;
+    this.maintenancePaused = false;
+    // EOF was already sent. A timed-out child cannot be reused; let it exit
+    // before reopening collection. The normal close handler schedules a retry.
+    const childStillRunning = !!this.collector.pid;
+    this.collector.allowRestartAfterClose();
+    if (childStillRunning) this.collector.close();
+    this.closed = false;
+    this.diagnosticEpoch++;
+    this.state.collector = 'retrying';
+    this.markStale();
+    this.publish();
+    if (childStillRunning) this.schedule(5000, true);
+    else this.start();
   }
   suspend(value: boolean) {
     this.suspended = value;
@@ -348,17 +361,39 @@ export class Monitor {
     }
     if (this.data.watched.length >= 128) throw new Error('监测设备已达到上限');
     const { name, connection } = input;
-    this.data.watched.push({ id, name, connection });
-    this.persist();
+    const previousWatched = this.data.watched;
+    this.data.watched = [...previousWatched, { id, name, connection }];
+    if (!this.persist()) {
+      this.data.watched = previousWatched;
+      throw new Error('无法保存设备列表，请重试');
+    }
     void this.poll(true);
   }
   remove(id: string) {
     if (!this.data.watched.some(item => item.id === id)) throw new Error('这个设备由系统自动监测');
-    this.data.watched = this.data.watched.filter(item => item.id !== id);
+    const previousWatched = this.data.watched;
+    const previousRows = this.rows;
+    const previousAlert = this.data.alerts[id];
+    this.data.watched = previousWatched.filter(item => item.id !== id);
+    this.rows = new Map(previousRows);
     this.rows.delete(id);
     delete this.data.alerts[id];
-    this.persist();
+    if (!this.persist()) {
+      this.data.watched = previousWatched;
+      this.rows = previousRows;
+      if (previousAlert) this.data.alerts[id] = previousAlert;
+      throw new Error('无法保存设备列表，请重试');
+    }
     this.publish();
+  }
+  saveAlertAction(id: string, next: AlertState) {
+    const previous = this.state.alerts[id];
+    this.state.alerts[id] = next;
+    if (!this.persist()) {
+      if (previous) this.state.alerts[id] = previous;
+      else delete this.state.alerts[id];
+      throw new Error('无法保存提醒设置，请重试');
+    }
   }
   async resourceSample() {
     // Skip native sampling when it would compete with device IO.
@@ -374,43 +409,58 @@ export class Monitor {
 
   poll(force = false): Promise<void> {
     if (this.closed || this.suspended) return Promise.resolve();
-    if (this.polling) {
-      this.forceNext ||= force;
-      return this.polling;
+    if (force) {
+      ++this.pollGeneration;
+      this.state.refreshing = true;
+      this.changed();
     }
+    if (this.polling) return this.polling;
     clearTimeout(this.timer);
-    this.state.refreshing = force;
-    if (force) this.changed();
-    const start = performance.now();
-    this.polling = this.collect(force).finally(() => {
-      const ms = performance.now() - start;
-      this.totals.polls++;
-      this.totals.pollMs += ms;
-      this.totals.maxPollMs = Math.max(this.totals.maxPollMs, ms);
+    this.polling = this.runPolls(force).finally(() => {
       this.polling = undefined;
-      this.state.refreshing = false;
+      if (this.state.refreshing) {
+        this.state.refreshing = false;
+        if (!this.closed && !this.suspended) this.changed();
+      }
       if (this.closed || this.suspended) return;
-      const runFull = this.forceNext;
-      this.forceNext = false;
-      if (force) this.changed();
-      this.schedule(this.state.collector === 'ready' ? (runFull ? 0 : 1500) : 5000, runFull || this.state.collector !== 'ready');
+      this.schedule(this.state.collector === 'ready' ? 1500 : 5000, false);
     });
     return this.polling;
   }
+
+  private async runPolls(force: boolean) {
+    // Replace the desired scan, not the native process. At most one IPC
+    // discovery is in flight, and only the latest manual generation is applied.
+    while (!this.closed && !this.suspended) {
+      const generation = this.pollGeneration;
+      const start = performance.now();
+      try {
+        await this.collect(force, generation);
+      } finally {
+        const ms = performance.now() - start;
+        this.totals.polls++;
+        this.totals.pollMs += ms;
+        this.totals.maxPollMs = Math.max(this.totals.maxPollMs, ms);
+      }
+      if (generation === this.pollGeneration) return;
+      force = true;
+    }
+  }
+
   private schedule(delay: number, full: boolean) {
     if (this.closed || this.suspended) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => { void this.poll(full); }, delay);
   }
-  private async collect(force: boolean) {
+  private async collect(force: boolean, generation: number) {
     const sequence = ++this.pollSequence;
     const now = Date.now();
     const due = Object.fromEntries([...this.rows].map(([id, row]) => [id, now >= row.due]));
     try {
       const results = await this.collector.request<Observation[]>('poll', {
-        due, force, watched: this.data.watched, voltage: this.state.settings.voltage,
+        due, force, generation, sequence, watched: this.data.watched, voltage: this.state.settings.voltage,
       });
-      if (this.closed || this.suspended) return;
+      if (this.closed || this.suspended || generation !== this.pollGeneration) return;
       const becameReady = this.state.collector !== 'ready';
       this.readyOnce = true;
       this.state.collector = 'ready';
@@ -422,8 +472,11 @@ export class Monitor {
       for (const observation of results) {
         if (!observation.automatic && observation.art === 'unknown' && !watched.has(observation.id)) continue;
         seen.add(observation.id);
-        changed = this.accept(observation, sampledAt, watched.has(observation.id) && !observation.automatic,
-          !force ? sequence : undefined) || changed;
+        // Async native results keep the sequence of the scan that started
+        // the read, so a pre-edit or manual sample cannot unlock alerts.
+        const regular = observation.sampleSequence !== undefined
+          ? observation.sampleSequence ?? undefined : !force ? sequence : undefined;
+        changed = this.accept(observation, sampledAt, watched.has(observation.id) && !observation.automatic, regular) || changed;
       }
       for (const [id, row] of this.rows) {
         if (!seen.has(id) && row.device.status !== 'offline') {
@@ -434,7 +487,7 @@ export class Monitor {
       if (this.dirty && (force || sampledAt - this.lastSave >= 60_000)) this.persist();
       if (changed) this.publish();
     } catch (error) {
-      if (this.closed || this.suspended) return;
+      if (this.closed || this.suspended || generation !== this.pollGeneration) return;
       this.totals.failedPolls++;
       if (this.state.collector !== 'occupied') {
         this.state.collector = 'retrying';

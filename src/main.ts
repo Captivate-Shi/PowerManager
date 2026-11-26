@@ -78,10 +78,14 @@ async function quitForMaintenance(id: string) {
     maintenanceExit = true;
     app.quit();
   } catch (error) {
+    maintenanceExit = false;
     console.error(error);
   } finally {
     maintenancePending = false;
-    if (!maintenanceExit) stopped = false;
+    if (!maintenanceExit) {
+      stopped = false;
+      monitor?.resumeAfterMaintenance();
+    }
   }
 }
 
@@ -672,10 +676,11 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       const level = severity(device, snapshot.settings, snapshot.deviceSettings[device.id]);
       if (!level) throw new Error('设备当前没有低电量提醒');
       const state = snapshot.alerts[device.id] ?? {};
-      if (command.type === 'ignore') snapshot.alerts[device.id] = { ...state, ignored: level, snoozeUntil: undefined };
-      else snapshot.alerts[device.id] = { ...state, snoozeUntil: Date.now() + snapshot.settings.snooze * 60000, ignored: undefined };
+      const next = command.type === 'ignore' ? { ...state, ignored: level, snoozeUntil: undefined }
+        : { ...state, snoozeUntil: Date.now() + snapshot.settings.snooze * 60000, ignored: undefined };
+      if (monitor) monitor.saveAlertAction(device.id, next);
+      else snapshot.alerts[device.id] = next;
       if (toast?.device.id === device.id && !toast.preview) closeToast();
-      monitor?.persist();
       broadcast();
       break;
     }
