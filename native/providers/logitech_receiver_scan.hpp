@@ -20,6 +20,7 @@ struct LogitechReceiverScan {
     }
 
     unsigned nextSlot() const { return nextSlot_; }
+    bool initialSweepComplete() const { return !firstPass_; }
 
     // Do not advance a skipped slot. After the first complete pass, return
     // to one slot per tick to avoid continuously probing sleeping devices.

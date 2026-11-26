@@ -23,7 +23,7 @@ export class Collector {
     this.child = child;
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     lines.on('line', line => {
-      if (this.child !== child) return;
+      if (this.child !== child || this.expectedExit === child) return;
       try {
         const reply = JSON.parse(line);
         const request = this.pending.get(reply.id);
@@ -48,11 +48,7 @@ export class Collector {
       const expected = this.expectedExit === child;
       if (expected) this.expectedExit = undefined;
       else this.ended(code === 73, failure);
-      for (const pending of this.pending.values()) {
-        clearTimeout(pending.timer);
-        pending.reject(new Error(code === 73 ? '旧版 PowerManager 正在使用采集设备' : '电量采集程序已断开'));
-      }
-      this.pending.clear();
+      this.rejectPending(code === 73 ? '旧版 PowerManager 正在使用采集设备' : '电量采集程序已断开');
     });
     this.handshake = this.send<{ protocol: number; doubleClickMs?: number }>('hello').then(({ protocol, doubleClickMs }) => {
       if (typeof doubleClickMs === 'number') this.doubleClickMs = doubleClickMs;
@@ -73,13 +69,13 @@ export class Collector {
 
   private send<T>(action: string, fields: Record<string, unknown> = {}): Promise<T> {
     const child = this.child;
-    if (!child) return Promise.reject(new Error('电量采集程序未启动'));
+    if (!child || this.expectedExit === child) return Promise.reject(new Error('电量采集程序未启动'));
     const id = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error('电量查询超时，正在重新连接'));
-        child.kill();
+        void this.restart();
       }, action === 'poll' ? 60_000 : 30_000);
       this.pending.set(id, { resolve: value => resolve(value as T), reject, timer });
       child.stdin.write(JSON.stringify({ id, action, ...fields }) + '\n');
@@ -95,8 +91,17 @@ export class Collector {
     this.expectedExit = child;
     const stopped = new Promise<void>(resolve => { child.once('close', () => resolve()); });
     this.recycling = stopped.finally(() => { this.recycling = undefined; });
+    this.rejectPending('电量采集程序已断开');
     child.kill();
     return this.recycling;
+  }
+
+  private rejectPending(message: string) {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error(message));
+    }
+    this.pending.clear();
   }
 
   close() {

@@ -14,6 +14,7 @@ import { accumulateHistoryDay, historyStart } from './history-plot';
 
 const executeFile = promisify(execFile);
 const maxCurrentReadingAge = 60_000;
+const manualRefreshWait = 5000;
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
 
 function validReading(reading: Reading | null | undefined): reading is Reading {
@@ -89,7 +90,7 @@ function cachedDevice(value: unknown): Device | null {
       typeof connection !== 'string' || typeof watched !== 'boolean') return null;
   const safeArt = art && ['mouse', 'keyboard', 'dualsense', 'xbox', 'controller', 'headset', 'earbuds', 'stylus', 'unknown'].includes(art)
     ? art : classify(name);
-  const hasReading = validReading(reading) && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0;
+  const hasReading = validReading(reading) && validTimestamp(lastRead) && lastRead > 0 && lastRead <= Date.now();
   return { id, name, connection, art: safeArt, watched, status: 'stale', reason: '等待新读数',
     reading: hasReading ? reading : null, lastRead: hasReading ? lastRead : null };
 }
@@ -186,6 +187,7 @@ export class Monitor {
   private readyOnce = false;
   private dirty = false;
   private lastSave = 0;
+  private backupRequired?: { prefix: string; savedMessage: string; blockedMessage: string };
   private totals = { polls: 0, failedPolls: 0, pollMs: 0, maxPollMs: 0, saves: 0, saveMs: 0, childExits: 0 };
 
   constructor(readonly directory: string, private executable: string, private changed: () => void, private evaluate: () => void) {
@@ -213,15 +215,19 @@ export class Monitor {
           } catch {
             rewriteState = false;
             loadError = damaged + '无法读取或备份，暂用可用记录。';
+            this.backupRequired = { prefix: 'monitor-repair-', blockedMessage: loadError,
+              savedMessage: damaged + '无法读取，已备份原文件并保留可用记录。' };
           }
         }
       } catch {
-        const backup = join(directory, 'monitor-corrupt-' + Date.now() + '.json');
+        const backup = join(directory, 'monitor-corrupt-' + Date.now() + '-' + randomUUID() + '.json');
         try {
           renameSync(this.file, backup);
           loadError = '本地存档无法读取，已备份并恢复默认设置。';
         } catch {
           loadError = '本地存档无法读取或备份，暂用默认设置。';
+          this.backupRequired = { prefix: 'monitor-corrupt-', blockedMessage: loadError,
+            savedMessage: '本地存档无法读取，已备份并恢复默认设置。' };
         }
       }
     }
@@ -325,6 +331,20 @@ export class Monitor {
     const start = performance.now();
     try {
       const now = Date.now();
+      if (this.backupRequired) {
+        const backup = this.backupRequired;
+        // Keep the original until a separate copy exists. Record the attempt
+        // so a read-only profile does not trigger disk retries every poll.
+        this.lastSave = now;
+        try {
+          copyFileSync(this.file, join(this.directory, backup.prefix + now + '-' + randomUUID() + '.json'), constants.COPYFILE_EXCL);
+        } catch {
+          this.state.error = backup.blockedMessage;
+          return false;
+        }
+        this.backupRequired = undefined;
+        this.state.error = backup.savedMessage;
+      }
       const cutoff = now - day;
       const history = Object.assign(Object.create(null), this.data.history) as StateFile['history'];
       for (const [id, items] of Object.entries(history)) {
@@ -538,15 +558,30 @@ export class Monitor {
   async scene() { return this.collector.request<Scene>('scene'); }
   async tone() { return (await this.collector.request<{ played: boolean }>('tone')).played; }
 
-  refresh(): Promise<void> {
+  async refresh(): Promise<void> {
     if (this.closed || this.suspended) return Promise.resolve();
     if (this.polling || this.nativePending) {
       this.invalidateDiagnosticSession();
       // Interrupt the old IPC, and replace its generation in this same turn.
       // The next request waits for old process exit before touching a device.
+      if (this.collector.pid) this.state.collector = 'retrying';
       void this.collector.restart();
     }
-    return this.poll(true);
+    const scan = this.poll(true);
+    const generation = this.pollGeneration;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const finished = await Promise.race([
+        scan.then(() => true),
+        new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), manualRefreshWait); }),
+      ]);
+      if (!finished && generation === this.pollGeneration && !this.closed && !this.suspended) {
+        this.state.refreshing = false;
+        this.changed();
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private invalidateDiagnosticSession() {
@@ -605,7 +640,7 @@ export class Monitor {
     const now = Date.now();
     const due = Object.fromEntries([...this.rows].map(([id, row]) => [id, now >= row.due]));
     try {
-      const reply = await this.collector.request<Observation[] | { rows: Observation[]; workPending: boolean } |
+      const reply = await this.collector.request<Observation[] | { rows: Observation[]; workPending: boolean; discoveryPending?: boolean } |
         { restartRequired: true }>('poll', {
         due, force, generation, sequence, watched: this.data.watched, voltage: this.state.settings.voltage,
       });
@@ -613,6 +648,7 @@ export class Monitor {
       if (!Array.isArray(reply) && 'restartRequired' in reply && reply.restartRequired) {
         this.log('采集请求超过 5 分钟，正在重新启动采集程序。');
         this.invalidateDiagnosticSession();
+        this.state.collector = 'retrying';
         const deadline = Date.now() - maxCurrentReadingAge;
         for (const row of this.rows.values()) {
           if (row.device.status === 'current' && row.device.lastRead !== null && row.device.lastRead < deadline) {
@@ -626,13 +662,17 @@ export class Monitor {
       }
       const results = Array.isArray(reply) ? reply : 'rows' in reply ? reply.rows : undefined;
       if (!Array.isArray(results)) throw new Error('采集程序返回了无效的设备列表');
+      const discoveryPending = !Array.isArray(reply) && 'discoveryPending' in reply && reply.discoveryPending === true;
       this.nativePending = !Array.isArray(reply) && 'workPending' in reply
         ? reply.workPending === true : results.some(observation => observation.pending === true);
       const becameReady = this.state.collector !== 'ready';
-      this.readyOnce = true;
-      this.state.collector = 'ready';
-      if (this.state.error === collectorStartupError) this.state.error = undefined;
-      let changed = becameReady;
+      const hasReadyInventory = !discoveryPending || results.length > 0 || this.state.collector === 'ready';
+      if (hasReadyInventory) {
+        this.readyOnce = true;
+        this.state.collector = 'ready';
+        if (this.state.error === collectorStartupError) this.state.error = undefined;
+      }
+      let changed = becameReady && hasReadyInventory;
       const sampledAt = Date.now();
       const seen = new Set<string>();
       const watched = new Set(this.data.watched.map(item => item.id));
@@ -646,10 +686,14 @@ export class Monitor {
         changed = this.accept(observation, sampledAt, watched.has(observation.id) && !observation.automatic, regular) || changed;
       }
       for (const [id, row] of this.rows) {
-        if (!seen.has(id) && row.device.status !== 'offline') {
-          this.setSample(row, { status: 'offline', reading: null, reason: '设备未连接' }, sampledAt);
-          changed = true;
+        if (seen.has(id)) continue;
+        if (discoveryPending) {
+          changed = this.expire(row, sampledAt) || changed;
+          continue;
         }
+        if (row.device.status === 'offline') continue;
+        this.setSample(row, { status: 'offline', reading: null, reason: '设备未连接' }, sampledAt);
+        changed = true;
       }
       if (this.dirty && (force || sampledAt - this.lastSave >= 60_000)) this.persist();
       if (changed) this.publish();
@@ -688,20 +732,22 @@ export class Monitor {
       row.device.connection = connection;
       const editedAt = this.thresholdEdits.get(id);
       if (editedAt !== undefined && regularPoll !== undefined && regularPoll > editedAt &&
-          sample.status === 'current' && sample.reading) this.thresholdEdits.delete(id);
+          sample.status === 'current' && validReading(sample.reading)) this.thresholdEdits.delete(id);
       this.setSample(row, sample, now);
       changed = true;
     }
-    if (!sample && row.device.status === 'current' && row.device.lastRead !== null &&
-        now - row.device.lastRead > maxCurrentReadingAge) {
-      this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, now);
-      changed = true;
-    }
+    if (!sample) changed = this.expire(row, now) || changed;
     if (voltage && this.state.settings.voltage) {
       this.appendLog('dualsense-voltage.tsv', [new Date(now).toISOString(), id, connection,
         sample?.reading?.raw ?? '', sample?.reading?.power ?? '', voltage.millivolts ?? '', voltage.status, voltage.detail].join('\t'));
     }
     return changed;
+  }
+  private expire(row: Row, now: number) {
+    if (row.device.status !== 'current' || row.device.lastRead === null ||
+        now - row.device.lastRead <= maxCurrentReadingAge) return false;
+    this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, now);
+    return true;
   }
   private merge(from: string, to: string) {
     if (from === to || !(this.rows.has(from) || this.data.history[from] || this.historyDays[from] || this.state.deviceSettings[from] || this.state.alerts[from])) return false;
@@ -816,8 +862,10 @@ export class Monitor {
   }
   thresholdAlertRevision(id: string) { return this.thresholdAlertRevisions.get(id) ?? 0; }
   eligible(device: Device): Severity | undefined {
-    if (this.thresholdEdits.has(device.id)) return;
+    const now = Date.now();
+    if (this.thresholdEdits.has(device.id) || device.lastRead === null ||
+        device.lastRead > now || now - device.lastRead > maxCurrentReadingAge) return;
     return eligible(device, this.state.settings, this.state.deviceSettings[device.id],
-      this.state.alerts[device.id] ?? {}, this.state.mutedUntil, Date.now());
+      this.state.alerts[device.id] ?? {}, this.state.mutedUntil, now);
   }
 }

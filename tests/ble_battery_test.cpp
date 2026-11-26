@@ -1,4 +1,5 @@
 #include "ble_battery.hpp"
+#include "device_search.hpp"
 #include <array>
 #include <cassert>
 
@@ -29,4 +30,37 @@ int main()
     assert(!pm::bleBatteryReadDeferred(pm::bleFailure(BleBatteryDetail::read_failed, Status::busy)));
     assert(!pm::bleBatteryReadDeferred(pm::bleFailure(BleBatteryDetail::read_failed, Status::timeout)));
     assert(!pm::bleBatteryReadDeferred(pm::parseBleBatteryLevel(std::array<std::uint8_t, 1>{0})));
+
+    // The cache has no right to assign the consuming poll's sequence.
+    const pm::BleBatteryOrigin beforeEdit{7, L"exact-mouse", 23, false};
+    const pm::BleBatteryOrigin manual{7, L"exact-mouse", std::nullopt, false};
+    const pm::BleBatteryOrigin laterRegular{7, L"exact-mouse", 25, false};
+    assert(pm::matchesBleBatteryOrigin(beforeEdit, laterRegular) && beforeEdit.regularSequence == 23);
+    assert(pm::matchesBleBatteryOrigin(manual, laterRegular) && !manual.regularSequence);
+    assert(!pm::matchesBleBatteryOrigin(beforeEdit, {8, L"exact-mouse", 26, false}));
+    assert(!pm::matchesBleBatteryOrigin(beforeEdit, {7, L"new-owner", 25, false}));
+    assert(!pm::matchesBleBatteryOrigin(beforeEdit, {7, L"exact-mouse", 25, true}));
+
+    using Evidence = pm::WindowsConnectionEvidence;
+    using Detail = pm::WindowsBatteryDetail;
+    assert(pm::windowsConnectionEvidence(std::nullopt) == Evidence::unknown);
+    assert(pm::windowsConnectionEvidence(1) == Evidence::unknown);
+    assert(pm::windowsConnectionEvidence(0) == Evidence::disconnected);
+    assert(pm::windowsConnectionEvidence(255) == Evidence::connected);
+    assert(!pm::permitsBleBatteryFallback(Detail::disconnected));
+    for (const auto detail : {Detail::apiUnavailable, Detail::notFound, Detail::queryFailed, Detail::unknownConnection}) {
+        assert(pm::permitsBleBatteryFallback(detail));
+        assert(pm::needsIndependentBleConnection(detail));
+    }
+    for (const auto detail : {Detail::missingProperty, Detail::invalidPercent}) {
+        assert(pm::permitsBleBatteryFallback(detail));
+        assert(!pm::needsIndependentBleConnection(detail));
+    }
+
+    // An error with verified ownership blocks only that exact container;
+    // an error without ownership prevents claiming uniqueness for any.
+    pm::BleServiceInventory scoped{true, 0, {{L"good", 1}}, {{L"broken", 1}}};
+    assert(scoped.canAssess(L"good") && !scoped.canAssess(L"broken"));
+    scoped.complete = false;
+    assert(!scoped.canAssess(L"good") && !scoped.canAssess(L"broken"));
 }

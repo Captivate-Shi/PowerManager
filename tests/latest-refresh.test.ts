@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +24,8 @@ function harness(t: TestContext) {
   const monitor = new Monitor(directory, 'unused-test-collector', () => {}, () => {});
   const collector = (monitor as unknown as { collector: Collector }).collector;
   t.after(() => { monitor.close(); rmSync(directory, { recursive: true, force: true }); });
-  type Reply = ReturnType<typeof sample>[] | { restartRequired: true };
+  type Rows = ReturnType<typeof sample>[];
+  type Reply = Rows | { rows: Rows; workPending: boolean; discoveryPending?: boolean } | { restartRequired: true };
   const polls: { generation: number; force: boolean; answer: ReturnType<typeof deferred<Reply>> }[] = [];
   t.mock.method(collector, 'request', (_action: string, { generation, force }: { generation: number; force: boolean }) => {
     const answer = deferred<Reply>();
@@ -95,12 +97,79 @@ test('a stale slow lane stops alerting while healthy lanes still update', async 
   assert.equal(monitor.eligible(slow()), 'critical');
   now += 70_000;
   const second = monitor.poll();
+  assert.equal(monitor.eligible(slow()), undefined, 'do not alert while waiting for the next native reply');
   polls[1]!.answer.resolve([sample('slow', undefined, null, true), sample('fast', 91)]);
   await second;
   assert.equal(slow().status, 'stale');
   assert.equal(slow().reading?.low, 8);
   assert.equal(monitor.eligible(slow()), undefined);
   assert.equal(monitor.state.devices.find(x => x.id === 'fast')?.reading?.low, 91);
+});
+
+test('a delayed old process close does not leave manual refresh spinning or queue each click', async t => {
+  const { monitor, collector, polls } = harness(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(collector, 'restart', () => new Promise<void>(() => {}));
+  const old = monitor.poll();
+  const first = monitor.refresh();
+  const latest = monitor.refresh();
+  assert.equal(monitor.state.refreshing, true);
+  t.mock.timers.tick(5000);
+  await Promise.all([first, latest]);
+  assert.equal(monitor.state.refreshing, false);
+  assert.equal(polls.length, 1);
+  polls[0]!.answer.resolve([sample('obsolete', 5)]);
+  await nextTurn();
+  assert.equal(polls.length, 2);
+  assert.equal(polls[1]!.generation, 2);
+  polls[1]!.answer.resolve([sample('fresh', 66)]);
+  await old;
+  assert.deepEqual(monitor.state.devices.map(value => value.reading?.low), [66]);
+});
+
+test('pending HID discovery does not mark missing devices offline or hide completed readings', async t => {
+  const { monitor, polls } = harness(t);
+  const first = monitor.poll(true);
+  polls[0]!.answer.resolve({ rows: [], workPending: true, discoveryPending: true });
+  await first;
+  assert.equal(monitor.state.collector, 'starting');
+  const second = monitor.poll();
+  polls[1]!.answer.resolve({ rows: [sample('receiver', 70)], workPending: false });
+  await second;
+  const third = monitor.poll();
+  polls[2]!.answer.resolve({ rows: [sample('ble', 80)], workPending: true, discoveryPending: true });
+  await third;
+  const receiver = () => monitor.state.devices.find(value => value.id === 'receiver')!;
+  assert.equal(receiver().status, 'current');
+  assert.equal(monitor.state.devices.find(value => value.id === 'ble')?.reading?.low, 80);
+  const fourth = monitor.poll();
+  polls[3]!.answer.resolve({ rows: [sample('ble', 80)], workPending: false, discoveryPending: false });
+  await fourth;
+  assert.equal(receiver().status, 'offline');
+});
+
+test('an invalid sample or an old BLE sequence does not unlock a changed threshold', async t => {
+  const { monitor, polls } = harness(t);
+  const first = monitor.poll();
+  polls[0]!.answer.resolve([sample('ble', 65, 1)]);
+  await first;
+  const beforeEdit = monitor.poll();
+  monitor.saveDeviceSettings('ble', { low: 30 });
+  const device = () => monitor.state.devices[0]!;
+  polls[1]!.answer.resolve([sample('ble', 9, 1)]);
+  await beforeEdit;
+  assert.equal(monitor.eligible(device()), undefined);
+  const invalid = monitor.poll();
+  polls[2]!.answer.resolve([sample('ble', 101, 3)]);
+  await invalid;
+  const manual = monitor.refresh();
+  polls[3]!.answer.resolve([sample('ble', 9, null)]);
+  await manual;
+  assert.equal(monitor.eligible(device()), undefined);
+  const valid = monitor.poll();
+  polls[4]!.answer.resolve([sample('ble', 9, 5)]);
+  await valid;
+  assert.equal(monitor.eligible(device()), 'critical');
 });
 
 test('native five-minute watchdog replaces collector, then retries a full scan once', async t => {
@@ -132,4 +201,22 @@ test('collector restart terminates a real unresponsive child and rejects its pen
   } finally {
     collector.close();
   }
+});
+
+test('replacement start remains gated until the retired collector signals close', async () => {
+  const collector = new Collector('must-not-spawn', () => {});
+  const child = Object.assign(new EventEmitter(), { kill: () => true, pid: 1 });
+  const privateState = collector as unknown as { child?: typeof child; closing: boolean };
+  privateState.child = child;
+  const stopped = collector.restart();
+  assert.equal(collector.restart(), stopped, 'one termination wait for all refreshes');
+  let settled = false;
+  const start = collector.start().finally(() => { settled = true; });
+  const result = assert.rejects(start, /正在关闭/);
+  await nextTurn();
+  assert.equal(settled, false);
+  assert.equal(collector.pid, 1, 'keep exclusive ownership until exit');
+  privateState.closing = true;
+  child.emit('close', 0);
+  await Promise.all([stopped, result]);
 });

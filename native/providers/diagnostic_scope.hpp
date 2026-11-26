@@ -19,4 +19,19 @@ inline std::wstring diagnosticScopeKey(const std::wstring& container,
     return windows.contains(container) ? container : std::wstring{};
 }
 
+struct DiagnosticReceiverSlot {
+    std::wstring receiver;
+    unsigned slot;
+};
+
+// A shared slot is never a device identity. Only the child proved by this
+// attempt is eligible, and its current binding must still be unique.
+inline bool matchesReceiverProbe(const std::map<std::wstring, DiagnosticReceiverSlot>& children,
+                                 const std::wstring& child, const std::wstring& receiver, unsigned slot)
+{
+    if (child.empty() || receiver.empty() || !slot) return false;
+    const auto found = children.find(child);
+    return found != children.end() && found->second.receiver == receiver && found->second.slot == slot;
+}
+
 } // namespace pm

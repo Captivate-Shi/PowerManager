@@ -3,6 +3,7 @@
 #include "battery.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <string>
@@ -24,7 +25,8 @@ enum class BleBatteryDetail : unsigned {
     read_failed,
     invalid_value,
     read_pending,
-    worker_busy
+    worker_busy,
+    connection_unverified
 };
 
 inline const char* bleBatteryReason(unsigned detail)
@@ -44,6 +46,7 @@ inline const char* bleBatteryReason(unsigned detail)
     case BleBatteryDetail::invalid_value: return "invalid_battery_level";
     case BleBatteryDetail::read_pending: return "read_pending";
     case BleBatteryDetail::worker_busy: return "worker_busy";
+    case BleBatteryDetail::connection_unverified: return "connection_unverified";
     default: return detail == 0 ? "ok" : "unknown";
     }
 }
@@ -76,20 +79,44 @@ inline Sample parseBleBatteryLevel(std::span<const std::uint8_t> data)
 // The inventory is SetupAPI-only: no active scan, connection or GATT IO.
 // Unique-service containers only; multi-BAS devices have no safe single reading.
 struct BleServiceInventory {
+    // Complete ownership, not necessarily a usable path for every container.
     bool complete{};
     unsigned error{};
     std::map<std::wstring, unsigned> counts;
+    std::map<std::wstring, unsigned> unresolvedPaths;
+    bool canAssess(const std::wstring& id) const { return complete && !unresolvedPaths.contains(id); }
 };
 BleServiceInventory inspectBleBatteryServices();
 std::set<std::wstring> bleBatteryContainers();
 
-// Call only for a user-watched device Windows reports connected. A single
-// process-wide worker bounds collector latency and keeps the legacy fallbacks
-// responsive. A completed live read may be returned once on a later poll.
-Sample readBleBattery(const std::wstring& containerId);
+// Keep the generation, logical owner and regular sequence of the request
+// that actually started GATT. A newer periodic poll may harvest it, but
+// cannot turn a manual/pre-edit read into a new regular observation.
+struct BleBatteryOrigin {
+    std::int64_t generation{-1};
+    std::wstring owner;
+    std::optional<std::int64_t> regularSequence;
+    bool requireIndependentConnection{};
+};
+inline bool matchesBleBatteryOrigin(const BleBatteryOrigin& completed, const BleBatteryOrigin& requested)
+{
+    return completed.generation == requested.generation && completed.owner == requested.owner &&
+           (!requested.requireIndependentConnection || completed.requireIndependentConnection);
+}
+struct BleBatteryResult {
+    Sample sample;
+    BleBatteryOrigin origin;
+};
+
+// Call only for an exactly identified device with a unique BAS candidate.
+// If the display property is unavailable, the worker must separately
+// establish that the same container is connected before opening GATT.
+BleBatteryResult readBleBattery(const std::wstring& containerId, const BleBatteryOrigin& origin);
 // Harvest a completed sample only: this never opens the service or waits for
 // an active operation. It may be called even after the per-poll budget ran out.
-std::optional<Sample> takeBleBatteryResult(const std::wstring& containerId);
+std::optional<BleBatteryResult> takeBleBatteryResult(const std::wstring& containerId, const BleBatteryOrigin& origin);
+// Prevent a result in flight at a confirmed disconnect from being used on reconnect.
+void discardBleBatteryResult(const std::wstring& containerId);
 // Battery and firmware share the radio. Idle/completed work is never expired.
 bool bleBatteryWorkExpired(std::chrono::steady_clock::duration maximumAge);
 

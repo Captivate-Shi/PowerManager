@@ -105,6 +105,11 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
     provider: provider(a.provider), stage: from(a.stage, stages), target: target(a.target), reasonCode: reasonCode(a.reasonCode),
     status: from(a.status, statuses), code: from(a.code, results),
     outcome: a.outcome == null ? undefined : outcome(a.outcome) });
+  const providerAttempt = (a: Bag) => ({
+    ...sample(a), ...selectInts(a, ['usagePage', 'usage', 'inputBytes', 'outputBytes', 'featureBytes'], 0, 0xffff),
+    ...selectInts(a, ['interfaceNumber', 'collectionNumber'], 0, 0xff),
+    ...selectInts(a, ['collectionOrdinal'], 1, 0xffff), ...selectFlags(a, ['selected']),
+  });
   const pad = (a: Bag) => ({ ...sample(a), battery: reading(a.battery),
     ...selectInts(a, ['index', 'batteryType', 'batteryLevel'], 0, 255),
     ...selectInts(a, ['percent'], 0, 100), ...selectInts(a, ['remainingMwh', 'fullMwh']),
@@ -115,10 +120,14 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
   // is allocated by a new process. The renderer never receives these handles.
   const subjectTag = metadata.capture === 'live' && subject ? target(subject.target) : undefined;
   let matchingRows = 0;
-  const scoped = (value: unknown, max: number, format: (entry: Bag) => Bag): Bag[] => {
+  const scoped = (value: unknown, max: number, format: (entry: Bag) => Bag,
+    receiverScope = false): Bag[] => {
     if (!subject) return limited(value, max, format);
     if (!subjectTag || !Array.isArray(value)) return [];
-    return limited(value.filter(item => own(item).target === subjectTag), max, entry => {
+    return limited(value.filter(item => {
+      const entry = own(item);
+      return entry.target === subjectTag || (receiverScope && entry.receiverTarget === subjectTag);
+    }), max, entry => {
       matchingRows++;
       const result = format(entry);
       delete result.target;
@@ -150,9 +159,9 @@ export function compatibilityJson(metadata: Metadata, snapshot: unknown, generat
       battery: reading(a.battery), status: from(a.status, statuses), code: from(a.code, results),
       provider: provider(a.provider), transport: from(a.transport, connections), target: target(a.target), reasonCode: reasonCode(a.reasonCode), bleReasonCode: reasonCode(a.bleReasonCode),
     })),
-    logitechSlotAttempts: scoped(raw.logitechSlotAttempts, 160, sample),
+    logitechSlotAttempts: scoped(raw.logitechSlotAttempts, 160, sample, true),
     recentSamples: scoped(raw.recentSamples, 160, sample),
-    providerAttempts: scoped(raw.providerAttempts ?? raw.attempts, 160, sample),
+    providerAttempts: scoped(raw.providerAttempts ?? raw.attempts, 160, providerAttempt),
     gamepads: {
       wgiStatus: from(gamepads.wgiStatus, gamepadStates), xinputStatus: from(gamepads.xinputStatus, gamepadStates),
       windowsGamingInput: scoped(gamepads.windowsGamingInput, 32, pad), xinput: scoped(gamepads.xinput, 4, pad),

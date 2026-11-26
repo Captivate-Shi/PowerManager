@@ -16,4 +16,14 @@ int main()
     assert(diagnosticScopeKey(L"{receiver}", owners, shared, windows).empty());
     assert(diagnosticScopeKey(L"{unrelated}", owners, shared, windows).empty());
     assert(diagnosticScopeKey(L"", owners, shared, windows).empty());
+
+    const std::map<std::wstring, pm::DiagnosticReceiverSlot> slots{
+        {L"mouse", {L"receiver-a", 2}}, {L"keyboard", {L"receiver-b", 2}}, {L"ambiguous", {L"", 2}},
+    };
+    assert(pm::matchesReceiverProbe(slots, L"mouse", L"receiver-a", 2));
+    assert(!pm::matchesReceiverProbe(slots, L"mouse", L"receiver-b", 2));
+    assert(!pm::matchesReceiverProbe(slots, L"mouse", L"receiver-a", 3));
+    assert(!pm::matchesReceiverProbe(slots, L"keyboard", L"receiver-a", 2));
+    assert(!pm::matchesReceiverProbe(slots, L"", L"receiver-a", 2));
+    assert(!pm::matchesReceiverProbe(slots, L"ambiguous", L"receiver-a", 2));
 }

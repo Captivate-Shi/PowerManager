@@ -1,11 +1,17 @@
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
 
 namespace pm {
+
+inline bool hidResourcesAvailable(const std::set<std::wstring>& resources, const std::set<std::wstring>& busy)
+{
+    return std::ranges::none_of(resources, [&](const auto& resource) { return busy.contains(resource); });
+}
 
 // Logical devices with any overlapping physical channel belong to a single
 // batch. Conversely, a device with two transports joins both resources, so

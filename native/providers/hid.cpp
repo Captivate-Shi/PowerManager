@@ -32,6 +32,7 @@ extern "C" {
 #include <chrono>
 #include <cwctype>
 #include <tuple>
+#include <stdexcept>
 
 namespace pm {
 namespace {
@@ -1632,12 +1633,14 @@ std::wstring timestamp()
 }
 
 std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vector<HidInterface>* inventory,
-    const std::set<std::wstring>& busyReceivers)
+    const std::set<std::wstring>& busyReceivers, std::vector<Device>* deferred, bool* complete)
 {
     GUID hidGuid{};
     HidD_GetHidGuid(&hidGuid);
     DeviceSet set{SetupDiGetClassDevsW(&hidGuid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE)};
     if (set.value == INVALID_HANDLE_VALUE) {
+        if (complete) *complete = false;
+        if (deferred) throw std::runtime_error("HID interface inventory could not be opened");
         return {};
     }
     std::map<std::wstring, Device> devices;
@@ -1648,11 +1651,13 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         SP_DEVICE_INTERFACE_DATA iface{};
         iface.cbSize = sizeof(iface);
         if (!SetupDiEnumDeviceInterfaces(set.value, nullptr, &hidGuid, index, &iface)) {
+            if (complete && GetLastError() != ERROR_NO_MORE_ITEMS) *complete = false;
             break;
         }
         DWORD bytes = 0;
         SetupDiGetDeviceInterfaceDetailW(set.value, &iface, nullptr, 0, &bytes, nullptr);
         if (bytes < sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W)) {
+            if (complete) *complete = false;
             continue;
         }
         std::vector<std::byte> storage(bytes);
@@ -1661,6 +1666,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
         SP_DEVINFO_DATA devInfo{};
         devInfo.cbSize = sizeof(devInfo);
         if (!SetupDiGetDeviceInterfaceDetailW(set.value, &iface, detail, bytes, nullptr, &devInfo)) {
+            if (complete) *complete = false;
             continue;
         }
         std::wstring path = detail->DevicePath;
@@ -1986,147 +1992,204 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             const auto only = *current;
             device.collections = {only};
         }
-        if (device.transport == Transport::logitech_usb) {
-            const auto channel = std::ranges::find_if(device.collections, logitechChannel);
-            if (channel == device.collections.end() || std::ranges::count_if(device.collections, logitechChannel) != 1) continue;
-            auto& direct = receivers_[key];
-            const auto now = Clock::now();
-            constexpr unsigned directIndex = 0xff; // HID++ 2.0, no receiver slot.
-            auto child = direct.children.find(directIndex);
-            if (now >= direct.due && !busyReceivers.contains(key)) {
-                LogitechQuery query(*channel, shortLogitechChannel(device), directIndex, now + 750ms);
-                const auto id = query.unit();
-                direct.due = now + (id ? 30s : 5s);
-                if (id) {
-                    auto usb = device;
-                    usb.key = L"logitech-hidpp:" + std::to_wstring(id);
-                    usb.slot = directIndex;
-                    usb.unit = id;
-                    usb.kind = 3;
-                    usb.label = logitechUsbName(device.vid, device.pid);
-                    child = direct.children.insert_or_assign(directIndex, std::move(usb)).first;
-                } else if (child != direct.children.end()) {
-                    direct.children.erase(child);
-                    child = direct.children.end();
-                }
-            }
-            if (child != direct.children.end()) {
-                child->second.collections = device.collections;
-                result.push_back(child->second);
-            }
-            continue;
-        }
-        if (device.transport == Transport::logitech_receiver) {
-            const auto channel = std::ranges::find_if(device.collections, logitechChannel);
-            if (channel == device.collections.end()) continue;
-            const bool bolt = logitechBolt(device.vid, device.pid);
-            const auto channels = std::ranges::count_if(device.collections, logitechChannel);
-            if (bolt && channels != 1) continue;
-            auto& receiver = receivers_[key];
-            const auto passStart = Clock::now();
-            const auto deadline = passStart + logitechRemaining;
-            const auto* shortChannel = shortLogitechChannel(device);
-            for (auto now = passStart; receiver.slotScan.canProbe(now, deadline, busyReceivers.contains(key));
-                 now = Clock::now()) {
-                const auto slot = receiver.slotScan.nextSlot();
-                LogitechQuery query(*channel, shortChannel, slot, std::min(deadline, now + LogitechReceiverScan::slotBudget));
-                unsigned model = 0;
-                const auto identity = query.unit(channels == 1 ? &model : nullptr, bolt ? 2 : 4);
-                const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-                if (receiverAttempts_.size() == 96) receiverAttempts_.erase(receiverAttempts_.begin());
-                receiverAttempts_.push_back({device.vid, device.pid, slot, stamp, identity != 0,
-                    identity ? Sample{Status::current, {}, 0x11, 0, 3} : query.failure(3)});
-                auto child = receiver.children.find(slot);
-                const bool newIdentity = child == receiver.children.end() || child->second.unit != identity ||
-                    (child->second.logitechNamedModel && model && child->second.logitechNamedModel != model);
-                const bool confirmNamed = !newIdentity && !child->second.logitechNamedModel &&
-                    logitechNamedIdentity(device.vid, device.pid, model, child->second.label, child->second.kind);
-                if (identity && (newIdentity || confirmNamed || child->second.label.empty() || child->second.kind == 255)) {
-                    // Preserve metadata already proven by the same unit. A
-                    // partial name/type read on discovery is retried on rotation.
-                    auto paired = newIdentity ? device : child->second;
-                    paired.key = L"logitech-hidpp:" + std::to_wstring(identity);
-                    paired.parentEndpoint = device.endpointKey;
-                    paired.endpointKey.clear();
-                    paired.slot = slot;
-                    paired.unit = identity;
-                    const auto nameIndex = query.feature(5);
-                    if (nameIndex) {
-                        const auto type = query.read(nameIndex, 2);
-                        if (!type.empty()) paired.kind = type.front();
-                        if (auto name = logitechName(query, nameIndex); !name.empty())
-                            paired.label = std::move(name);
-                        if (const auto named = logitechNamedIdentity(device.vid, device.pid, model, paired.label, paired.kind)) {
-                            paired.label = named->label;
-                            paired.kind = named->kind;
-                            paired.logitechNamedModel = named->model;
-                            paired.logitechNamedFeatures = named->batteryFeatures;
-                        } else if (const auto office = boltOfficeIdentity(device.vid, device.pid, paired.label)) {
-                            paired.label = office->label;
-                            if (paired.kind == 255) paired.kind = office->kind;
-                        }
-                    }
-                    receiver.children.insert_or_assign(slot, std::move(paired));
-                } else if (!identity && query.failure(3).status == Status::offline) {
-                    receiver.children.erase(slot);
-                }
-                receiver.slotScan.probed(now);
-            }
-            logitechRemaining = std::max(Clock::duration::zero(), deadline - Clock::now());
-            for (auto& [slot, child] : receiver.children) {
-                child.collections = device.collections;
-                result.push_back(child);
-            }
-            continue;
-        }
-        if ((device.transport == Transport::razer_pro_receiver || device.transport == Transport::usb_wireless_headset) &&
-            device.collections.size() != 1) continue;
-        if (device.transport == Transport::razer_receiver) {
-            std::ranges::sort(device.collections, {}, razerRank);
-            const auto control = std::ranges::find_if(device.collections, [](const Collection& collection) {
-                return collection.featureLength == 91 && collection.description.ends_with(L"pid_00b8&mi_00");
-            });
-            if (control != device.collections.end()) {
-                auto& pairing = sharedPairings_[key];
-                const auto now = Clock::now();
-                if (now >= pairing.nextCheck && !busyReceivers.contains(key)) {
-                    const auto answer = readRazer(*control, now + 500ms, RazerQuery::pairedDevices);
-                    if (answer.status == Status::current) {
-                        pairing.paired = answer.detail == 1;
-                    }
-                    pairing.nextCheck = now + (answer.status == Status::current ? 2min : 1min);
-                }
-                if (pairing.paired) {
-                    Device keyboard{device.key + L":02d2", Transport::razer_shared_keyboard,
-                                    device.revision, {}, {*control}, {}, device.vid, device.pid};
-                    keyboard.parentEndpoint = device.endpointKey;
-                    result.push_back(std::move(keyboard));
-                }
-            }
-        } else {
-            std::ranges::stable_sort(device.collections, {}, [](const Collection& c) { return !gamepad(c); });
-            if (device.transport == Transport::dualsense_usb && !device.collections.empty() &&
-                gamepad(device.collections.front())) {
-                const auto& collection = device.collections.front();
-                auto known = usbIdentities_.find(collection.path);
-                if (known == usbIdentities_.end()) {
-                    if (auto identity = readUsbIdentity(collection); !identity.empty()) {
-                        known = usbIdentities_.emplace(collection.path, std::move(identity)).first;
-                    }
-                }
-                if (known != usbIdentities_.end()) {
-                    device.key = known->second;
-                }
-            }
-        }
-        result.push_back(std::move(device));
+        if (deferred && requiresDiscoveryProbe(device)) deferred->push_back(std::move(device));
+        else resolveDevice(std::move(device), busyReceivers.contains(key), logitechRemaining, result);
     }
     return result;
 }
 
-Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
+bool HidMonitor::requiresDiscoveryProbe(const Device& device)
 {
+    if (device.transport == Transport::logitech_usb || device.transport == Transport::logitech_receiver) {
+        const auto count = std::ranges::count_if(device.collections, logitechChannel);
+        if (device.transport == Transport::logitech_usb || logitechBolt(device.vid, device.pid))
+            return count == 1;
+        return count > 0;
+    }
+    if (device.transport == Transport::razer_receiver) {
+        return std::ranges::any_of(device.collections, [](const Collection& collection) {
+            return collection.featureLength == 91 && collection.description.ends_with(L"pid_00b8&mi_00");
+        });
+    }
+    return device.transport == Transport::dualsense_usb &&
+        std::ranges::any_of(device.collections, [](const Collection& collection) { return gamepad(collection); });
+}
+
+bool HidMonitor::initialDiscoveryComplete(const Device& device) const
+{
+    if (device.transport != Transport::logitech_receiver) return true;
+    const auto receiver = receivers_.find(device.key);
+    return receiver != receivers_.end() && receiver->second.slotScan.initialSweepComplete();
+}
+
+Clock::time_point HidMonitor::nextDiscoveryProbe(const Device& device) const
+{
+    if (device.transport == Transport::logitech_usb) {
+        if (const auto receiver = receivers_.find(device.key); receiver != receivers_.end())
+            return receiver->second.due;
+    } else if (device.transport == Transport::razer_receiver) {
+        if (const auto pairing = sharedPairings_.find(device.key); pairing != sharedPairings_.end())
+            return pairing->second.nextCheck;
+    } else if (device.transport == Transport::dualsense_usb) {
+        if (std::ranges::any_of(device.collections, [&](const Collection& collection) {
+            return usbIdentities_.contains(collection.path);
+        })) return Clock::time_point::max();
+    }
+    return {};
+}
+
+void HidMonitor::resolveDevice(Device device, bool busy, Clock::duration& logitechRemaining,
+    std::vector<Device>& result)
+{
+    const auto key = device.key;
+    if (device.transport == Transport::logitech_usb) {
+        const auto channel = std::ranges::find_if(device.collections, logitechChannel);
+        if (channel == device.collections.end() || std::ranges::count_if(device.collections, logitechChannel) != 1) return;
+        auto& direct = receivers_[key];
+        const auto now = Clock::now();
+        constexpr unsigned directIndex = 0xff; // HID++ 2.0, no receiver slot.
+        auto child = direct.children.find(directIndex);
+        if (now >= direct.due && !busy) {
+            LogitechQuery query(*channel, shortLogitechChannel(device), directIndex, now + 750ms);
+            const auto id = query.unit();
+            direct.due = now + (id ? 30s : 5s);
+            if (id) {
+                auto usb = device;
+                usb.key = L"logitech-hidpp:" + std::to_wstring(id);
+                usb.slot = directIndex;
+                usb.unit = id;
+                usb.kind = 3;
+                usb.label = logitechUsbName(device.vid, device.pid);
+                child = direct.children.insert_or_assign(directIndex, std::move(usb)).first;
+            } else if (child != direct.children.end() && query.failure(3).status == Status::offline) {
+                direct.children.erase(child);
+                child = direct.children.end();
+            }
+        }
+        if (child != direct.children.end()) {
+            child->second.collections = device.collections;
+            result.push_back(child->second);
+        }
+        return;
+    }
+    if (device.transport == Transport::logitech_receiver) {
+        const auto channel = std::ranges::find_if(device.collections, logitechChannel);
+        if (channel == device.collections.end()) return;
+        const bool bolt = logitechBolt(device.vid, device.pid);
+        const auto channels = std::ranges::count_if(device.collections, logitechChannel);
+        if (bolt && channels != 1) return;
+        auto& receiver = receivers_[key];
+        const auto passStart = Clock::now();
+        const auto deadline = passStart + logitechRemaining;
+        const auto* shortChannel = shortLogitechChannel(device);
+        for (auto now = passStart; receiver.slotScan.canProbe(now, deadline, busy);
+             now = Clock::now()) {
+            const auto slot = receiver.slotScan.nextSlot();
+            LogitechQuery query(*channel, shortChannel, slot, std::min(deadline, now + LogitechReceiverScan::slotBudget));
+            unsigned model = 0;
+            const auto identity = query.unit(channels == 1 ? &model : nullptr, bolt ? 2 : 4);
+            const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (receiverAttempts_.size() == 96) receiverAttempts_.erase(receiverAttempts_.begin());
+            receiverAttempts_.push_back({device.vid, device.pid, slot, stamp, identity != 0,
+                identity ? Sample{Status::current, {}, 0x11, 0, 3} : query.failure(3),
+                device.endpointKey, identity ? L"logitech-hidpp:" + std::to_wstring(identity) : std::wstring{}});
+            auto child = receiver.children.find(slot);
+            const bool newIdentity = child == receiver.children.end() || child->second.unit != identity ||
+                (child->second.logitechNamedModel && model && child->second.logitechNamedModel != model);
+            const bool confirmNamed = !newIdentity && !child->second.logitechNamedModel &&
+                logitechNamedIdentity(device.vid, device.pid, model, child->second.label, child->second.kind);
+            if (identity && (newIdentity || confirmNamed || child->second.label.empty() || child->second.kind == 255)) {
+                // Preserve metadata already proven by the same unit. A
+                // partial name/type read on discovery is retried on rotation.
+                auto paired = newIdentity ? device : child->second;
+                paired.key = L"logitech-hidpp:" + std::to_wstring(identity);
+                paired.parentEndpoint = device.endpointKey;
+                paired.endpointKey.clear();
+                paired.slot = slot;
+                paired.unit = identity;
+                const auto nameIndex = query.feature(5);
+                if (nameIndex) {
+                    const auto type = query.read(nameIndex, 2);
+                    if (!type.empty()) paired.kind = type.front();
+                    if (auto name = logitechName(query, nameIndex); !name.empty())
+                        paired.label = std::move(name);
+                    if (const auto named = logitechNamedIdentity(device.vid, device.pid, model, paired.label, paired.kind)) {
+                        paired.label = named->label;
+                        paired.kind = named->kind;
+                        paired.logitechNamedModel = named->model;
+                        paired.logitechNamedFeatures = named->batteryFeatures;
+                    } else if (const auto office = boltOfficeIdentity(device.vid, device.pid, paired.label)) {
+                        paired.label = office->label;
+                        if (paired.kind == 255) paired.kind = office->kind;
+                    }
+                }
+                receiver.children.insert_or_assign(slot, std::move(paired));
+            } else if (!identity && query.failure(3).status == Status::offline) {
+                receiver.children.erase(slot);
+            }
+            receiver.slotScan.probed(now);
+        }
+        logitechRemaining = std::max(Clock::duration::zero(), deadline - Clock::now());
+        for (auto& [slot, child] : receiver.children) {
+            child.collections = device.collections;
+            result.push_back(child);
+        }
+        return;
+    }
+    if ((device.transport == Transport::razer_pro_receiver || device.transport == Transport::usb_wireless_headset) &&
+        device.collections.size() != 1) return;
+    if (device.transport == Transport::razer_receiver) {
+        std::ranges::sort(device.collections, {}, razerRank);
+        const auto control = std::ranges::find_if(device.collections, [](const Collection& collection) {
+            return collection.featureLength == 91 && collection.description.ends_with(L"pid_00b8&mi_00");
+        });
+        if (control != device.collections.end()) {
+            auto& pairing = sharedPairings_[key];
+            const auto now = Clock::now();
+            if (now >= pairing.nextCheck && !busy) {
+                const auto answer = readRazer(*control, now + 500ms, RazerQuery::pairedDevices);
+                if (answer.status == Status::current) {
+                    pairing.paired = answer.detail == 1;
+                }
+                pairing.nextCheck = now + (answer.status == Status::current ? 2min : 1min);
+            }
+            if (pairing.paired) {
+                Device keyboard{device.key + L":02d2", Transport::razer_shared_keyboard,
+                                device.revision, {}, {*control}, {}, device.vid, device.pid};
+                keyboard.parentEndpoint = device.endpointKey;
+                result.push_back(std::move(keyboard));
+            }
+        }
+    } else {
+        std::ranges::stable_sort(device.collections, {}, [](const Collection& c) { return !gamepad(c); });
+        if (device.transport == Transport::dualsense_usb && !device.collections.empty() &&
+            gamepad(device.collections.front())) {
+            const auto& collection = device.collections.front();
+            auto known = usbIdentities_.find(collection.path);
+            if (known == usbIdentities_.end() && !busy) {
+                if (auto identity = readUsbIdentity(collection); !identity.empty()) {
+                    known = usbIdentities_.emplace(collection.path, std::move(identity)).first;
+                }
+            }
+            if (known != usbIdentities_.end()) {
+                device.key = known->second;
+            }
+        }
+    }
+    result.push_back(std::move(device));
+}
+
+Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics,
+    std::vector<HidCollectionAttempt>* collectionAttempts)
+{
+    const auto recordCollection = [&](const Collection& collection, const Sample& result, bool selected = false) {
+        if (!collectionAttempts || collectionAttempts->size() >= 32) return;
+        const auto ordinal = static_cast<unsigned>(&collection - device.collections.data()) + 1;
+        collectionAttempts->push_back({ordinal, hexId(collection.description, L"&mi_", 2),
+            hexId(collection.description, L"&col", 2), collection.page, collection.usage,
+            collection.inputLength, collection.outputLength, collection.featureLength, result, selected});
+    };
     if (device.transport == Transport::gamesir_super_nova_receiver) return readGameSirSuperNova(device);
     if (device.transport == Transport::usb_wireless_headset) return readUsbHeadset(device);
     if (device.transport == Transport::gamepad_flydigi || device.transport == Transport::gamepad_nova2_lite_usb)
@@ -2168,8 +2231,9 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
         // Zero can reflect a sleeping wireless endpoint, not a fresh battery
         // measurement. Do not alert at 0% on these newly enabled receivers.
         if ((razerBatch13Receiver(device.vid, device.pid) || razerKeyboardReceiver(device.vid, device.pid)) && result.reading && result.reading->raw == 0)
-            return {Status::no_radio_reply, {}, 0x80};
+            result = {Status::no_radio_reply, {}, 0x80};
         if (result.reading) result.reading->power = Power::unknown;
+        recordCollection(collection, result, hasBatteryReading(result));
         return result;
     }
     const bool keyboard = device.transport == Transport::razer_shared_keyboard;
@@ -2205,6 +2269,7 @@ Sample HidMonitor::sample(const Device& device, std::wostream* diagnostics)
                         sample.reading->power = charging.detail ? Power::charging : Power::discharging;
                     }
                 }
+                recordCollection(collection, sample, hasBatteryReading(sample));
                 return logAttempt(collection, sample);
             });
         if (winner) razerCollections_[device.key] = winner->path;

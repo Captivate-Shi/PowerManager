@@ -10,6 +10,7 @@
 #include <string>
 #include <set>
 #include <vector>
+#include <utility>
 
 namespace pm {
 
@@ -38,6 +39,7 @@ struct Collection {
     unsigned inputLength;
     unsigned featureLength;
     unsigned outputLength{};
+    bool operator==(const Collection&) const = default;
 };
 
 struct Device {
@@ -73,6 +75,18 @@ struct ReceiverAttempt {
     std::int64_t unixSeconds;
     bool identityAvailable;
     Sample outcome;
+    // Exact local attribution only; neither key is exported.
+    std::wstring receiverEndpoint{};
+    std::wstring provenChild{};
+};
+
+struct HidCollectionAttempt {
+    unsigned ordinal;
+    std::optional<unsigned> interfaceNumber;
+    std::optional<unsigned> collectionNumber;
+    unsigned usagePage, usage, inputBytes, outputBytes, featureBytes;
+    Sample outcome;
+    bool selected{};
 };
 
 const wchar_t* deviceName(Transport transport);
@@ -87,12 +101,22 @@ std::wstring timestamp();
 class HidMonitor {
 public:
     std::vector<Device> enumerate(bool includePairedBluetooth = false, std::vector<HidInterface>* inventory = nullptr,
-        const std::set<std::wstring>& busyReceivers = {});
+        const std::set<std::wstring>& busyReceivers = {}, std::vector<Device>* deferred = nullptr,
+        bool* complete = nullptr);
+    void resolveDevice(Device device, bool busy, std::chrono::steady_clock::duration& logitechRemaining,
+        std::vector<Device>& result);
+    static bool requiresDiscoveryProbe(const Device& device);
+    bool initialDiscoveryComplete(const Device& device) const;
+    std::chrono::steady_clock::time_point nextDiscoveryProbe(const Device& device) const;
+    const std::set<std::wstring>& verifiedMouseHints() const { return confirmedVxe_; }
+    void seedVerifiedMouseHints(std::set<std::wstring> hints) { confirmedVxe_ = std::move(hints); }
     void rememberVerifiedMouse(const Device& device, const Sample& reading);
-    Sample sample(const Device& device, std::wostream* diagnostics = nullptr);
+    Sample sample(const Device& device, std::wostream* diagnostics = nullptr,
+        std::vector<HidCollectionAttempt>* collectionAttempts = nullptr);
     VoltageSample sampleVoltage(const Device& device, const Sample& pairedReading);
     void forgetOffline(const std::vector<Device>& devices);
     const std::vector<ReceiverAttempt>& receiverAttempts() const { return receiverAttempts_; }
+    std::vector<ReceiverAttempt> takeReceiverAttempts() { return std::exchange(receiverAttempts_, {}); }
 
 private:
     struct SharedPairing {

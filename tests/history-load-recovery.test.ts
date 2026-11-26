@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -109,6 +111,59 @@ test('malformed watched entries are removed once without changing valid stored f
     assert.equal(readFileSync(join(path, backups()[0]!), 'utf8'), original);
     assert.equal(open().state.error, undefined);
     assert.equal(backups().length, 1);
+  } finally {
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
+test('a backup failure preserves the original across normal saves and close; retry protects it first', t => {
+  const { path, file, open } = fixture();
+  const original = JSON.stringify({ version: 1, devices: [], watched: [null], settings: defaults,
+    deviceSettings: {}, alerts: {}, history: {}, historyDays: {} });
+  const copy = fs.copyFileSync;
+  let backupBlocked = true;
+  const mocked = t.mock.method(fs, 'copyFileSync', (...args: Parameters<typeof copy>) => {
+    if (backupBlocked && args[0] === file) throw new Error('fixture: backup refused');
+    copy(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    writeFileSync(file, original);
+    const restored = open();
+    assert.match(restored.state.error ?? '', /暂用可用记录/);
+    assert.equal(restored.persist(), false);
+    restored.close();
+    assert.equal(readFileSync(file, 'utf8'), original);
+    assert.deepEqual(readdirSync(path), ['monitor.json']);
+
+    const reopened = open();
+    backupBlocked = false;
+    assert.equal(reopened.persist(), true);
+    const backup = readdirSync(path).find(name => name.startsWith('monitor-repair-'));
+    assert.ok(backup);
+    assert.equal(readFileSync(join(path, backup), 'utf8'), original);
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).watched, []);
+    reopened.close();
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
+test('cached impossible timestamps do not restore a last-known reading', () => {
+  const { path, file, open } = fixture();
+  const now = Date.now();
+  const device: Device = { id: 'mouse', name: '鼠标', connection: 'USB', art: 'mouse', status: 'current',
+    reason: '', reading, lastRead: now, watched: false };
+  try {
+    writeFileSync(file, JSON.stringify({ version: 1, watched: [], settings: defaults, deviceSettings: {}, alerts: {},
+      devices: [{ ...device, lastRead: 1e20 }, { ...device, id: 'future', lastRead: now + 86_400_000 },
+        { ...device, id: 'valid' }], history: {}, historyDays: {} }));
+    const restored = open();
+    assert.deepEqual(restored.state.devices.map(value => [value.id, value.lastRead, value.reading?.low]),
+      [['mouse', null, undefined], ['future', null, undefined], ['valid', now, 25]]);
+    restored.close();
   } finally {
     rmSync(path, { recursive: true, force: true });
   }

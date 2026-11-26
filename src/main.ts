@@ -383,7 +383,7 @@ function refreshTrayMenu() {
     { label: '打开主界面', click: () => openMain() },
     { label: '托盘面板', click: showTray },
     { label: '测试右下角提醒', click: () => { void showPreview('low'); } },
-    { label: '立即刷新', click: () => { void monitor?.poll(true); } },
+    { label: '立即刷新', click: () => { void monitor?.refresh(); } },
     { label: snapshot.mutedUntil > Date.now() ? '恢复提醒' : '静音 ' + muteDurationLabel(snapshot.settings.muteMinutes), click: toggleMute },
     { label: '打开诊断目录', click: () => { void shell.openPath(dataDir); } },
     { type: 'separator' },

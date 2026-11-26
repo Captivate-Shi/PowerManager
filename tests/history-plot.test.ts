@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { historyDateTicks, historyStart, historyWindow, plotHistory, sampleAt, toggleHistorySelection, toggleHistorySlots, unsampledAfter } from '../src/history-plot';
+import { historyAnchor, historyDateTicks, historyStart, historyWindow, plotHistory, sampleAt, toggleHistorySelection, toggleHistorySlots, unsampledAfter } from '../src/history-plot';
 import type { HistoryPoint, Power } from '../src/model';
 
 const now = 1_800_000_000_000;
 const start = now - historyWindow;
 const point = (time: number, low: number, high = low, power: Power = 'discharging'): HistoryPoint =>
   ({ time, reading: { low, high, raw: low, power, source: 'hid' } });
+
+test('history anchors to valid recent readings, not corrupt or future device timestamps', () => {
+  const clock = now - 1000;
+  assert.equal(historyAnchor(clock, [null, NaN, Infinity, -Infinity, 8.64e15 + 1, now + 1, now - 2000], now), clock);
+  assert.equal(historyAnchor(clock, [now - 560, Number.MAX_VALUE, now - 12, now - 900], now), now - 12);
+  assert.equal(historyAnchor(clock, [now], now), now);
+});
 
 test('invalid points split exact and range data without inventing electrical state', () => {
   const data = plotHistory([point(now - 70_000, 31), { time: now - 60_000, reading: null },

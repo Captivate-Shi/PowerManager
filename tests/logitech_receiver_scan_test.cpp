@@ -10,6 +10,7 @@ int main()
     const Time start{};
     const auto deadline = start + Scan::sweepBudget;
     Scan cold;
+    assert(!cold.initialSweepComplete());
     for (unsigned slot = 1; slot <= Scan::slotCount; ++slot) {
         // Worst-case no-response first request, followed by a possible two-request
         // identity on the last slot, fits one cold receiver pass.
@@ -18,6 +19,7 @@ int main()
         assert(cold.canProbe(now, deadline, false));
         assert(cold.nextSlot() == slot);
         cold.probed(now);
+        assert(cold.initialSweepComplete() == (slot == Scan::slotCount));
     }
     assert(cold.nextSlot() == 1);
     assert(!cold.canProbe(start + 2s, deadline, false));
@@ -33,6 +35,9 @@ int main()
     assert(resume.nextSlot() == 2);
     assert(resume.canProbe(start + 4s, start + 4s + Scan::sweepBudget, false));
     assert(resume.nextSlot() == 2);
+    assert(!resume.initialSweepComplete());
+    for (unsigned slot = 2; slot <= Scan::slotCount; ++slot) resume.probed(start + 4s);
+    assert(resume.initialSweepComplete());
 
     Scan restart;
     assert(restart.nextSlot() == 1);

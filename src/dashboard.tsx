@@ -19,7 +19,7 @@ import { HelpTip } from './help-tip';
 import { ZoomControl } from './zoom';
 import preferences from './preferences.module.css';
 import { previewDevice as makePreviewDevice } from './demo';
-import { compareLimit, historyRangeLabels, historyStart, toggleHistorySlots } from './history-plot';
+import { compareLimit, historyAnchor, historyRangeLabels, historyStart, toggleHistorySlots } from './history-plot';
 import { historyStorageEstimate } from './history-storage';
 import { applyMainPalette, palettes, readPalette, savePalette, type Palette } from './theme';
 import { DetentSlider } from './detent-slider';
@@ -991,7 +991,7 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
   const activeIds = selected.map(item => item.id);
   const toggle = (id: string) => setSlots(toggleHistorySlots(visibleSlots, id));
   const single = selected.length === 1 ? selected[0] : undefined;
-  const now = Math.max(clock, ...selected.map(item => item.lastRead ?? 0));
+  const now = historyAnchor(clock, selected.map(item => item.lastRead), Date.now());
   return <section className={s.history} aria-label="电量对比记录">
     <div className={s.historyToolbar}>
       <div className={s.historySpan}><div className={s.historyRangeGroup}>
