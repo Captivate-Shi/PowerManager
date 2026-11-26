@@ -53,7 +53,7 @@ if (!$nsis) { throw 'Could not locate makensis' }
 $out = (New-Item -ItemType Directory "out/$version" -Force).FullName
 $exe = Join-Path $out "PowerManager-Setup-$version.exe"
 $icon = (Resolve-Path "$tauri/icons/icon.ico").Path
-& $nsis /WX /V3 /INPUTCHARSET UTF8 "/DOUT=$exe" "/DAPP=$app" "/DAPP_ICON=$icon" "/DPAYLOAD=$payload" "/DBOOTSTRAPPER=$bootstrap" (Resolve-Path 'installer/webview2/setup.nsi').Path
+& $nsis /WX /V3 /INPUTCHARSET UTF8 "/DOUT=$exe" "/DAPP=$app" "/DAPP_ICON=$icon" "/DLOADER=$( (Get-Item -LiteralPath (Join-Path $payload WebView2Loader.dll)).FullName )" "/DCOLLECTOR=$( (Get-Item -LiteralPath (Join-Path $payload collector.exe)).FullName )" "/DBOOTSTRAPPER=$bootstrap" (Resolve-Path 'installer/webview2/setup.nsi').Path
 Check-Native
 $checksum = Join-Path $out 'SHA256SUMS.txt'
 '{0}  {1}' -f (Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant(), (Split-Path $exe -Leaf) |

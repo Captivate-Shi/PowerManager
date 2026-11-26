@@ -15,7 +15,7 @@ file "$app" | grep -Eq 'PE32\+.*x86-64'
 file "$assets/collector.exe" | grep -Eq 'PE32\+.*x86-64'
 file "$assets/WebView2Loader.dll" | grep -Eq 'PE32\+.*x86-64'
 "$MAKENSIS" -V3 -INPUTCHARSET UTF8 -DOUT="$out/$name" -DAPP="$app" \
-  -DAPP_ICON="$root/experiments/tauri/src-tauri/icons/icon.ico" -DPAYLOAD="$assets" \
+  -DAPP_ICON="$root/experiments/tauri/src-tauri/icons/icon.ico" -DLOADER="$assets/WebView2Loader.dll" -DCOLLECTOR="$assets/collector.exe" \
   -DBOOTSTRAPPER="$WEBVIEW_BOOTSTRAPPER" "$root/installer/webview2/setup.nsi"
 "$SEVEN_ZIP" t "$out/$name"
 check="$(mktemp -d)"

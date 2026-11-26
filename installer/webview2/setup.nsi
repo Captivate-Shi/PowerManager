@@ -195,9 +195,9 @@ Section "-Install"
   ${EndIf}
   SetOutPath "$INSTDIR"
   File /oname=${APP_EXE} "${APP}"
-  File "${PAYLOAD}/WebView2Loader.dll"
+  File /oname=WebView2Loader.dll "${LOADER}"
   SetOutPath "$INSTDIR\lab"
-  File "${PAYLOAD}/collector.exe"
+  File /oname=collector.exe "${COLLECTOR}"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   FileOpen $0 "$INSTDIR\${MARKER}" w
