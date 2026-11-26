@@ -87,3 +87,29 @@ test('a clean legacy history is summarized and migrated on disk without a corrup
     rmSync(path, { recursive: true, force: true });
   }
 });
+
+test('malformed watched entries are removed once without changing valid stored fields', () => {
+  const { path, file, open } = fixture();
+  const watched = [
+    { id: 'mouse', name: 'Mouse', connection: 'USB', extra: { keep: true } },
+    { id: 'headset', name: 'Headset', connection: '蓝牙' },
+  ];
+  const original = JSON.stringify({ version: 1, devices: [], settings: defaults, deviceSettings: {}, alerts: {},
+    watched: [null, watched[0], {}, { id: 123, name: 'bad', connection: 'USB' },
+      { id: 'broken', name: ' ', connection: 'USB' }, { id: 'no-link', name: 'Bad', connection: null }, watched[1]],
+    history: {}, historyDays: {} });
+  try {
+    writeFileSync(file, original);
+    const restored = open();
+    assert.match(restored.state.error ?? '', /部分监测设备记录/);
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    assert.deepEqual(saved.watched, watched);
+    const backups = () => readdirSync(path).filter(name => name.startsWith('monitor-repair-'));
+    assert.equal(backups().length, 1);
+    assert.equal(readFileSync(join(path, backups()[0]!), 'utf8'), original);
+    assert.equal(open().state.error, undefined);
+    assert.equal(backups().length, 1);
+  } finally {
+    rmSync(path, { recursive: true, force: true });
+  }
+});

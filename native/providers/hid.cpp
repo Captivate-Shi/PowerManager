@@ -1055,6 +1055,12 @@ public:
 
     std::vector<std::uint8_t> read(unsigned index, unsigned function, unsigned a = 0, unsigned b = 0)
     {
+        const auto now = Clock::now();
+        if (now >= end_) {
+            protocolError = protocolErrorFrame = 0;
+            winError = ERROR_TIMEOUT;
+            return {};
+        }
         const unsigned tagged = function * 16 + 8 + logitechRequestId.fetch_add(1, std::memory_order_relaxed) % 8;
         std::array<std::uint8_t, 20> query{0x11, static_cast<std::uint8_t>(slot_),
             static_cast<std::uint8_t>(index), static_cast<std::uint8_t>(tagged),
@@ -1062,7 +1068,7 @@ public:
         protocolError = 0;
         protocolErrorFrame = 0;
         std::vector<std::uint8_t> response;
-        winError = exchange_.request(query, std::min(end_, Clock::now() + 330ms), [&](auto bytes) {
+        winError = exchange_.request(query, std::min(end_, now + LogitechReceiverScan::queryBudget), [&](auto bytes) {
             const auto parsed = parseLogitechReply(bytes, slot_, index, tagged);
             if (!parsed) return false;
             protocolError = parsed->error;
@@ -1939,6 +1945,9 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
     }
     std::erase_if(receivers_, [&](const auto& item) { return !devices.contains(item.first); });
     std::vector<Device> result;
+    // Count Logitech receiver probes only; Windows enumeration and other
+    // device discovery retain their own time limits.
+    auto logitechRemaining = Clock::duration(LogitechReceiverScan::sweepBudget);
     for (auto& [key, device] : devices) {
         if ((isSwitchHid(device.transport) || device.transport == Transport::eightbitdo_enhanced_bluetooth ||
             device.transport == Transport::eightbitdo_pro3_usb || device.transport == Transport::gamesir_super_nova_receiver ||
@@ -2014,12 +2023,13 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             const auto channels = std::ranges::count_if(device.collections, logitechChannel);
             if (bolt && channels != 1) continue;
             auto& receiver = receivers_[key];
-            const auto now = Clock::now();
-            if (now >= receiver.due && !busyReceivers.contains(key)) {
-                const auto slot = receiver.nextSlot;
-                receiver.nextSlot = slot % 6 + 1;
-                receiver.due = now + 4s;
-                LogitechQuery query(*channel, shortLogitechChannel(device), slot, now + 750ms);
+            const auto passStart = Clock::now();
+            const auto deadline = passStart + logitechRemaining;
+            const auto* shortChannel = shortLogitechChannel(device);
+            for (auto now = passStart; receiver.slotScan.canProbe(now, deadline, busyReceivers.contains(key));
+                 now = Clock::now()) {
+                const auto slot = receiver.slotScan.nextSlot();
+                LogitechQuery query(*channel, shortChannel, slot, std::min(deadline, now + LogitechReceiverScan::slotBudget));
                 unsigned model = 0;
                 const auto identity = query.unit(channels == 1 ? &model : nullptr, bolt ? 2 : 4);
                 const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
@@ -2061,7 +2071,9 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                 } else if (!identity && query.failure(3).status == Status::offline) {
                     receiver.children.erase(slot);
                 }
+                receiver.slotScan.probed(now);
             }
+            logitechRemaining = std::max(Clock::duration::zero(), deadline - Clock::now());
             for (auto& [slot, child] : receiver.children) {
                 child.collections = device.collections;
                 result.push_back(child);

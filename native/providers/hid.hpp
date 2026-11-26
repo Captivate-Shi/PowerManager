@@ -1,6 +1,7 @@
 #pragma once
 
 #include "battery.hpp"
+#include "logitech_receiver_scan.hpp"
 #include "rapoo_battery.hpp"
 
 #include <chrono>
@@ -100,7 +101,7 @@ private:
     };
     struct Receiver {
         std::chrono::steady_clock::time_point due{};
-        unsigned nextSlot{1};
+        LogitechReceiverScan slotScan;
         std::map<unsigned, Device> children;
     };
     RapooBatteryReader rapoo_;

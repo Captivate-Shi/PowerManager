@@ -94,9 +94,67 @@ function cachedDevice(value: unknown): Device | null {
     reading: hasReading ? reading : null, lastRead: hasReading ? lastRead : null };
 }
 
+type WatchedDevice = Pick<Found, 'id' | 'name' | 'connection'>;
+
+function validWatchedDevice(value: unknown): value is WatchedDevice {
+  return isRecord(value) && typeof value.id === 'string' && !!value.id.trim() &&
+    typeof value.name === 'string' && !!value.name.trim() &&
+    typeof value.connection === 'string' && !!value.connection.trim();
+}
+
+function lowerReading(a: Reading, b: Reading) {
+  return a.low < b.low || (a.low === b.low && a.high < b.high);
+}
+
+// Correct the contribution of a replaced point rather than counting it twice.
+function replaceHistoryDay(days: HistoryDay[], points: HistoryPoint[], old: HistoryPoint, point: HistoryPoint) {
+  if (!old.reading) { accumulateHistoryDay(days, point); return; }
+  const date = new Date(point.time);
+  date.setHours(0, 0, 0, 0);
+  const start = date.getTime();
+  let index = days.length - 1;
+  if (days[index]?.day !== start) index = days.findIndex(bucket => bucket.day === start);
+  if (index < 0) { accumulateHistoryDay(days, point); return; }
+  const bucket = days[index]!;
+  const replacedMin = bucket.lowest.time === old.time;
+  const lostMin = replacedMin && (!point.reading || lowerReading(bucket.lowest.reading, point.reading));
+  const lostCharge = bucket.lastCharge === old.time && point.reading?.power !== 'charging';
+  bucket.count -= Number(!point.reading);
+  if (bucket.count <= 0) { days.splice(index, 1); return; }
+
+  if (lostMin || lostCharge) {
+    date.setDate(date.getDate() + 1); // Local calendar day, including DST.
+    const end = date.getTime();
+    const replacement: HistoryDay[] = [];
+    if (!lostMin && bucket.lowest.time !== point.time) accumulateHistoryDay(replacement, bucket.lowest);
+    if (point.reading) accumulateHistoryDay(replacement, point);
+    // Read the pre-replacement array; the raw cap/rolling window may have
+    // dropped another point as part of the same write.
+    for (let i = points.length - 1; i >= 0; i--) {
+      const candidate = points[i]!;
+      if (candidate.time < start) break;
+      if (candidate.time < end && candidate.time !== point.time) accumulateHistoryDay(replacement, candidate);
+    }
+    if (lostMin && replacement[0]) bucket.lowest = replacement[0].lowest;
+    else if (lostMin) {
+      // A legacy aggregate can outlive all its raw points. With its sole
+      // known minimum removed, there is no defensible reading to display.
+      days.splice(index, 1);
+      return;
+    }
+    if (lostCharge) bucket.lastCharge = replacement[0]?.lastCharge;
+  }
+  if (point.reading) {
+    if ((replacedMin && !lostMin) || lowerReading(point.reading, bucket.lowest.reading)) {
+      bucket.lowest = { time: point.time, reading: point.reading };
+    }
+    if (point.reading.power === 'charging') bucket.lastCharge = Math.max(point.time, bucket.lastCharge ?? 0);
+  }
+}
+
 type StateFile = {
   version: 1; settings: Settings; deviceSettings: Record<string, DeviceSettings>; alerts: Record<string, AlertState>;
-  watched: Pick<Found, 'id' | 'name' | 'connection'>[]; devices: Device[]; history: Record<string, HistoryPoint[]>;
+  watched: WatchedDevice[]; devices: Device[]; history: Record<string, HistoryPoint[]>;
   historyDays?: Record<string, HistoryDay[]>;
 };
 type Observation = {
@@ -135,22 +193,26 @@ export class Monitor {
     this.file = join(directory, 'monitor.json');
     let initial: StateFile = { version: 1, settings: { ...defaults }, deviceSettings: {}, alerts: {}, watched: [], devices: [], history: {} };
     let loadError: string | undefined;
-    let rewriteHistory = false;
+    let rewriteState = false;
     if (existsSync(this.file)) {
       try {
         const saved: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
         if (!isRecord(saved) || saved.version !== 1 || !Array.isArray(saved.devices) || !Array.isArray(saved.watched) ||
             !isRecord(saved.settings) || !isRecord(saved.deviceSettings) || !isRecord(saved.alerts)) throw new Error('Invalid state');
         const history = loadHistory(saved.history, saved.historyDays);
-        initial = { ...(saved as unknown as StateFile), history: history.points, historyDays: history.days };
-        rewriteHistory = saved.historyDays === undefined || history.repaired;
-        if (history.repaired) {
+        const watched = saved.watched.filter(validWatchedDevice);
+        const repairedWatched = watched.length !== saved.watched.length;
+        initial = { ...(saved as unknown as StateFile), watched, history: history.points, historyDays: history.days };
+        rewriteState = saved.historyDays === undefined || history.repaired || repairedWatched;
+        if (history.repaired || repairedWatched) {
+          const damaged = history.repaired && repairedWatched ? '部分电量历史和监测设备记录'
+            : history.repaired ? '部分电量历史' : '部分监测设备记录';
           try {
             copyFileSync(this.file, join(directory, 'monitor-repair-' + Date.now() + '-' + randomUUID() + '.json'), constants.COPYFILE_EXCL);
-            loadError = '部分电量历史无法读取，已备份原文件并保留可用记录。';
+            loadError = damaged + '无法读取，已备份原文件并保留可用记录。';
           } catch {
-            rewriteHistory = false;
-            loadError = '部分电量历史无法读取或备份，暂用可用记录。';
+            rewriteState = false;
+            loadError = damaged + '无法读取或备份，暂用可用记录。';
           }
         }
       } catch {
@@ -196,7 +258,7 @@ export class Monitor {
       this.schedule(5000, true);
     });
     // Once committed, a repaired or migrated file does not repeat startup recovery.
-    if (rewriteHistory && !this.persist()) this.dirty = true;
+    if (rewriteState && !this.persist()) this.dirty = true;
   }
 
   start() { void this.poll(true); }
@@ -206,7 +268,8 @@ export class Monitor {
     this.diagnosticDevices.clear();
     clearTimeout(this.timer);
     this.collector.close();
-    this.markStale();
+    // Shutdown is not a failed device reading. On load, cached devices are
+    // already restored as stale, without overwriting the last real sample.
     this.persist();
   }
   async closeForMaintenance() {
@@ -713,7 +776,10 @@ export class Monitor {
     const points = this.data.history[device.id] ?? [];
     this.data.history[device.id] = recordHistory(points, point);
     device.historyUpdatedAt = time;
-    if (points.at(-1)?.time !== time) accumulateHistoryDay(this.historyDays[device.id] ??= [], point);
+    const tail = points.at(-1);
+    const replaced = tail?.time === time ? tail : tail && time < tail.time ? points.find(item => item.time === time) : undefined;
+    if (replaced) replaceHistoryDay(this.historyDays[device.id] ??= [], points, replaced, point);
+    else if (point.reading) accumulateHistoryDay(this.historyDays[device.id] ??= [], point);
     if (this.thresholdEdits.has(device.id)) return;
     const old = this.state.alerts[device.id] ?? {};
     const next = observeRecovery(device, this.state.settings, rules, old);

@@ -32,6 +32,8 @@ test('冷启动无缓存不制造设备；首次成功但空是已确认，而�
 });
 
 test('暖启动初始与没有采样的首轮都只承认本地旧值；新采样后才可提醒', async t => {
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now);
   const path = mkdtempSync(join(tmpdir(), 'power-start-warm-'));
   let monitor: Monitor | undefined;
   try {
@@ -73,6 +75,7 @@ test('暖启动初始与没有采样的首轮都只承认本地旧值；新采�
     assert.equal(monitor.state.devices[0].recognizedName, existing.name);
     assert.equal(monitor.eligible(monitor.state.devices[0]), undefined);
     assert.deepEqual(monitor.historySummary(existing.id, 'week').map(bucket => [bucket.lowest.reading.low, bucket.count]), [[9, 1]]);
+    assert.equal(monitor.history(existing.id).at(-1)?.reading?.low, 9);
   } finally {
     monitor?.close();
     rmSync(path, { recursive: true, force: true });

@@ -153,8 +153,8 @@ async function inspectStatus(page, { id,name,status,amount,power,alert=false }) 
   const number=selected(page,name).locator('strong');
   if(amount)await expect(number).toContainText(amount);
   if(status!=='已连接'){
-    await expect(number).toContainText(/^上次\s+\d/);
-    await expect(selected(page,name)).toHaveAccessibleDescription(/上次电量：/);
+    await expect(number).not.toContainText('上次');
+    await expect(selected(page,name)).toHaveAccessibleDescription(/最近更新时间：/);
   }
   await expect(brief(page)).toHaveAttribute('data-connection-state',
     status==='已连接'?'connected':status==='未连接'?'offline':'pending');
@@ -273,7 +273,7 @@ async function loaded(page,mark,capture=false,reduced=false) {
   await mode(page,'列表模式').click();
   await choose(page,charging,{reduced});
   await mode(page,'展台模式').click();
-  await expect(hero(page)).toContainText('正在充电');
+  await expect(hero(page)).toContainText('充电中');
   await mode(page,'列表模式').click();
   await choose(page,disconnected,{reduced});
   if(capture){await settle(page);await shot(page,'06-明确未连接-上次电量');await wait(page,850);}

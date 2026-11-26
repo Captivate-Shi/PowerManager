@@ -339,7 +339,7 @@ async function main() {
     await warm.goto(renderer);
     await expect(warm.locator('[data-load-state=cached]')).toBeVisible();
     const cached = warm.getByRole('region',{name:'主设备'});
-    await expect(cached.getByText(/上次电量/)).toBeVisible();
+    await expect(cached.getByText(/^最近更新时间：/)).toBeVisible();
     await expect(cached.getByText('10–20%',{exact:true})).toBeVisible();
     await warm.evaluate(() => document.fonts.ready);
     await snapshot(warm,'20-补充-暖启动上次读数');

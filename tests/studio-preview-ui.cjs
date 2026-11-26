@@ -40,7 +40,7 @@ async function main() {
     expect(stageBase64, 'stage backdrop embedded in styled scene').toBeTruthy();
     expect(hash(Buffer.from(stageBase64, 'base64'))).toBe(hash(readFileSync(join(__dirname, '../public/assets/studio-v2/stage.webp'))));
     await page.getByRole('button', { name: '立即刷新', exact: true }).click();
-    await expect(hero.getByText('正在更新 · 保留上次读数')).toBeVisible();
+    await expect(hero.getByText('正在更新')).toBeVisible();
     await expect(hero.getByText('20–30%', { exact: true })).toBeVisible();
     await hero.getByRole('button', { name: '查看详情' }).click();
     await expect(page.getByRole('region', { name: '设备详情' })).toBeVisible();
