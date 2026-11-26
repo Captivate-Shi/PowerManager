@@ -2078,7 +2078,7 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
             if (control != device.collections.end()) {
                 auto& pairing = sharedPairings_[key];
                 const auto now = Clock::now();
-                if (now >= pairing.nextCheck) {
+                if (now >= pairing.nextCheck && !busyReceivers.contains(key)) {
                     const auto answer = readRazer(*control, now + 500ms, RazerQuery::pairedDevices);
                     if (answer.status == Status::current) {
                         pairing.paired = answer.detail == 1;
@@ -2086,8 +2086,10 @@ std::vector<Device> HidMonitor::enumerate(bool includePairedBluetooth, std::vect
                     pairing.nextCheck = now + (answer.status == Status::current ? 2min : 1min);
                 }
                 if (pairing.paired) {
-                    result.push_back({device.key + L":02d2", Transport::razer_shared_keyboard,
-                                      device.revision, {}, {*control}, {}, device.vid, device.pid});
+                    Device keyboard{device.key + L":02d2", Transport::razer_shared_keyboard,
+                                    device.revision, {}, {*control}, {}, device.vid, device.pid};
+                    keyboard.parentEndpoint = device.endpointKey;
+                    result.push_back(std::move(keyboard));
                 }
             }
         } else {

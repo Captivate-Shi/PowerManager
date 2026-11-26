@@ -585,7 +585,7 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
   if ('id' in command && command.id !== undefined && !validId(command.id)) throw new Error('设备标识无效');
   const device = 'id' in command ? snapshot.devices.find(item => item.id === command.id) : undefined;
   switch (command.type) {
-    case 'refresh': await monitor?.poll(true); break;
+    case 'refresh': await monitor?.refresh(); break;
     case 'diagnosticDevices': return { ok: true, diagnosticDevices: monitor ? await monitor.listDiagnosticDevices() : [] };
     case 'diagnosticFirmware':
       if (typeof command.deviceKey !== 'string' || !/^[0-9a-f-]{36}$/.test(command.deviceKey))

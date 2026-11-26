@@ -2,6 +2,7 @@
 
 #include "battery.hpp"
 
+#include <chrono>
 #include <map>
 #include <set>
 #include <string>
@@ -53,6 +54,15 @@ inline Sample bleFailure(BleBatteryDetail stage, Status status = Status::unavail
     return {status, {}, error, static_cast<unsigned>(stage)};
 }
 
+// Scheduler signals, not final GATT errors. Some actual Win32 failures also
+// map to Status::busy; their stage is open/query/read rather than these two.
+inline constexpr bool bleBatteryReadDeferred(const Sample& value)
+{
+    const auto detail = static_cast<BleBatteryDetail>(value.detail);
+    return value.status == Status::busy &&
+        (detail == BleBatteryDetail::read_pending || detail == BleBatteryDetail::worker_busy);
+}
+
 inline Sample parseBleBatteryLevel(std::span<const std::uint8_t> data)
 {
     if (data.size() != 1 || data.front() > 100) {
@@ -77,6 +87,11 @@ std::set<std::wstring> bleBatteryContainers();
 // process-wide worker bounds collector latency and keeps the legacy fallbacks
 // responsive. A completed live read may be returned once on a later poll.
 Sample readBleBattery(const std::wstring& containerId);
+// Harvest a completed sample only: this never opens the service or waits for
+// an active operation. It may be called even after the per-poll budget ran out.
+std::optional<Sample> takeBleBatteryResult(const std::wstring& containerId);
+// Battery and firmware share the radio. Idle/completed work is never expired.
+bool bleBatteryWorkExpired(std::chrono::steady_clock::duration maximumAge);
 
 enum class BleFirmwareStatus { pending, unsupported, busy, ready };
 struct BleFirmwareResult {

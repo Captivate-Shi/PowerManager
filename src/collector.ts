@@ -7,6 +7,8 @@ export class Collector {
   private pending = new Map<number, { resolve: (data: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private handshake?: Promise<unknown>;
   private closing = false;
+  private recycling?: Promise<void>;
+  private expectedExit?: ChildProcessWithoutNullStreams;
   doubleClickMs = 500;
   get pid() { return this.child?.pid; }
   get pendingCount() { return this.pending.size; }
@@ -14,6 +16,8 @@ export class Collector {
   constructor(private executable: string, private ended: (occupied: boolean, detail?: string) => void) {}
 
   async start() {
+    if (this.recycling) await this.recycling;
+    if (this.closing) throw new Error('电量采集程序正在关闭');
     if (this.handshake) return this.handshake;
     const child = spawn(this.executable, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     this.child = child;
@@ -41,7 +45,9 @@ export class Collector {
       if (this.child !== child) return;
       this.child = undefined;
       this.handshake = undefined;
-      this.ended(code === 73, failure);
+      const expected = this.expectedExit === child;
+      if (expected) this.expectedExit = undefined;
+      else this.ended(code === 73, failure);
       for (const pending of this.pending.values()) {
         clearTimeout(pending.timer);
         pending.reject(new Error(code === 73 ? '旧版 PowerManager 正在使用采集设备' : '电量采集程序已断开'));
@@ -78,6 +84,19 @@ export class Collector {
       this.pending.set(id, { resolve: value => resolve(value as T), reject, timer });
       child.stdin.write(JSON.stringify({ id, action, ...fields }) + '\n');
     });
+  }
+
+  restart(): Promise<void> {
+    // Native drivers do not all honor CancelIoEx promptly. Recycle the
+    // isolated process and wait for its close before opening any endpoint again.
+    if (this.recycling) return this.recycling;
+    const child = this.child;
+    if (!child || this.closing) return Promise.resolve();
+    this.expectedExit = child;
+    const stopped = new Promise<void>(resolve => { child.once('close', () => resolve()); });
+    this.recycling = stopped.finally(() => { this.recycling = undefined; });
+    child.kill();
+    return this.recycling;
   }
 
   close() {

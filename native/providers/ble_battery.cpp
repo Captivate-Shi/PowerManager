@@ -246,25 +246,41 @@ struct Work {
 // Both operations share one process-wide native radio slot. Blocking Windows
 // IO never runs on the collector thread or outlives the worker-owned state.
 std::atomic_flag radioInUse = ATOMIC_FLAG_INIT;
+std::atomic<Clock::duration::rep> radioStarted{};
 constexpr auto waitBudget = 100ms;
+constexpr auto batteryResultLifetime = 8s;
+
+template <class Value>
+std::shared_ptr<Work<Value>> sharedWork()
+{
+    static const auto shared = std::make_shared<Work<Value>>();
+    return shared;
+}
+
+template <class Value>
+std::optional<Value> takeCompletedLocked(Work<Value>& work, const std::wstring& id, Clock::duration lifetime)
+{
+    const auto cutoff = Clock::now() - lifetime;
+    std::erase_if(work.completed, [cutoff](const auto& pair) { return pair.second.finished < cutoff; });
+    auto ready = work.completed.extract(id);
+    if (ready.empty()) return {};
+    return std::move(ready.mapped().value);
+}
 
 template <class Value>
 Value runWorker(const std::wstring& id, Clock::duration lifetime,
     Value (*read)(const std::wstring&), const Value& pending, const Value& busy, const Value& failure)
 {
-    static const auto shared = std::make_shared<Work<Value>>();
-    auto work = shared;
+    auto work = sharedWork<Value>();
     std::unique_lock lock(work->mutex);
-    const auto cutoff = Clock::now() - lifetime;
-    std::erase_if(work->completed, [cutoff](const auto& pair) { return pair.second.finished < cutoff; });
-    auto ready = work->completed.extract(id);
-    if (!ready.empty()) return std::move(ready.mapped().value);
+    if (auto ready = takeCompletedLocked(*work, id, lifetime)) return std::move(*ready);
     if (!work->active.empty()) return work->active == id ? pending : busy;
     work->active = id;
     if (radioInUse.test_and_set()) {
         work->active.clear();
         return busy;
     }
+    radioStarted.store(Clock::now().time_since_epoch().count());
     try {
         std::thread([work, id, read, failure] {
             Value result = failure;
@@ -280,18 +296,20 @@ Value runWorker(const std::wstring& id, Clock::duration lifetime,
                     work->completed.emplace(id, typename Work<Value>::Completed{std::move(result), Clock::now()});
                 } catch (...) { /* Release the slot even on allocation failure. */ }
                 work->active.clear();
+                radioStarted.store(0);
                 radioInUse.clear();
             }
             work->finished.notify_one();
         }).detach();
     } catch (...) {
         work->active.clear();
+        radioStarted.store(0);
         radioInUse.clear();
         return failure;
     }
     work->finished.wait_for(lock, waitBudget, [&] { return work->active != id; });
-    ready = work->completed.extract(id);
-    return ready.empty() ? pending : std::move(ready.mapped().value);
+    if (auto ready = takeCompletedLocked(*work, id, lifetime)) return std::move(*ready);
+    return pending;
 }
 
 } // namespace
@@ -328,10 +346,24 @@ std::set<std::wstring> bleFirmwareContainers()
 Sample readBleBattery(const std::wstring& containerId)
 {
     if (!validId(containerId)) return bleFailure(BleBatteryDetail::invalid_container);
-    return runWorker(normalized(containerId), 8s, readBatteryNow,
+    return runWorker(normalized(containerId), batteryResultLifetime, readBatteryNow,
         bleFailure(BleBatteryDetail::read_pending, Status::busy),
         bleFailure(BleBatteryDetail::worker_busy, Status::busy),
         bleFailure(BleBatteryDetail::read_failed));
+}
+
+std::optional<Sample> takeBleBatteryResult(const std::wstring& containerId)
+{
+    if (!validId(containerId)) return {};
+    auto work = sharedWork<Sample>();
+    std::scoped_lock lock(work->mutex);
+    return takeCompletedLocked(*work, normalized(containerId), batteryResultLifetime);
+}
+
+bool bleBatteryWorkExpired(Clock::duration maximumAge)
+{
+    const auto started = radioStarted.load();
+    return started != 0 && Clock::now().time_since_epoch() - Clock::duration(started) >= maximumAge;
 }
 
 BleFirmwareResult readBleFirmware(const std::wstring& containerId)

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Collector } from './collector';
 import { randomUUID } from 'node:crypto';
@@ -13,6 +13,7 @@ import { day, delayFor, eligible, observeRecovery, recordHistory } from './monit
 import { accumulateHistoryDay, historyStart } from './history-plot';
 
 const executeFile = promisify(execFile);
+const maxCurrentReadingAge = 60_000;
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
 
 function validReading(reading: Reading | null | undefined): reading is Reading {
@@ -20,6 +21,64 @@ function validReading(reading: Reading | null | undefined): reading is Reading {
     reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
     ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
     ['hid', 'windows', 'ble', 'hid_voltage', 'bluetooth_vendor'].includes(reading.source);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 8.64e15;
+}
+
+function validHistoryPoint(value: unknown): value is HistoryPoint {
+  if (!isRecord(value) || !validTimestamp(value.time)) return false;
+  if (value.invalidThrough !== undefined &&
+      (!validTimestamp(value.invalidThrough) || value.invalidThrough < value.time)) return false;
+  return value.reading === null || validReading(value.reading as Reading | undefined);
+}
+
+function validHistoryDay(value: unknown): value is HistoryDay {
+  return isRecord(value) && validTimestamp(value.day) &&
+    typeof value.count === 'number' && Number.isSafeInteger(value.count) && value.count > 0 &&
+    (value.lastCharge === undefined || validTimestamp(value.lastCharge)) &&
+    validHistoryPoint(value.lowest) && value.lowest.reading !== null;
+}
+
+// Partial history damage is not a reason to discard settings or other devices.
+// Keep valid samples and summaries; never iterate a value just because a file
+// asserted the expected TypeScript type.
+function loadHistory(rawPoints: unknown, rawDays: unknown) {
+  const points: Record<string, HistoryPoint[]> = Object.create(null);
+  const days: Record<string, HistoryDay[]> = Object.create(null);
+  let repaired = !isRecord(rawPoints) || (rawDays !== undefined && !isRecord(rawDays));
+  if (isRecord(rawPoints)) {
+    for (const [id, value] of Object.entries(rawPoints)) {
+      if (!Array.isArray(value)) { repaired = true; continue; }
+      const valid = value.filter(validHistoryPoint);
+      if (valid.length !== value.length) repaired = true;
+      if (valid.length) points[id] = valid;
+    }
+  }
+  if (isRecord(rawDays)) {
+    for (const [id, value] of Object.entries(rawDays)) {
+      if (!Array.isArray(value)) { repaired = true; continue; }
+      const valid = value.filter(validHistoryDay);
+      if (valid.length !== value.length) repaired = true;
+      if (valid.length) days[id] = valid;
+    }
+  }
+  if (rawDays === undefined || repaired) {
+    for (const [id, history] of Object.entries(points)) {
+      const recovered: HistoryDay[] = [];
+      for (const point of history) accumulateHistoryDay(recovered, point);
+      const retained = days[id] ?? [];
+      const known = new Set(retained.map(bucket => bucket.day));
+      const missing = recovered.filter(bucket => !known.has(bucket.day));
+      if (missing.length) days[id] = [...retained, ...missing].sort((a, b) => a.day - b.day);
+    }
+  }
+  return { points, days, repaired };
 }
 
 // A local reading is only a last-known value. Never restore a live status from disk.
@@ -42,7 +101,7 @@ type StateFile = {
 };
 type Observation = {
   id: string; name: string; connection: string; aliases: string[]; art: Device['art']; automatic?: boolean;
-  sample: Sample | null; sampleSequence?: number | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
+  sample: Sample | null; pending?: boolean; sampleSequence?: number | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
 };
 export type Scene = { mode: 'desktop' | 'fullscreen' | 'quiet'; allowed: boolean | null; shellAccepts?: boolean; point: { x: number; y: number } | null };
 type Row = { device: Device; due: number; failures: number };
@@ -59,6 +118,7 @@ export class Monitor {
   private timer?: NodeJS.Timeout;
   private polling?: Promise<void>;
   private pollGeneration = 0;
+  private nativePending = false;
   private pollSequence = 0;
   private thresholdEdits = new Map<string, number>();
   private thresholdAlertRevisions = new Map<string, number>();
@@ -75,12 +135,24 @@ export class Monitor {
     this.file = join(directory, 'monitor.json');
     let initial: StateFile = { version: 1, settings: { ...defaults }, deviceSettings: {}, alerts: {}, watched: [], devices: [], history: {} };
     let loadError: string | undefined;
+    let rewriteHistory = false;
     if (existsSync(this.file)) {
       try {
-        const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StateFile;
-        if (saved.version !== 1 || !Array.isArray(saved.devices) || !Array.isArray(saved.watched) ||
-            !saved.settings || !saved.deviceSettings || !saved.alerts || !saved.history) throw new Error('Invalid state');
-        initial = saved;
+        const saved: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
+        if (!isRecord(saved) || saved.version !== 1 || !Array.isArray(saved.devices) || !Array.isArray(saved.watched) ||
+            !isRecord(saved.settings) || !isRecord(saved.deviceSettings) || !isRecord(saved.alerts)) throw new Error('Invalid state');
+        const history = loadHistory(saved.history, saved.historyDays);
+        initial = { ...(saved as unknown as StateFile), history: history.points, historyDays: history.days };
+        rewriteHistory = saved.historyDays === undefined || history.repaired;
+        if (history.repaired) {
+          try {
+            copyFileSync(this.file, join(directory, 'monitor-repair-' + Date.now() + '-' + randomUUID() + '.json'), constants.COPYFILE_EXCL);
+            loadError = '部分电量历史无法读取，已备份原文件并保留可用记录。';
+          } catch {
+            rewriteHistory = false;
+            loadError = '部分电量历史无法读取或备份，暂用可用记录。';
+          }
+        }
       } catch {
         const backup = join(directory, 'monitor-corrupt-' + Date.now() + '.json');
         try {
@@ -102,12 +174,6 @@ export class Monitor {
     initial.alerts = Object.assign(Object.create(null), initial.alerts);
     initial.history = Object.assign(Object.create(null), initial.history);
     this.historyDays = Object.assign(Object.create(null), initial.historyDays);
-    if (!initial.historyDays) {
-      for (const [id, points] of Object.entries(initial.history)) {
-        const days = this.historyDays[id] = [];
-        for (const point of points) accumulateHistoryDay(days, point);
-      }
-    }
     initial.historyDays = this.historyDays;
     this.data = initial;
     for (const cached of initial.devices) {
@@ -129,6 +195,8 @@ export class Monitor {
       this.publish();
       this.schedule(5000, true);
     });
+    // Once committed, a repaired or migrated file does not repeat startup recovery.
+    if (rewriteHistory && !this.persist()) this.dirty = true;
   }
 
   start() { void this.poll(true); }
@@ -407,6 +475,23 @@ export class Monitor {
   async scene() { return this.collector.request<Scene>('scene'); }
   async tone() { return (await this.collector.request<{ played: boolean }>('tone')).played; }
 
+  refresh(): Promise<void> {
+    if (this.closed || this.suspended) return Promise.resolve();
+    if (this.polling || this.nativePending) {
+      this.invalidateDiagnosticSession();
+      // Interrupt the old IPC, and replace its generation in this same turn.
+      // The next request waits for old process exit before touching a device.
+      void this.collector.restart();
+    }
+    return this.poll(true);
+  }
+
+  private invalidateDiagnosticSession() {
+    this.nativePending = false;
+    this.diagnosticEpoch++;
+    this.diagnosticDevices.clear();
+  }
+
   poll(force = false): Promise<void> {
     if (this.closed || this.suspended) return Promise.resolve();
     if (force) {
@@ -457,10 +542,29 @@ export class Monitor {
     const now = Date.now();
     const due = Object.fromEntries([...this.rows].map(([id, row]) => [id, now >= row.due]));
     try {
-      const results = await this.collector.request<Observation[]>('poll', {
+      const reply = await this.collector.request<Observation[] | { rows: Observation[]; workPending: boolean } |
+        { restartRequired: true }>('poll', {
         due, force, generation, sequence, watched: this.data.watched, voltage: this.state.settings.voltage,
       });
       if (this.closed || this.suspended || generation !== this.pollGeneration) return;
+      if (!Array.isArray(reply) && 'restartRequired' in reply && reply.restartRequired) {
+        this.log('采集请求超过 5 分钟，正在重新启动采集程序。');
+        this.invalidateDiagnosticSession();
+        const deadline = Date.now() - maxCurrentReadingAge;
+        for (const row of this.rows.values()) {
+          if (row.device.status === 'current' && row.device.lastRead !== null && row.device.lastRead < deadline) {
+            this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, Date.now());
+          }
+        }
+        this.publish();
+        await this.collector.restart();
+        if (generation === this.pollGeneration) ++this.pollGeneration;
+        return;
+      }
+      const results = Array.isArray(reply) ? reply : 'rows' in reply ? reply.rows : undefined;
+      if (!Array.isArray(results)) throw new Error('采集程序返回了无效的设备列表');
+      this.nativePending = !Array.isArray(reply) && 'workPending' in reply
+        ? reply.workPending === true : results.some(observation => observation.pending === true);
       const becameReady = this.state.collector !== 'ready';
       this.readyOnce = true;
       this.state.collector = 'ready';
@@ -523,6 +627,11 @@ export class Monitor {
       if (editedAt !== undefined && regularPoll !== undefined && regularPoll > editedAt &&
           sample.status === 'current' && sample.reading) this.thresholdEdits.delete(id);
       this.setSample(row, sample, now);
+      changed = true;
+    }
+    if (!sample && row.device.status === 'current' && row.device.lastRead !== null &&
+        now - row.device.lastRead > maxCurrentReadingAge) {
+      this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, now);
       changed = true;
     }
     if (voltage && this.state.settings.voltage) {

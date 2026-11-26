@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include "hid_batches.hpp"
 #include "diagnostic_scope.hpp"
 #include "razer_pro_receiver.hpp"
 #include "peripheral_protocol.hpp"
@@ -25,6 +26,7 @@
 #include <memory>
 #include <tuple>
 #include <cstdint>
+#include <utility>
 #include <stdexcept>
 #include <set>
 #include <cwctype>
@@ -402,7 +404,25 @@ public:
         if (action == "compatibility") return compatibility();
         if (action == "diagnostic_devices") return diagnosticDevices();
         if (action == "diagnostic_firmware") return diagnosticFirmware(wide(request.at("id").get<std::string>()));
-        if (action == "poll") return poll(request);
+        if (action == "poll") {
+            const auto now = std::chrono::steady_clock::now();
+            const bool vendorExpired = vendorTask_ && now - vendorTask_->started >= 5min &&
+                vendorTask_->result.wait_for(0ms) != std::future_status::ready;
+            if (request.contains("generation") &&
+                (hasExpiredHidWork(now) || vendorExpired || bleBatteryWorkExpired(5min))) {
+                return {{"restartRequired", true}};
+            }
+            auto rows = poll(request);
+            if (!request.contains("generation")) return rows;
+            const bool hidPending = std::ranges::any_of(hidLanes_, [](const auto& entry) {
+                const auto& task = entry.second.task;
+                return task.valid() && task.wait_for(0ms) != std::future_status::ready;
+            });
+            const bool vendorPending = vendorTask_ &&
+                vendorTask_->result.wait_for(0ms) != std::future_status::ready;
+            return {{"rows", std::move(rows)}, {"workPending", hidPending || vendorPending ||
+                bleBatteryWorkExpired(std::chrono::steady_clock::duration::zero())}};
+        }
         throw std::runtime_error("Unknown action");
     }
 
@@ -427,6 +447,7 @@ private:
         std::future<VendorAttempt> result;
         std::int64_t generation;
         std::optional<std::int64_t> regularSequence;
+        Time started;
         bool stillConnected{true};
     };
     std::optional<VendorTask> vendorTask_;
@@ -565,6 +586,7 @@ private:
     std::vector<Device> endpoints_;
     std::chrono::steady_clock::time_point scanDue_{};
     std::map<std::wstring, std::pair<std::chrono::steady_clock::time_point, Transport>> voltageTimes_;
+    std::set<std::wstring> deferredBasTargets_;
 
     json discover()
     {
@@ -611,7 +633,10 @@ private:
     };
     struct HidLane {
         std::shared_ptr<HidMonitor> reader = std::make_shared<HidMonitor>();
-        std::future<HidResult> task;
+        std::future<std::vector<HidResult>> task;
+        std::map<std::wstring, HidResult> completed;
+        std::map<std::wstring, json> readyRows;
+        Time started{};
         std::vector<std::wstring> resources;
         std::vector<std::wstring> signature;
         std::int64_t generation{-1};
@@ -619,6 +644,22 @@ private:
     };
     std::map<std::wstring, HidLane> hidLanes_;
     std::wstring lastDispatch_;
+
+    bool hasExpiredHidWork(Time now) const
+    {
+        return std::ranges::any_of(hidLanes_, [&](const auto& entry) {
+            const auto& lane = entry.second;
+            return lane.task.valid() && now - lane.started >= 5min &&
+                lane.task.wait_for(0ms) != std::future_status::ready;
+        });
+    }
+
+    struct HidRead {
+        std::vector<Device> devices;
+        std::vector<bool> linksDown;
+        std::size_t preferred{};
+        std::optional<std::pair<Time, Transport>> lastVoltage;
+    };
 
     static HidResult readHidGroup(HidMonitor& monitor, const std::vector<Device>& group,
         const std::vector<bool>& disconnected, std::size_t preferred, bool voltageEnabled,
@@ -656,11 +697,9 @@ private:
         const auto sequence = request.value("sequence", std::int64_t{0});
         const bool async = generation >= 0;
         std::set<std::wstring> busy;
-        std::size_t active = 0;
-        for (const auto& [key, lane] : hidLanes_) {
+        for (const auto& [_, lane] : hidLanes_) {
             if (!lane.task.valid()) continue;
             // Finished lanes are also reserved until their result is consumed.
-            ++active;
             busy.insert(lane.resources.begin(), lane.resources.end());
         }
         if (request.value("force", false) || scanTime >= scanDue_) {
@@ -679,16 +718,17 @@ private:
         const bool voltageEnabled = request.value("voltage", false);
         std::erase_if(voltageTimes_, [&](const auto& item) { return !voltageEnabled || !groups.contains(item.first); });
         const auto& due = request.at("due");
+        const auto deferredBas = std::exchange(deferredBasTargets_, {});
         const auto shouldRead = [&](const std::string& key) {
-            return request.value("force", false) || !due.contains(key) || due.at(key) == true;
+            return request.value("force", false) || deferredBas.contains(wide(key)) || !due.contains(key) || due.at(key) == true;
         };
         const bool force = request.value("force", false);
         const auto& basCandidates = refreshBleCandidates(force);
         const auto& windows = defaultWindowsDevices(force);
         const auto containerOwners = nativeContainerOwners(endpoints);
         unsigned basBudget = 2;
-        // A null result means a standard BLE read is due but deferred by the
-        // shared budget, not that all sources have failed.
+        // A null result is pending work, not failure. Suppress failure backoff
+        // and recheck on the next poll, even if a manual read started early.
         const auto standardBattery = [&](const std::wstring& container, const std::wstring& deviceKey, bool vendorReady = false) -> std::optional<Sample> {
             const auto started = std::chrono::steady_clock::now();
             const auto measured = readWindowsDevice(container);
@@ -699,104 +739,115 @@ private:
             const bool useBas = !hasBatteryReading(measured) && basCandidates.contains(container) &&
                 (detail == WindowsBatteryDetail::missingProperty || detail == WindowsBatteryDetail::invalidPercent);
             if (!useBas) return measured;
-            if (basBudget == 0) return vendorReady ? std::optional<Sample>(measured) : std::nullopt;
-            --basBudget;
+
+            const auto defer = [&]() -> std::optional<Sample> {
+                deferredBasTargets_.insert(deviceKey);
+                return std::nullopt;
+            };
             const auto attempt = std::chrono::steady_clock::now();
-            const auto ble = readBleBattery(container);
-            auto report = sample(ble);
+            auto ble = takeBleBatteryResult(container);
+            if (!ble) {
+                // Never start another GATT operation just to pick up a vendor
+                // reply that was already earned after a previous terminal BAS result.
+                if (vendorReady) return measured;
+                if (basBudget == 0) return defer();
+                --basBudget;
+                ble = readBleBattery(container);
+            }
+            auto report = sample(*ble);
             report.erase("reportId");
-            if (ble.report) report["errorCode"] = ble.report;
-            record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(ble.detail)));
-            return batteryFallback(measured, ble);
+            if (ble->report) report["errorCode"] = ble->report;
+            record(diagnostic, report, attempt, target, "ble-bas", "ble_" + std::string(bleBatteryReason(ble->detail)));
+            if (bleBatteryReadDeferred(*ble)) return defer();
+            return batteryFallback(measured, *ble);
         };
         json rows = json::array();
         constexpr std::size_t workerLimit = 4;
-        // Finished work for devices no longer present is dropped, not restamped
-        // as current. Keep nonblocking futures until the worker actually exits.
-        std::erase_if(hidLanes_, [&](const auto& entry) {
-            return !groups.contains(entry.first) &&
-                (!entry.second.task.valid() || entry.second.task.wait_for(0ms) == std::future_status::ready);
-        });
-        std::vector<std::wstring> order;
-        for (const auto& [key, group] : groups) order.push_back(key);
-        std::rotate(order.begin(), std::ranges::upper_bound(order, lastDispatch_), order.end());
-        for (const auto& key : order) {
-            const auto& group = groups.at(key);
-            const auto id = utf8(key);
-            const auto usb = std::ranges::find_if(group, [](const auto* item) {
-                return item->transport == Transport::dualsense_usb || item->transport == Transport::logitech_usb;
-            });
-            const auto preferred = usb == group.end() ? std::size_t{0} : static_cast<std::size_t>(usb - group.begin());
-            auto* source = group[preferred];
-            json aliases = json::array();
-            std::vector<bool> linksDown;
-            std::vector<std::wstring> resources, signature;
+        std::map<std::wstring, std::set<std::wstring>> logicalResources;
+        std::map<std::wstring, std::vector<std::wstring>> logicalSignatures;
+        for (const auto& [key, group] : groups) {
+            auto& resources = logicalResources[key];
+            auto& signature = logicalSignatures[key];
+            signature.push_back(key);
             for (const auto* item : group) {
-                if (!item->endpointKey.empty() && item->endpointKey != key) aliases.push_back(utf8(item->endpointKey));
-                resources.push_back(item->parentEndpoint.empty()
-                    ? (item->endpointKey.empty() ? item->key : item->endpointKey) : item->parentEndpoint);
-                linksDown.push_back(disconnected(*item));
-                signature.push_back(resources.back() + L":" + std::to_wstring(static_cast<int>(item->transport))
-                    + (linksDown.back() ? L":down" : L":up"));
+                const auto& resource = item->parentEndpoint.empty()
+                    ? (item->endpointKey.empty() ? item->key : item->endpointKey) : item->parentEndpoint;
+                resources.insert(resource);
+                signature.push_back(resource);
+                signature.push_back(std::to_wstring(static_cast<int>(item->transport)));
+                signature.push_back(std::to_wstring(item->vid));
+                signature.push_back(std::to_wstring(item->pid));
+                signature.push_back(std::to_wstring(item->slot));
+                signature.push_back(std::to_wstring(item->unit));
+                signature.push_back(disconnected(*item) ? L"down" : L"up");
                 for (const auto& collection : item->collections) {
+                    // Path also catches multiple logical aliases sharing the
+                    // exact same pipe, even if their parent labels differ.
+                    resources.insert(collection.path);
                     signature.push_back(collection.path + L":" + std::to_wstring(collection.inputLength) + L":" +
                         std::to_wstring(collection.outputLength) + L":" + std::to_wstring(collection.featureLength));
                 }
             }
+        }
+        const auto batches = groupHidResources(logicalResources);
+        // A disappeared lane still holds its physical reservation until IO
+        // finishes. Retire ready lanes before calculating worker availability.
+        std::erase_if(hidLanes_, [&](const auto& entry) {
+            return !batches.contains(entry.first) &&
+                (!entry.second.task.valid() || entry.second.task.wait_for(0ms) == std::future_status::ready);
+        });
+        busy.clear();
+        std::size_t active = 0;
+        for (const auto& [_, lane] : hidLanes_) {
+            if (!lane.task.valid()) continue;
+            ++active;
+            busy.insert(lane.resources.begin(), lane.resources.end());
+        }
+        const auto preferredOf = [](const std::vector<const Device*>& group) {
+            const auto usb = std::ranges::find_if(group, [](const auto* item) {
+                return item->transport == Transport::dualsense_usb || item->transport == Transport::logitech_usb;
+            });
+            return usb == group.end() ? std::size_t{0} : static_cast<std::size_t>(usb - group.begin());
+        };
+        const auto makeRead = [&](const std::wstring& key) {
+            const auto& group = groups.at(key);
+            HidRead read;
+            read.preferred = preferredOf(group);
+            if (const auto found = voltageTimes_.find(key); found != voltageTimes_.end()) read.lastVoltage = found->second;
+            for (const auto* endpoint : group) {
+                read.devices.push_back(*endpoint);
+                read.linksDown.push_back(disconnected(*endpoint));
+            }
+            return read;
+        };
+        const auto readBatch = [voltageEnabled](HidMonitor& reader, const std::vector<HidRead>& work) {
+            std::vector<HidResult> result;
+            result.reserve(work.size());
+            for (const auto& read : work) {
+                try {
+                    result.push_back(readHidGroup(reader, read.devices, read.linksDown, read.preferred,
+                        voltageEnabled, read.lastVoltage));
+                } catch (...) {
+                    result.push_back(HidResult{read.preferred, Sample{Status::unavailable}, {}, {}});
+                }
+            }
+            return result;
+        };
+        const auto makeRow = [&](const std::wstring& key, const HidResult* completed,
+            std::optional<std::int64_t> regularSequence) -> std::optional<json> {
+            const auto& group = groups.at(key);
+            const auto id = utf8(key);
+            auto* source = group[preferredOf(group)];
+            json aliases = json::array();
+            for (const auto* item : group) {
+                if (!item->endpointKey.empty() && item->endpointKey != key) aliases.push_back(utf8(item->endpointKey));
+            }
             json value = nullptr;
             json voltage = nullptr;
-            json sampleSequence = force ? json(nullptr) : json(sequence);
-            std::optional<HidResult> completed;
-            std::optional<std::pair<Time, Transport>> last;
-            if (const auto found = voltageTimes_.find(key); found != voltageTimes_.end()) last = found->second;
-            if (async) {
-                auto& lane = hidLanes_[key];
-                if (lane.task.valid() && lane.task.wait_for(0ms) == std::future_status::ready) {
-                    auto result = lane.task.get();
-                    --active;
-                    for (const auto& resource : lane.resources) busy.erase(resource);
-                    if (lane.generation == generation && lane.signature == signature) {
-                        completed = std::move(result);
-                        sampleSequence = lane.regularSequence ? json(*lane.regularSequence) : json(nullptr);
-                    } else if (lane.signature != signature) {
-                        // A replacement connection cannot inherit device I/O state.
-                        lane.reader = std::make_shared<HidMonitor>();
-                        lane.generation = -1;
-                    }
-                }
-                if (!completed && !lane.task.valid() && active < workerLimit &&
-                    (linksDown[preferred] || shouldRead(id) || lane.generation != generation) &&
-                    std::ranges::none_of(resources, [&](const auto& resource) { return busy.contains(resource); })) {
-                    std::vector<Device> devices;
-                    for (const auto* endpoint : group) devices.push_back(*endpoint);
-                    lane.task = std::async(std::launch::async, [reader = lane.reader, devices = std::move(devices),
-                        linksDown, preferred, voltageEnabled, last] {
-                        const auto apartment = RoInitialize(RO_INIT_MULTITHREADED);
-                        struct ApartmentGuard { HRESULT value; ~ApartmentGuard() { if (SUCCEEDED(value)) RoUninitialize(); } } guard{apartment};
-                        try { return readHidGroup(*reader, devices, linksDown, preferred, voltageEnabled, last); }
-                        catch (...) { return HidResult{preferred, Sample{Status::unavailable}, {}, {}}; }
-                    });
-                    lane.generation = generation;
-                    lane.regularSequence = force ? std::nullopt : std::optional<std::int64_t>{sequence};
-                    lane.signature = std::move(signature);
-                    lane.resources = std::move(resources);
-                    busy.insert(lane.resources.begin(), lane.resources.end());
-                    ++active;
-                    lastDispatch_ = key;
-                }
-            } else if (linksDown[preferred] || shouldRead(id)) {
-                // Retain one-shot behavior for the standalone collector protocol.
-                std::vector<Device> devices;
-                for (const auto* endpoint : group) devices.push_back(*endpoint);
-                completed = readHidGroup(monitor_, devices, linksDown, preferred, voltageEnabled, last);
-            }
+            json sampleSequence = regularSequence ? json(*regularSequence) : json(nullptr);
             if (completed) {
                 auto measured = completed->measured;
                 source = group[completed->source];
-                for (const auto& [index, reading, started] : completed->attempts) {
-                    record(*group[index], sample(reading), started, reportTarget(targets_, key));
-                    if (async) monitor_.rememberVerifiedMouse(*group[index], reading);
-                }
                 bool deferred = false;
                 if (!hasBatteryReading(measured)) {
                     std::set<std::wstring> tried;
@@ -812,7 +863,12 @@ private:
                         if (hasBatteryReading(measured)) break;
                     }
                 }
-                if (!deferred || hasBatteryReading(measured)) value = sample(batteryFallback(measured, {Status::offline}));
+                if (deferred && !hasBatteryReading(measured)) return std::nullopt;
+                for (const auto& [index, reading, started] : completed->attempts) {
+                    record(*group[index], sample(reading), started, reportTarget(targets_, key));
+                    if (async) monitor_.rememberVerifiedMouse(*group[index], reading);
+                }
+                value = sample(batteryFallback(measured, {Status::offline}));
                 if (voltageEnabled && completed->voltage) {
                     const auto& probe = *completed->voltage;
                     const char* status[] = {"ok", "waiting", "missing_hid_reading", "unsupported", "io_error",
@@ -826,7 +882,101 @@ private:
                 {"connection", utf8(transportName(source->transport))}, {"aliases", aliases},
                 {"sample", value}, {"art", art(*source)}, {"automatic", true}, {"voltage", voltage}};
             if (async) row["sampleSequence"] = std::move(sampleSequence);
-            rows.push_back(std::move(row));
+            return row;
+        };
+
+        std::vector<std::wstring> order;
+        for (const auto& [key, _] : batches) order.push_back(key);
+        std::rotate(order.begin(), std::ranges::upper_bound(order, lastDispatch_), order.end());
+        for (const auto& batchKey : order) {
+            const auto& memberKeys = batches.at(batchKey);
+            bool dueForRead = false;
+            std::set<std::wstring> resources;
+            std::vector<std::wstring> signature;
+            for (const auto& key : memberKeys) {
+                const auto& group = groups.at(key);
+                dueForRead = dueForRead || disconnected(*group[preferredOf(group)]) || shouldRead(utf8(key));
+                const auto& resourceSet = logicalResources.at(key);
+                resources.insert(resourceSet.begin(), resourceSet.end());
+                const auto& memberSignature = logicalSignatures.at(key);
+                signature.push_back(std::to_wstring(memberSignature.size()));
+                signature.insert(signature.end(), memberSignature.begin(), memberSignature.end());
+            }
+            const auto publishPending = [&] {
+                for (const auto& key : memberKeys) {
+                    auto row = *makeRow(key, nullptr, std::nullopt);
+                    if (async) row["pending"] = true;
+                    rows.push_back(std::move(row));
+                }
+            };
+            if (!async) {
+                if (dueForRead) {
+                    std::vector<HidRead> work;
+                    for (const auto& key : memberKeys) work.push_back(makeRead(key));
+                    const auto finished = readBatch(monitor_, work);
+                    for (std::size_t i = 0; i < memberKeys.size(); ++i) {
+                        auto row = makeRow(memberKeys[i], &finished[i], std::nullopt);
+                        rows.push_back(row ? std::move(*row) : *makeRow(memberKeys[i], nullptr, std::nullopt));
+                    }
+                } else publishPending();
+                continue;
+            }
+
+            auto& lane = hidLanes_[batchKey];
+            if (lane.task.valid() && lane.task.wait_for(0ms) == std::future_status::ready) {
+                auto finished = lane.task.get();
+                --active;
+                for (const auto& resource : lane.resources) busy.erase(resource);
+                if (lane.generation == generation && lane.signature == signature) {
+                    for (std::size_t i = 0; i < memberKeys.size(); ++i)
+                        lane.completed.emplace(memberKeys[i], std::move(finished[i]));
+                }
+            }
+            if (!lane.task.valid()) {
+                if (lane.signature != signature) {
+                    // Do not retain transport state when membership/connection
+                    // changes, including devices returning from another port.
+                    lane.reader = std::make_shared<HidMonitor>();
+                    lane.generation = -1;
+                }
+                if (lane.generation != generation || lane.signature != signature) {
+                    lane.completed.clear();
+                    lane.readyRows.clear();
+                }
+                if (!lane.completed.empty() || !lane.readyRows.empty()) {
+                    for (auto it = lane.completed.begin(); it != lane.completed.end();) {
+                        auto row = makeRow(it->first, &it->second, lane.regularSequence);
+                        if (!row) { ++it; continue; } // A deferred BAS read is not failed HID IO.
+                        lane.readyRows.emplace(it->first, std::move(*row));
+                        it = lane.completed.erase(it);
+                    }
+                    if (lane.readyRows.size() == memberKeys.size()) {
+                        for (const auto& key : memberKeys) rows.push_back(std::move(lane.readyRows.at(key)));
+                        lane.readyRows.clear();
+                    } else publishPending();
+                    continue;
+                }
+                if (active < workerLimit && (dueForRead || lane.generation != generation) &&
+                    std::ranges::none_of(resources, [&](const auto& resource) { return busy.contains(resource); })) {
+                    std::vector<HidRead> work;
+                    for (const auto& key : memberKeys) work.push_back(makeRead(key));
+                    lane.started = std::chrono::steady_clock::now();
+                    lane.task = std::async(std::launch::async, [reader = lane.reader, work = std::move(work), readBatch] {
+                        const auto apartment = RoInitialize(RO_INIT_MULTITHREADED);
+                        struct ApartmentGuard { HRESULT value; ~ApartmentGuard() { if (SUCCEEDED(value)) RoUninitialize(); } } guard{apartment};
+                        return readBatch(*reader, work);
+                    });
+                    lane.generation = generation;
+                    lane.regularSequence = force ? std::nullopt : std::optional<std::int64_t>{sequence};
+                    lane.signature = std::move(signature);
+                    lane.resources.assign(resources.begin(), resources.end());
+                    busy.insert(lane.resources.begin(), lane.resources.end());
+                    ++active;
+                    lastDispatch_ = batchKey;
+                }
+            }
+            if (lane.task.valid() || dueForRead || lane.generation != generation) publishPending();
+            else for (const auto& key : memberKeys) rows.push_back(*makeRow(key, nullptr, std::nullopt));
         }
 
         const auto claimed = claimedContainers(endpoints);
@@ -845,7 +995,7 @@ private:
             if (vendorTask_->result.wait_for(0ms) == std::future_status::ready) {
                 auto attempt = vendorTask_->result.get();
                 if (vendorTask_->stillConnected && vendorTask_->generation == generation) {
-                    if (now - attempt.started > 8s) attempt.result = {rfcomm_battery::Status::timeout};
+                    if (now - attempt.finished > 8s) attempt.result = {rfcomm_battery::Status::timeout};
                     vendorCompleted.emplace(vendorTask_->container, std::move(attempt));
                     vendorSequence = vendorTask_->regularSequence;
                 } else if (vendorTask_->generation != generation) {
@@ -877,6 +1027,7 @@ private:
         for (const auto& [container, device] : targets) {
             const auto& id = device.id;
             json value = nullptr;
+            bool pending = false;
             json sampleSequence = force ? json(nullptr) : json(sequence);
             const auto vendorModel = vendorDevices.find(container);
             const bool sony = vendorModel != vendorDevices.end() &&
@@ -890,6 +1041,7 @@ private:
                 const auto target = reportTarget(targets_, container);
                 const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
                 const auto measured = standardBattery(container, container, completed);
+                pending = !measured;
                 if (measured) value = sample(batteryFallback(*measured, {Status::offline}));
                 const auto windowsDetail = measured
                     ? static_cast<WindowsBatteryDetail>(measured->detail) : WindowsBatteryDetail::none;
@@ -940,7 +1092,7 @@ private:
                                 auto result = rfcomm_battery::Result{rfcomm_battery::Status::system_error};
                                 try { result = rfcomm_battery::read(container, model); } catch (...) {}
                                 return VendorAttempt{std::move(result), started, std::chrono::steady_clock::now()};
-                            }), generation, force ? std::nullopt : std::optional<std::int64_t>{sequence}});
+                            }), generation, force ? std::nullopt : std::optional<std::int64_t>{sequence}, now});
                         }
                         // In flight or deliberately rate-limited is not a
                         // failed read. The completed attempt publishes either
@@ -949,9 +1101,11 @@ private:
                     }
                 }
             }
+            pending = pending || (value.is_null() && vendorTask_ && vendorTask_->container == container);
             json row = {{"id", id}, {"name", device.name}, {"connection", device.connection},
                 {"aliases", json::array()}, {"sample", value}, {"automatic", device.automatic},
                 {"art", "unknown"}, {"voltage", nullptr}};
+            if (pending) row["pending"] = true;
             if (async) row["sampleSequence"] = std::move(sampleSequence);
             rows.push_back(std::move(row));
         }

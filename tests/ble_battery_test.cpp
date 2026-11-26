@@ -21,4 +21,12 @@ int main()
     assert(!pm::parseBleBatteryLevel({}).reading);
     const std::array<std::uint8_t, 2> oversized{80, 0};
     assert(!pm::parseBleBatteryLevel(oversized).reading);
+
+    using pm::BleBatteryDetail;
+    using pm::Status;
+    assert(pm::bleBatteryReadDeferred(pm::bleFailure(BleBatteryDetail::read_pending, Status::busy)));
+    assert(pm::bleBatteryReadDeferred(pm::bleFailure(BleBatteryDetail::worker_busy, Status::busy)));
+    assert(!pm::bleBatteryReadDeferred(pm::bleFailure(BleBatteryDetail::read_failed, Status::busy)));
+    assert(!pm::bleBatteryReadDeferred(pm::bleFailure(BleBatteryDetail::read_failed, Status::timeout)));
+    assert(!pm::bleBatteryReadDeferred(pm::parseBleBatteryLevel(std::array<std::uint8_t, 1>{0})));
 }
