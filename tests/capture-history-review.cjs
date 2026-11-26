@@ -95,7 +95,7 @@ async function run() {
     await expect(hero.getByText('10–20%')).toBeVisible();
     await page.waitForTimeout(550);
     await page.getByRole('button', { name: '立即刷新', exact: true }).click();
-    await expect(hero.getByText('正在更新 · 保留上次读数')).toBeVisible();
+    await expect(hero.getByText('正在更新')).toBeVisible();
     await expect(hero.getByText('10–20%')).toBeVisible();
     await screenshot(page, '02-总览-刷新保留读数');
     await expect(hero.getByText('20–30%', { exact: true })).toBeVisible();

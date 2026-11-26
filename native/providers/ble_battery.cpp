@@ -1,9 +1,11 @@
 #include "ble_battery.hpp"
+#include "device_search.hpp"
 
 #include <windows.h>
 #include <setupapi.h>
 #include <devpkey.h>
 #include <combaseapi.h>
+#include <cfgmgr32.h>
 #include <bluetoothleapis.h>
 
 #include <algorithm>
@@ -17,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -65,8 +68,42 @@ std::wstring normalized(std::wstring value)
 using InterfacePaths = std::map<std::wstring, std::set<std::wstring>>;
 struct Enumeration {
     InterfacePaths paths;
+    std::map<std::wstring, unsigned> unresolvedPaths;
     unsigned error{};
 };
+
+// A service can lack its own ContainerId. Recover only through its immediate
+// physical LE parent. Never walk to the local adapter or use display names.
+std::optional<std::wstring> serviceContainer(HDEVINFO list, SP_DEVINFO_DATA& instance)
+{
+    if (!instance.DevInst) return {};
+    GUID guid{};
+    DEVPROPTYPE type{};
+    DWORD actual{};
+    if (!SetupDiGetDevicePropertyW(list, &instance, &containerIdKey, &type,
+            reinterpret_cast<PBYTE>(&guid), sizeof(guid), &actual, 0) ||
+        type != DEVPROP_TYPE_GUID || actual != sizeof(guid) || IsEqualGUID(guid, GUID{})) {
+        DEVINST parent{};
+        std::array<wchar_t, MAX_DEVICE_ID_LEN> id{};
+        if (CM_Get_Parent(&parent, instance.DevInst, 0) != CR_SUCCESS ||
+            CM_Get_Device_IDW(parent, id.data(), static_cast<ULONG>(id.size()), 0) != CR_SUCCESS)
+            return {};
+        const auto parentId = normalized(id.data());
+        constexpr std::wstring_view prefix = L"bthle\\dev_";
+        if (!parentId.starts_with(prefix) || parentId.size() <= prefix.size() + 12 ||
+            parentId[prefix.size() + 12] != L'\\' ||
+            parentId.substr(prefix.size(), 12).find_first_not_of(L"0123456789abcdef") != std::wstring::npos)
+            return {};
+        ULONG size = sizeof(guid);
+        if (CM_Get_DevNode_PropertyW(parent, &containerIdKey, &type, reinterpret_cast<PBYTE>(&guid), &size, 0) != CR_SUCCESS ||
+            type != DEVPROP_TYPE_GUID || size != sizeof(guid) || IsEqualGUID(guid, GUID{}))
+            return {};
+    }
+    std::array<wchar_t, 39> id{};
+    if (StringFromGUID2(guid, id.data(), static_cast<int>(id.size())) != static_cast<int>(id.size()))
+        return {};
+    return normalized(id.data());
+}
 
 Enumeration enumerate(const GUID& service)
 {
@@ -86,9 +123,17 @@ Enumeration enumerate(const GUID& service)
             return candidates;
         }
         DWORD required = 0;
-        const auto queried = SetupDiGetDeviceInterfaceDetailW(list.handle, &interfaceData, nullptr, 0, &required, nullptr);
+        SP_DEVINFO_DATA instance{};
+        instance.cbSize = sizeof(instance);
+        // SetupAPI can fill DeviceInfoData on the size query. If a bad path
+        // is known to belong to one exact container, block only that target.
+        const auto queried = SetupDiGetDeviceInterfaceDetailW(list.handle, &interfaceData, nullptr, 0, &required, &instance);
         if (queried || GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
             required < sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W) || required > 64 * 1024) {
+            if (const auto id = serviceContainer(list.handle, instance)) {
+                candidates.unresolvedPaths.emplace(*id, ERROR_INVALID_DATA);
+                continue;
+            }
             candidates.error = ERROR_INVALID_DATA;
             return candidates;
         }
@@ -96,29 +141,24 @@ Enumeration enumerate(const GUID& service)
         std::vector<std::max_align_t> storage((required + sizeof(std::max_align_t) - 1) / sizeof(std::max_align_t));
         auto* detail = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA_W>(storage.data());
         detail->cbSize = sizeof(*detail);
-        SP_DEVINFO_DATA instance{};
-        instance.cbSize = sizeof(instance);
-        if (!SetupDiGetDeviceInterfaceDetailW(list.handle, &interfaceData, detail, required, nullptr, &instance)) {
-            candidates.error = GetLastError();
+        SP_DEVINFO_DATA filled{};
+        filled.cbSize = sizeof(filled);
+        if (!SetupDiGetDeviceInterfaceDetailW(list.handle, &interfaceData, detail, required, nullptr, &filled)) {
+            const auto error = GetLastError();
+            if (const auto id = serviceContainer(list.handle, instance)) {
+                candidates.unresolvedPaths.emplace(*id, error);
+                continue;
+            }
+            candidates.error = error;
             return candidates;
         }
-        GUID guid{};
-        DEVPROPTYPE type{};
-        DWORD actual = 0;
-        if (!SetupDiGetDevicePropertyW(list.handle, &instance, &containerIdKey, &type,
-            reinterpret_cast<PBYTE>(&guid), sizeof(guid), &actual, 0) ||
-            type != DEVPROP_TYPE_GUID || actual != sizeof(guid)) {
-            // Do not attribute an identification failure to any known device.
+        const auto id = serviceContainer(list.handle, filled);
+        if (!id) {
+            // An unresolved owner might be a second service of any target.
             candidates.error = ERROR_NOT_FOUND;
-            continue;
+            return candidates;
         }
-        if (IsEqualGUID(guid, GUID{})) continue;
-        std::array<wchar_t, 39> id{};
-        if (StringFromGUID2(guid, id.data(), static_cast<int>(id.size())) != static_cast<int>(id.size())) {
-            candidates.error = ERROR_INVALID_DATA;
-            continue;
-        }
-        candidates.paths[normalized(id.data())].insert(detail->DevicePath);
+        candidates.paths[*id].insert(detail->DevicePath);
     }
     // Fail closed if Windows ever enumerates more than our bounded limit.
     candidates.error = ERROR_BUFFER_OVERFLOW;
@@ -151,6 +191,8 @@ Sample readCharacteristic(const std::wstring& id, const GUID& serviceUuid,
         return bleFailure(BleBatteryDetail::interface_enumeration_failed,
             osStatus(interfaces.error), interfaces.error);
     }
+    if (const auto unresolved = interfaces.unresolvedPaths.find(id); unresolved != interfaces.unresolvedPaths.end())
+        return bleFailure(BleBatteryDetail::interface_enumeration_failed, osStatus(unresolved->second), unresolved->second);
     const auto found = interfaces.paths.find(id);
     if (found == interfaces.paths.end()) return bleFailure(BleBatteryDetail::no_service);
     if (found->second.size() != 1) return bleFailure(BleBatteryDetail::multiple_services);
@@ -198,8 +240,14 @@ Sample readCharacteristic(const std::wstring& id, const GUID& serviceUuid,
     return {Status::current};
 }
 
-Sample readBatteryNow(const std::wstring& id)
+Sample readBatteryNow(const std::wstring& id, bool requireIndependentConnection)
 {
+    if (requireIndependentConnection) {
+        const auto evidence = inspectWindowsBleConnection(id);
+        if (evidence != WindowsConnectionEvidence::connected)
+            return bleFailure(BleBatteryDetail::connection_unverified,
+                evidence == WindowsConnectionEvidence::disconnected ? Status::offline : Status::unavailable);
+    }
     std::array<std::uint8_t, 1> bytes{};
     size_t count{};
     const auto outcome = readCharacteristic(id, batteryService, 0x2a19, bytes, count);
@@ -240,31 +288,49 @@ struct Work {
     std::mutex mutex;
     std::condition_variable finished;
     std::wstring active;
+    bool discardActive{};
     std::map<std::wstring, Completed> completed;
 };
 
 // Both operations share one process-wide native radio slot. Blocking Windows
 // IO never runs on the collector thread or outlives the worker-owned state.
 std::atomic_flag radioInUse = ATOMIC_FLAG_INIT;
+std::atomic<Clock::duration::rep> radioStarted{};
 constexpr auto waitBudget = 100ms;
+constexpr auto batteryResultLifetime = 8s;
 
 template <class Value>
-Value runWorker(const std::wstring& id, Clock::duration lifetime,
-    Value (*read)(const std::wstring&), const Value& pending, const Value& busy, const Value& failure)
+std::shared_ptr<Work<Value>> sharedWork()
 {
     static const auto shared = std::make_shared<Work<Value>>();
-    auto work = shared;
-    std::unique_lock lock(work->mutex);
+    return shared;
+}
+
+template <class Value>
+std::optional<Value> takeCompletedLocked(Work<Value>& work, const std::wstring& id, Clock::duration lifetime)
+{
     const auto cutoff = Clock::now() - lifetime;
-    std::erase_if(work->completed, [cutoff](const auto& pair) { return pair.second.finished < cutoff; });
-    auto ready = work->completed.extract(id);
-    if (!ready.empty()) return std::move(ready.mapped().value);
+    std::erase_if(work.completed, [cutoff](const auto& pair) { return pair.second.finished < cutoff; });
+    auto ready = work.completed.extract(id);
+    if (ready.empty()) return {};
+    return std::move(ready.mapped().value);
+}
+
+template <class Value, class Read, class Accept>
+Value runWorker(const std::wstring& id, Clock::duration lifetime,
+    Read read, const Value& pending, const Value& busy, const Value& failure, Accept accept, Clock::duration wait)
+{
+    auto work = sharedWork<Value>();
+    std::unique_lock lock(work->mutex);
+    if (auto ready = takeCompletedLocked(*work, id, lifetime); ready && accept(*ready)) return std::move(*ready);
     if (!work->active.empty()) return work->active == id ? pending : busy;
     work->active = id;
+    work->discardActive = false;
     if (radioInUse.test_and_set()) {
         work->active.clear();
         return busy;
     }
+    radioStarted.store(Clock::now().time_since_epoch().count());
     try {
         std::thread([work, id, read, failure] {
             Value result = failure;
@@ -272,26 +338,32 @@ Value runWorker(const std::wstring& id, Clock::duration lifetime,
             {
                 std::scoped_lock lock(work->mutex);
                 try {
-                    if (work->completed.size() >= 16) {
-                        const auto oldest = std::ranges::min_element(work->completed, {},
-                            [](const auto& pair) { return pair.second.finished; });
-                        work->completed.erase(oldest);
+                    if (!work->discardActive) {
+                        if (work->completed.size() >= 16) {
+                            const auto oldest = std::ranges::min_element(work->completed, {},
+                                [](const auto& pair) { return pair.second.finished; });
+                            work->completed.erase(oldest);
+                        }
+                        work->completed.emplace(id, typename Work<Value>::Completed{std::move(result), Clock::now()});
                     }
-                    work->completed.emplace(id, typename Work<Value>::Completed{std::move(result), Clock::now()});
                 } catch (...) { /* Release the slot even on allocation failure. */ }
                 work->active.clear();
+                radioStarted.store(0);
                 radioInUse.clear();
             }
             work->finished.notify_one();
         }).detach();
     } catch (...) {
         work->active.clear();
+        radioStarted.store(0);
         radioInUse.clear();
         return failure;
     }
-    work->finished.wait_for(lock, waitBudget, [&] { return work->active != id; });
-    ready = work->completed.extract(id);
-    return ready.empty() ? pending : std::move(ready.mapped().value);
+    if (wait != Clock::duration::zero()) {
+        work->finished.wait_for(lock, wait, [&] { return work->active != id; });
+        if (auto ready = takeCompletedLocked(*work, id, lifetime); ready && accept(*ready)) return std::move(*ready);
+    }
+    return pending;
 }
 
 } // namespace
@@ -299,9 +371,9 @@ Value runWorker(const std::wstring& id, Clock::duration lifetime,
 BleServiceInventory inspectBleBatteryServices()
 {
     const auto interfaces = enumerate(batteryService);
-    BleServiceInventory result{interfaces.error == 0, interfaces.error, {}};
-    if (result.complete) for (const auto& [container, paths] : interfaces.paths)
-        result.counts.emplace(container, static_cast<unsigned>(paths.size()));
+    BleServiceInventory result{interfaces.error == 0, interfaces.error, {}, interfaces.unresolvedPaths};
+    for (const auto& [container, paths] : interfaces.paths)
+        if (result.canAssess(container)) result.counts.emplace(container, static_cast<unsigned>(paths.size()));
     return result;
 }
 
@@ -320,18 +392,45 @@ std::set<std::wstring> bleFirmwareContainers()
     const auto interfaces = enumerate(deviceInformationService);
     if (interfaces.error != 0) return result;
     for (const auto& [id, paths] : interfaces.paths) {
-        if (paths.size() == 1) result.insert(id);
+        if (paths.size() == 1 && !interfaces.unresolvedPaths.contains(id)) result.insert(id);
     }
     return result;
 }
 
-Sample readBleBattery(const std::wstring& containerId)
+BleBatteryResult readBleBattery(const std::wstring& containerId, const BleBatteryOrigin& origin)
 {
-    if (!validId(containerId)) return bleFailure(BleBatteryDetail::invalid_container);
-    return runWorker(normalized(containerId), 8s, readBatteryNow,
-        bleFailure(BleBatteryDetail::read_pending, Status::busy),
-        bleFailure(BleBatteryDetail::worker_busy, Status::busy),
-        bleFailure(BleBatteryDetail::read_failed));
+    if (!validId(containerId)) return {bleFailure(BleBatteryDetail::invalid_container), origin};
+    return runWorker(normalized(containerId), batteryResultLifetime,
+        [origin](const auto& id) { return BleBatteryResult{readBatteryNow(id, origin.requireIndependentConnection), origin}; },
+        BleBatteryResult{bleFailure(BleBatteryDetail::read_pending, Status::busy), origin},
+        BleBatteryResult{bleFailure(BleBatteryDetail::worker_busy, Status::busy), origin},
+        BleBatteryResult{bleFailure(BleBatteryDetail::read_failed), origin},
+        [&](const auto& completed) { return matchesBleBatteryOrigin(completed.origin, origin); },
+        origin.generation >= 0 ? Clock::duration::zero() : waitBudget);
+}
+
+std::optional<BleBatteryResult> takeBleBatteryResult(const std::wstring& containerId, const BleBatteryOrigin& origin)
+{
+    if (!validId(containerId)) return {};
+    auto work = sharedWork<BleBatteryResult>();
+    std::scoped_lock lock(work->mutex);
+    auto result = takeCompletedLocked(*work, normalized(containerId), batteryResultLifetime);
+    return result && matchesBleBatteryOrigin(result->origin, origin) ? std::move(result) : std::nullopt;
+}
+
+void discardBleBatteryResult(const std::wstring& containerId)
+{
+    auto work = sharedWork<BleBatteryResult>();
+    const auto id = normalized(containerId);
+    std::scoped_lock lock(work->mutex);
+    work->completed.erase(id);
+    if (work->active == id) work->discardActive = true;
+}
+
+bool bleBatteryWorkExpired(Clock::duration maximumAge)
+{
+    const auto started = radioStarted.load();
+    return started != 0 && Clock::now().time_since_epoch() - Clock::duration(started) >= maximumAge;
 }
 
 BleFirmwareResult readBleFirmware(const std::wstring& containerId)
@@ -340,7 +439,7 @@ BleFirmwareResult readBleFirmware(const std::wstring& containerId)
     return runWorker(normalized(containerId), 24s, readFirmwareNow,
         BleFirmwareResult{BleFirmwareStatus::pending, {}, static_cast<unsigned>(BleBatteryDetail::read_pending)},
         BleFirmwareResult{BleFirmwareStatus::busy, {}, static_cast<unsigned>(BleBatteryDetail::worker_busy)},
-        firmwareFailure(bleFailure(BleBatteryDetail::read_failed)));
+        firmwareFailure(bleFailure(BleBatteryDetail::read_failed)), [](const auto&) { return true; }, waitBudget);
 }
 
 } // namespace pm

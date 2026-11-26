@@ -186,13 +186,13 @@ async function main() {
       await refresh.click();
       await expect(loadState('refreshing')).toBeVisible();
       await expect(refresh).toBeDisabled();
-      await expect(read(hero, '正在更新 · 保留上次读数')).toBeVisible();
+      await expect(read(hero, '正在更新')).toBeVisible();
       await expect(read(hero, '10–20%')).toBeVisible();
       await expect(button(rail, 'DualSense')).toHaveAttribute('aria-pressed', 'true');
       await expect(meter).toHaveAttribute('aria-valuetext', '10–20%');
       await expect(hero.getByRole('progressbar')).toHaveCount(0);
       expect(await meterPaint(meter), 'refresh must not change the known battery fill or animate the meter').toEqual(readyMeter);
-      expect(await read(hero, '正在更新 · 保留上次读数').evaluate(node => getComputedStyle(node, '::before').animationName)).toContain('status-turn');
+      expect(await read(hero, '正在更新').evaluate(node => getComputedStyle(node, '::before').animationName)).toContain('status-turn');
       expect(await verifyStageAsset(stage, 'dualsense')).toBe(provenAssets.dualsense);
       const refreshBox = await hero.boundingBox();
       expect(Math.abs(readyBox.height - refreshBox.height)).toBeLessThan(2);
@@ -413,7 +413,7 @@ async function main() {
     await expect(hero.getByRole('heading', { name: '机械键盘' })).toBeVisible();
     await button(page, '立即刷新').click();
     await expect(loadState('refreshing')).toBeVisible();
-    expect(await read(hero, '正在更新 · 保留上次读数').evaluate(node => getComputedStyle(node, '::before').animationName)).toBe('none');
+    expect(await read(hero, '正在更新').evaluate(node => getComputedStyle(node, '::before').animationName)).toBe('none');
     await button(rail, 'Xbox 无线手柄').click();
     await expect(hero.getByRole('meter', { name: '电量' })).toHaveAttribute('aria-valuetext', '46%');
     await page.evaluate(() => window.studioReview.finishRefresh());

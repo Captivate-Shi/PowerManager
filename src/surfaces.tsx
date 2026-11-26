@@ -1,7 +1,7 @@
 import { Bell, BellOff, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, RefreshCw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { inventoryState, isConnected, isLiveDualSenseFull, muteDurationLabel, severity, type Device, type Snapshot, type Toast } from './model';
-import { api, Art, BatteryTrack, Brand, dateLabel, readingLabel } from './ui';
+import { api, Art, BatteryTrack, Brand, readingLabel, readingUpdated } from './ui';
 import s from './panel.module.css';
 import preferences from './preferences.module.css';
 import tray from './tray.module.css';
@@ -13,16 +13,17 @@ function TrayDevice({ device, state, kind }: { device: Device; state: Snapshot; 
   const connection = device.connection.replace(' 共享接收器', ' · 共享');
   const status = alert === 'critical' ? '电量告急' : alert === 'low' ? '低电量' : device.status !== 'current'
     ? device.reason || '读数待确认' : reading?.power === 'charging' ? '充电中' : reading?.power === 'full' ? '已充满' : reading ? '已连接' : '电量未知';
-  const description = kind === 'cached' ? '上次记录' + (device.lastRead ? ' · ' + dateLabel(device.lastRead) : '')
+  const description = kind === 'cached' ? '等待读数'
     : [connection, kind === 'offline' ? '未连接' : full ? '' : status].filter(Boolean).join(' · ');
+  const updated = device.lastRead === null ? '' : readingUpdated(device.lastRead);
   const display = full ? '已充满' : reading ? readingLabel(reading) : '未知';
   return <button type="button" className={tray.row} data-kind={kind} data-alert={alert}
     data-power={kind === 'live' && (reading?.power === 'charging' || reading?.power === 'full') ? reading.power : undefined}
-    data-tray-device={device.id} title={device.name}
-    aria-label={device.name + '，' + description + '，' + (full ? '' : kind === 'live' ? '电量' : '上次电量') + display}
+    data-tray-device={device.id} title={[device.name, updated].filter(Boolean).join(' · ')}
+    aria-label={[device.name, description, updated, (full ? '' : '电量') + display].filter(Boolean).join('，')}
     onClick={() => { void api.command({ type: 'open', id: device.id }); }}>
     <div className={tray.art}><Art device={device} /></div>
-    <span className={tray.copy}><b>{device.name}</b><small>{description}</small></span>
+    <span className={tray.copy}><b>{device.name}</b><small>{description}</small>{updated && <small>{updated}</small>}</span>
     <span className={tray.reading}><strong>{display}</strong>
       {reading && !full && <BatteryTrack className={tray.track} reading={reading} />}
     </span>
@@ -85,9 +86,9 @@ export function QuickPanel({ state }: { state: Snapshot }) {
     </header>
     <div className={tray.intro}><div><h1>设备电量</h1>
       <div className={tray.status} role="status">
-        {updating ? <><i aria-hidden="true" />正在刷新 · 保留上次电量</>
+        {updating ? <><i aria-hidden="true" />正在刷新</>
           : inventory === 'ready' ? <><span>{online.length} 台在线</span>{critical > 0 && <span data-alert="critical">· {critical} 台电量告急</span>}{low > 0 && <span data-alert="low">· {low} 台低电量</span>}</>
-          : inventory === 'cached' ? <><i aria-hidden="true" />显示上次记录 · {waitingFor}</>
+          : inventory === 'cached' ? <><i aria-hidden="true" />{waitingFor}</>
           : inventory === 'cold' ? <><i aria-hidden="true" />正在读取设备和电量…</>
           : <><i aria-hidden="true" />设备状态暂不可用 · {waitingFor}</>}
       </div></div>
@@ -96,7 +97,7 @@ export function QuickPanel({ state }: { state: Snapshot }) {
     </div>
     <div className={tray.content}>
       {(refreshError || state.error) && <p className={tray.message} role="alert">{refreshError || state.error}</p>}
-      {inventory === 'cached' && <div className={tray.list} aria-label="上次记录">
+      {inventory === 'cached' && <div className={tray.list} aria-label="待确认设备">
         {state.devices.map(device => <TrayDevice key={device.id} device={device} state={state} kind="cached" />)}
       </div>}
       {inventory === 'ready' && <>

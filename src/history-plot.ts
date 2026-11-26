@@ -5,6 +5,13 @@ export const historyRangeLabels = { day: '24 小时', week: '7 天', month: '30 
 export const historyPointLimit = 7200;
 // A rolling day crosses midnight; budget a third bucket around a short DST day.
 export const historyBucketLimit = { day: 3, week: 7, month: 30, year: 365 } satisfies Record<HistoryRange, number>;
+// A newly received sample may be newer than the renderer's periodic clock,
+// but corrupted cache dates (including far-future values) must not move the chart.
+export function historyAnchor(clock: number, readings: readonly (number | null)[], wallClock: number): number {
+  return readings.reduce<number>((anchor, time) =>
+    typeof time === 'number' && time > anchor && time <= wallClock ? time : anchor, clock);
+}
+
 export function historyStart(end: number, range: HistoryRange) {
   if (range === 'day') return end - historyWindow;
   const date = new Date(end);

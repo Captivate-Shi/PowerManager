@@ -31,6 +31,31 @@ try {
             throw 'The native inventory did not emit its diagnostic contract.'
         }
 
+        # Exercise the same async wire reply used by the desktop app, without
+        # requiring real peripherals on the disposable Windows runner.
+        $nativeStart = [Diagnostics.ProcessStartInfo]::new((Resolve-Path .native/collector.exe).Path)
+        $nativeStart.UseShellExecute = $false
+        $nativeStart.CreateNoWindow = $true
+        $nativeStart.RedirectStandardInput = $true
+        $nativeStart.RedirectStandardOutput = $true
+        $nativeStart.StandardOutputEncoding = [Text.Encoding]::UTF8
+        $native = [Diagnostics.Process]::Start($nativeStart)
+        try {
+            $native.StandardInput.WriteLine('{"id":1,"action":"poll","force":true,"generation":0,"sequence":1,"due":{},"watched":[],"voltage":false}')
+            $native.StandardInput.Flush()
+            $line = $native.StandardOutput.ReadLineAsync()
+            if (!$line.Wait(15000) -or !$line.Result) { throw 'Native async poll did not reply.' }
+            $poll = $line.Result | ConvertFrom-Json
+            if ($poll.id -ne 1 -or $poll.error -or $poll.result.rows -isnot [array] -or $poll.result.workPending -isnot [bool] -or
+                $poll.result.discoveryPending -isnot [bool]) {
+                throw 'Native async poll reply did not match the desktop wire contract.'
+            }
+        } finally {
+            $native.StandardInput.Close()
+            if (!$native.WaitForExit(8000)) { $native.Kill(); $native.WaitForExit() }
+            $native.Dispose()
+        }
+
         & $compiler @flags -I.tools tests/collector-fixture.cpp -o .native/collector-fixture.exe
         if ($LASTEXITCODE -ne 0) { throw 'Collector fixture compilation failed' }
         & $compiler @flags -Inative/providers tests/discovery_test.cpp native/providers/battery.cpp native/providers/device_search.cpp -o .native/discovery-test.exe -lsetupapi -lcfgmgr32 -lole32
@@ -41,7 +66,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test compilation failed' }
         & .native/peripheral-test.exe
         if ($LASTEXITCODE -ne 0) { throw 'Peripheral protocol test failed' }
-        foreach ($suite in @('battery_fallback', 'diagnostic_scope', 'ble_battery', 'gamepad_battery', 'gamepad_vendor_battery', 'default_peripheral', 'rapoo_battery', 'langtu_t98', 'supported_mouse_battery', 'sony_headphone_battery', 'oppo_headphone_battery', 'huawei_headphone_battery', 'gamesir_battery', 'cn_mouse_codecs', 'cn_tail_codecs', 'lightspeed12', 'headset_battery', 'verified_mouse', 'atk_v75x', 'rog_keyboard_battery')) {
+        foreach ($suite in @('battery_fallback', 'hid_batches', 'discovery_job', 'logitech_receiver_scan', 'diagnostic_scope', 'ble_battery', 'gamepad_battery', 'gamepad_vendor_battery', 'default_peripheral', 'rapoo_battery', 'langtu_t98', 'supported_mouse_battery', 'sony_headphone_battery', 'oppo_headphone_battery', 'huawei_headphone_battery', 'gamesir_battery', 'cn_mouse_codecs', 'cn_tail_codecs', 'lightspeed12', 'headset_battery', 'verified_mouse', 'atk_v75x', 'rog_keyboard_battery')) {
             & $compiler @flags -Inative/providers "tests/${suite}_test.cpp" -o ".native/${suite}_test.exe"
             if ($LASTEXITCODE -ne 0) { throw "$suite test compilation failed" }
             & ".native/${suite}_test.exe"

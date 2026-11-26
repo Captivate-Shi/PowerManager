@@ -51,6 +51,57 @@ test('报告只导出已知字段，保留失败原因、报告内标识、区�
   assert.match(json, /路径已遮盖/);
   assert.match(json, /蓝牙地址已遮盖/);
 });
+test('实机形状：罗技接收器与已确认子设备分别对号，雷蛇仅保留脱敏接口及原始读数', () => {
+  const firstProbe = { target: 'W1', receiverTarget: 'W2', provider: 'logitech-hidpp', stage: 'identity',
+    vid: 0x046d, pid: 0xc548, slot: 1, identityAvailable: true, nativeReceiver: denied,
+    outcome: { status: 'current', reportId: 0x11, reading: null } };
+  const failedProbe = { receiverTarget: 'W2', provider: 'logitech-hidpp', stage: 'identity',
+    vid: 0x046d, pid: 0xc548, slot: 2, identityAvailable: false, outcome: { status: 'timeout', reading: null } };
+  // Another identical receiver and an unattributed record must not match by PID or slot.
+  const secondProbe = { ...firstProbe, target: 'W3', receiverTarget: 'W4' };
+  const razer = { provider: 'razer-1532-00b8', stage: 'read', collectionOrdinal: 2, interfaceNumber: 1,
+    collectionNumber: 3, usagePage: 0xff00, usage: 2, inputBytes: 91, outputBytes: 0,
+    featureBytes: 91, selected: true, path: denied, outcome: { status: 'current',
+      reading: { low: 100, high: 100, raw: 254, source: 'hid', power: 'unknown' }, rawReport: [0x80] } };
+  const snapshot = {
+    logitechSlotAttempts: [firstProbe, failedProbe, secondProbe, { ...firstProbe, target: '', receiverTarget: '', slot: 6 }],
+    recentSamples: [{ target: 'W5', provider: 'windows', outcome: { status: 'current',
+      reading: { low: 100, high: 100, raw: 100, source: 'windows', power: 'unknown' } } }],
+    providerAttempts: [
+      { ...razer, target: 'W5', collectionOrdinal: 1, selected: false, outcome: { status: 'timeout' } },
+      { ...razer, target: 'W5' }, { ...razer, target: 'W6' },
+      { ...razer, receiverTarget: 'W5', target: 'W6' },
+    ],
+  };
+  const subject = (target: string) => ({ target, model: '外设', modelSource: 'device' as const });
+  const scope = (tag: string) => JSON.parse(compatibilityJson(metadata, snapshot, new Date(), subject(tag)));
+  const child = scope('W1');
+  const receiver = scope('W2');
+  assert.deepEqual(child.logitechSlotAttempts.map((probe: { slot: number }) => probe.slot), [1]);
+  assert.deepEqual(receiver.logitechSlotAttempts.map((probe: { slot: number }) => probe.slot), [1, 2]);
+  assert.equal(receiver.logitechSlotAttempts[1].outcome.status, 'timeout');
+  assert.equal(scope('W3').logitechSlotAttempts.length, 1);
+  assert.equal(scope('W6').logitechSlotAttempts.length, 0);
+  const report = scope('W5');
+  assert.equal(report.providerAttempts.length, 2);
+  const [failed, accepted] = report.providerAttempts;
+  assert.equal(failed.outcome.status, 'timeout');
+  assert.equal(failed.selected, false);
+  assert.equal(accepted.selected, true);
+  assert.equal(accepted.interfaceNumber, 1);
+  assert.equal(accepted.collectionNumber, 3);
+  assert.equal(accepted.featureBytes, 91);
+  assert.equal(accepted.outcome.reading.source, 'hid');
+  assert.equal(accepted.outcome.reading.raw, 254);
+  assert.equal(report.recentSamples[0].outcome.reading.source, 'windows');
+  assert.equal(report.recentSamples[0].outcome.reading.raw, 100);
+  for (const item of [report, child, receiver]) {
+    assert.doesNotMatch(JSON.stringify(item), /receiverTarget|nativeReceiver|secret\.log|rawReport|W[1-6]/);
+  }
+  const unlinked = JSON.parse(compatibilityJson({ ...metadata, capture: 'inventory' }, snapshot, new Date(), subject('W2')));
+  assert.equal(unlinked.logitechSlotAttempts.length, 0);
+});
+
 test('报告保留上限，拒绝异常读数和冒充 provider 或 report ID 的设备身份', () => {
   const invented = { provider: 'not_a_provider', target: '00:11:22:33:44:55', attempt: [],
     outcome: { status: 'invented', reading: { ...ble, high: 101 } } };

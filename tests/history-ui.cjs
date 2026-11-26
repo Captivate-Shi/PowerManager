@@ -37,6 +37,10 @@ async function main() {
           entry.done = true;
           entry.resolve(success ? { ok: true, history: data } : { ok: false, error: 'fixture failure' });
         },
+        setLastRead: (id, value) => {
+          state.devices.find(device => device.id === id).lastRead = value;
+          listener(structuredClone(state));
+        },
         refresh: id => {
           state.devices.find(device => device.id === id).lastRead += 100;
           listener(structuredClone(state));
@@ -111,6 +115,12 @@ async function main() {
     await wait('Beta', 0);
     await expect(page.getByText('Alpha：保留上次记录')).toBeVisible();
     await expect(graph.locator('[data-event-series="0"] [data-event="charging"]')).toHaveCount(1);
+    // A malformed cached timestamp must not poison the range label or graph.
+    await page.evaluate(() => window.testHistory.setLastRead('Beta', Number.MAX_VALUE));
+    await wait('Beta');
+    await resolve('Beta');
+    await expect(page.getByLabel('实际查看时段')).toBeVisible();
+    await expect(graph.locator('[data-series="1"]')).toHaveCount(1);
     await page.setViewportSize({ width: 520, height: 540 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     expect(errors).toEqual([]);

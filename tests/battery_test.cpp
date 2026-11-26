@@ -201,6 +201,17 @@ int main()
     razer[8] = 0x80;
     razer[1] = 4;
     require(parseRazerReport(razer).status == Status::no_radio_reply, "Razer asleep or off");
+    for (const std::uint8_t raw : {253, 254, 255}) {
+        auto top = makeRazerQuery();
+        top[1] = 2;
+        top[10] = raw;
+        top[89] ^= raw;
+        const auto high = raw == 253 ? 99 : 100;
+        require(parseRazerReport(top).reading == Reading{high, high, Power::discharging, raw},
+                "Razer preserves actual high readings and rounds the top two raw values to 100");
+        top[1] = 4;
+        require(!parseRazerReport(top).reading, "Razer no-radio reply cannot publish its payload as battery");
+    }
 
     auto pair = makeRazerQuery(RazerQuery::pairedDevices);
     pair[1] = 2;

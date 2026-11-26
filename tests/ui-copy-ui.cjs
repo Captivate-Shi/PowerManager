@@ -132,7 +132,7 @@ const entry = pathToFileURL(resolve(process.env.POWER_RENDERER_BUILD || resolve(
     await expect(page.getByText('24 小时', { exact: true })).toBeVisible();
     await go('总览');
     await page.getByRole('region', { name: '主设备' }).getByRole('button', { name: '查看详情' }).click();
-    await expect(page.getByText('上次读数', { exact: true })).toBeVisible();
+    await expect(page.getByText('最近更新时间', { exact: true })).toBeVisible();
     expect(errors).toEqual([]);
     console.log('UI copy: headings, empty actions, hidden help, hover, keyboard focus, Escape, real time preserved.');
   } finally { await browser.close(); }

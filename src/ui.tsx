@@ -114,7 +114,7 @@ export function BatteryMeter({ device, state }: { device: Device; state: Snapsho
   const Icon = isCharging ? BatteryCharging : (color === 'red' || color === 'amber') ? BatteryLow : Battery;
   return <div className={s.battery} data-tone={color} data-range={!!device.reading && device.reading.low !== device.reading.high}>
     <div><Icon size={23} strokeWidth={2} /><strong>{readingLabel(device.reading)}</strong>{isCharging && <small>充电中</small>}</div>
-    <BatteryTrack className={s.track} reading={device.reading} label={device.status === 'current' ? '电量' : '上次电量'} />
+    <BatteryTrack className={s.track} reading={device.reading} label="电量" />
   </div>;
 }
 export function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
@@ -182,9 +182,13 @@ export function SettingRow({ title, hint, status, children }: { title: string; h
   return <div className={s.settingRow} data-setting-row=""><div data-setting-description=""><div className={s.settingLabel} data-setting-label=""><b>{title}</b>
     {hint && <HelpTip label={title} text={hint} />}</div>{status && <small>{status}</small>}</div><div data-setting-control="">{children}</div></div>;
 }
-export const dateLabel = (value: number | null) => value ? new Intl.DateTimeFormat('zh-CN', {
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-}).format(value) : '暂无记录';
+});
+export const dateLabel = (value: number | null) => value && Number.isFinite(value) && Math.abs(value) <= 8.64e15
+  ? dateFormatter.format(value) : '暂无记录';
+export const readingTimeLabel = '最近更新时间';
+export const readingUpdated = (value: number | null) => `${readingTimeLabel}：${dateLabel(value)}`;
 
 const loadCharts = () => import('./charts');
 const HistoryView = lazy(() => loadCharts().then(charts => ({ default: charts.Chart })));

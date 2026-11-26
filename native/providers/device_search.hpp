@@ -9,8 +9,31 @@ namespace pm {
 
 enum class WindowsBatteryDetail : unsigned {
     none = 0, disconnected, missingProperty, invalidPercent, apiUnavailable, notFound, queryFailed,
+    unknownConnection,
 };
 const char* windowsBatteryReason(const Sample& sample);
+
+enum class WindowsConnectionEvidence { unknown, disconnected, connected };
+
+// DEVPROP_BOOLEAN is one byte: TRUE is -1 (0xff), not arbitrary nonzero.
+constexpr WindowsConnectionEvidence windowsConnectionEvidence(std::optional<int> property)
+{
+    if (property == 0) return WindowsConnectionEvidence::disconnected;
+    if (property == 255) return WindowsConnectionEvidence::connected;
+    return WindowsConnectionEvidence::unknown;
+}
+
+constexpr bool permitsBleBatteryFallback(WindowsBatteryDetail detail)
+{
+    return detail == WindowsBatteryDetail::missingProperty || detail == WindowsBatteryDetail::invalidPercent ||
+           detail == WindowsBatteryDetail::unknownConnection || detail == WindowsBatteryDetail::apiUnavailable ||
+           detail == WindowsBatteryDetail::notFound || detail == WindowsBatteryDetail::queryFailed;
+}
+
+constexpr bool needsIndependentBleConnection(WindowsBatteryDetail detail)
+{
+    return detail != WindowsBatteryDetail::missingProperty && detail != WindowsBatteryDetail::invalidPercent;
+}
 
 struct FoundDevice {
     std::wstring id;
@@ -39,5 +62,8 @@ constexpr bool defaultPeripheralMonitoring(const FoundDevice& device, bool claim
 
 std::optional<std::vector<FoundDevice>> findWindowsDevices();
 Sample readWindowsDevice(const std::wstring& id);
+// A fresh Windows connection-only query of a unique, paired LE association
+// endpoint for this exact container. Presence or Classic links cannot qualify.
+WindowsConnectionEvidence inspectWindowsBleConnection(const std::wstring& id);
 
 } // namespace pm

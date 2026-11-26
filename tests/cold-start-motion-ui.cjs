@@ -100,7 +100,7 @@ const { performance } = require('node:perf_hooks');
         await expect(stage.getByRole('status')).toBeVisible();
         await page.evaluate(() => window.publish());
       } else if (mode === 'warm') {
-        if (options.tray) await expect(page.getByRole('status')).toContainText('显示上次记录');
+        if (options.tray) await expect(page.getByRole('status')).toContainText('正在确认连接');
         else await expect(page.getByText('工作鼠标', { exact: true }).first()).toBeVisible();
         await page.waitForTimeout(350);
         if (!options.tray) await page.evaluate(() => window.publish());

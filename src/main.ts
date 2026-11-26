@@ -78,10 +78,14 @@ async function quitForMaintenance(id: string) {
     maintenanceExit = true;
     app.quit();
   } catch (error) {
+    maintenanceExit = false;
     console.error(error);
   } finally {
     maintenancePending = false;
-    if (!maintenanceExit) stopped = false;
+    if (!maintenanceExit) {
+      stopped = false;
+      monitor?.resumeAfterMaintenance();
+    }
   }
 }
 
@@ -379,7 +383,7 @@ function refreshTrayMenu() {
     { label: '打开主界面', click: () => openMain() },
     { label: '托盘面板', click: showTray },
     { label: '测试右下角提醒', click: () => { void showPreview('low'); } },
-    { label: '立即刷新', click: () => { void monitor?.poll(true); } },
+    { label: '立即刷新', click: () => { void monitor?.refresh(); } },
     { label: snapshot.mutedUntil > Date.now() ? '恢复提醒' : '静音 ' + muteDurationLabel(snapshot.settings.muteMinutes), click: toggleMute },
     { label: '打开诊断目录', click: () => { void shell.openPath(dataDir); } },
     { type: 'separator' },
@@ -581,7 +585,7 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
   if ('id' in command && command.id !== undefined && !validId(command.id)) throw new Error('设备标识无效');
   const device = 'id' in command ? snapshot.devices.find(item => item.id === command.id) : undefined;
   switch (command.type) {
-    case 'refresh': await monitor?.poll(true); break;
+    case 'refresh': await monitor?.refresh(); break;
     case 'diagnosticDevices': return { ok: true, diagnosticDevices: monitor ? await monitor.listDiagnosticDevices() : [] };
     case 'diagnosticFirmware':
       if (typeof command.deviceKey !== 'string' || !/^[0-9a-f-]{36}$/.test(command.deviceKey))
@@ -672,10 +676,11 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       const level = severity(device, snapshot.settings, snapshot.deviceSettings[device.id]);
       if (!level) throw new Error('设备当前没有低电量提醒');
       const state = snapshot.alerts[device.id] ?? {};
-      if (command.type === 'ignore') snapshot.alerts[device.id] = { ...state, ignored: level, snoozeUntil: undefined };
-      else snapshot.alerts[device.id] = { ...state, snoozeUntil: Date.now() + snapshot.settings.snooze * 60000, ignored: undefined };
+      const next = command.type === 'ignore' ? { ...state, ignored: level, snoozeUntil: undefined }
+        : { ...state, snoozeUntil: Date.now() + snapshot.settings.snooze * 60000, ignored: undefined };
+      if (monitor) monitor.saveAlertAction(device.id, next);
+      else snapshot.alerts[device.id] = next;
       if (toast?.device.id === device.id && !toast.preview) closeToast();
-      monitor?.persist();
       broadcast();
       break;
     }

@@ -17,6 +17,8 @@ VersionInfoVersion={#AppVersion}
 VersionInfoProductTextVersion={#AppVersion}
 AppPublisher=Captivate-Shi
 DefaultDirName={code:DefaultDestination}
+; Let Inno's folder picker expose New Folder instead of appending PowerManager.
+AppendDefaultDirName=no
 UsePreviousAppDir=yes
 UsePreviousPrivileges=yes
 DisableDirPage=no
@@ -109,41 +111,14 @@ var
   PurgeData: Boolean;
   ExistingInstall: Boolean;
 
-function GetFileAttributes(Name: String): LongWord;
-  external 'GetFileAttributesW@kernel32.dll stdcall';
+#include "profile-cleanup.issinc"
 
 function GetDriveType(Path: String): LongWord;
   external 'GetDriveTypeW@kernel32.dll stdcall';
 
-function CleanPath(Path: String): String;
-begin
-  Result := RemoveBackslashUnlessRoot(ExpandFileName(Path));
-end;
-
 function RegisteredPath(Root: Integer; var Path: String): Boolean;
 begin
   Result := RegQueryStringValue(Root, UninstallKey, 'InstallLocation', Path) and (Trim(Path) <> '');
-end;
-
-function LinkedPath(Path: String): Boolean;
-var
-  Attr: LongWord;
-  Parent: String;
-begin
-  Result := False;
-  Path := CleanPath(Path);
-  while Path <> '' do
-  begin
-    Attr := GetFileAttributes(Path);
-    if (Attr <> InvalidAttributes) and ((Attr and ReparsePoint) <> 0) then
-    begin
-      Result := True;
-      Exit;
-    end;
-    Parent := ExtractFileDir(Path);
-    if CompareText(Parent, Path) = 0 then Exit;
-    Path := Parent;
-  end;
 end;
 
 function EmptyFolder(Path: String): Boolean;
@@ -163,28 +138,6 @@ begin
   try
     repeat
       if (Entry.Name <> '.') and (Entry.Name <> '..') then Exit;
-    until not FindNext(Entry);
-    Result := True;
-  finally
-    FindClose(Entry);
-  end;
-end;
-
-function SafeProfileTree(Path: String; Depth: Integer): Boolean;
-var
-  Entry: TFindRec;
-begin
-  Result := False;
-  if Depth > 64 then Exit;
-  if not FindFirst(AddBackslash(Path) + '*', Entry) then Exit;
-  try
-    repeat
-      if (Entry.Name <> '.') and (Entry.Name <> '..') then
-      begin
-        if (Entry.Attributes and ReparsePoint) <> 0 then Exit;
-        if ((Entry.Attributes and DirectoryAttribute) <> 0) and
-          not SafeProfileTree(AddBackslash(Path) + Entry.Name, Depth + 1) then Exit;
-      end;
     until not FindNext(Entry);
     Result := True;
   finally
@@ -497,11 +450,10 @@ begin
     ReleaseGate;
     { Do not remove the app directory recursively; Inno tracks package files. }
     RemoveDir(ExpandConstant('{app}'));
-    if PurgeData then
+    if not Shared then
     begin
       Profile := ExpandConstant('{localappdata}\PowerManager-H5');
-      if DirExists(Profile) and
-        (LinkedPath(Profile) or not SafeProfileTree(Profile, 0) or not DelTree(Profile, True, True, True)) then
+      if not ApplyProfileCleanup(Profile, PurgeData) then
         SuppressibleMsgBox(CustomMessage('PMPurgeFailed'), mbError, MB_OK, IDOK);
     end;
   end;

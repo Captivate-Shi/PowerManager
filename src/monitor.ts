@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Collector } from './collector';
 import { randomUUID } from 'node:crypto';
@@ -13,6 +13,8 @@ import { day, delayFor, eligible, observeRecovery, recordHistory } from './monit
 import { accumulateHistoryDay, historyStart } from './history-plot';
 
 const executeFile = promisify(execFile);
+const maxCurrentReadingAge = 60_000;
+const manualRefreshWait = 5000;
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
 
 function validReading(reading: Reading | null | undefined): reading is Reading {
@@ -20,6 +22,64 @@ function validReading(reading: Reading | null | undefined): reading is Reading {
     reading.low >= 0 && reading.high <= 100 && reading.low <= reading.high &&
     ['charging', 'discharging', 'full', 'unknown'].includes(reading.power) &&
     ['hid', 'windows', 'ble', 'hid_voltage', 'bluetooth_vendor'].includes(reading.source);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 8.64e15;
+}
+
+function validHistoryPoint(value: unknown): value is HistoryPoint {
+  if (!isRecord(value) || !validTimestamp(value.time)) return false;
+  if (value.invalidThrough !== undefined &&
+      (!validTimestamp(value.invalidThrough) || value.invalidThrough < value.time)) return false;
+  return value.reading === null || validReading(value.reading as Reading | undefined);
+}
+
+function validHistoryDay(value: unknown): value is HistoryDay {
+  return isRecord(value) && validTimestamp(value.day) &&
+    typeof value.count === 'number' && Number.isSafeInteger(value.count) && value.count > 0 &&
+    (value.lastCharge === undefined || validTimestamp(value.lastCharge)) &&
+    validHistoryPoint(value.lowest) && value.lowest.reading !== null;
+}
+
+// Partial history damage is not a reason to discard settings or other devices.
+// Keep valid samples and summaries; never iterate a value just because a file
+// asserted the expected TypeScript type.
+function loadHistory(rawPoints: unknown, rawDays: unknown) {
+  const points: Record<string, HistoryPoint[]> = Object.create(null);
+  const days: Record<string, HistoryDay[]> = Object.create(null);
+  let repaired = !isRecord(rawPoints) || (rawDays !== undefined && !isRecord(rawDays));
+  if (isRecord(rawPoints)) {
+    for (const [id, value] of Object.entries(rawPoints)) {
+      if (!Array.isArray(value)) { repaired = true; continue; }
+      const valid = value.filter(validHistoryPoint);
+      if (valid.length !== value.length) repaired = true;
+      if (valid.length) points[id] = valid;
+    }
+  }
+  if (isRecord(rawDays)) {
+    for (const [id, value] of Object.entries(rawDays)) {
+      if (!Array.isArray(value)) { repaired = true; continue; }
+      const valid = value.filter(validHistoryDay);
+      if (valid.length !== value.length) repaired = true;
+      if (valid.length) days[id] = valid;
+    }
+  }
+  if (rawDays === undefined || repaired) {
+    for (const [id, history] of Object.entries(points)) {
+      const recovered: HistoryDay[] = [];
+      for (const point of history) accumulateHistoryDay(recovered, point);
+      const retained = days[id] ?? [];
+      const known = new Set(retained.map(bucket => bucket.day));
+      const missing = recovered.filter(bucket => !known.has(bucket.day));
+      if (missing.length) days[id] = [...retained, ...missing].sort((a, b) => a.day - b.day);
+    }
+  }
+  return { points, days, repaired };
 }
 
 // A local reading is only a last-known value. Never restore a live status from disk.
@@ -30,19 +90,77 @@ function cachedDevice(value: unknown): Device | null {
       typeof connection !== 'string' || typeof watched !== 'boolean') return null;
   const safeArt = art && ['mouse', 'keyboard', 'dualsense', 'xbox', 'controller', 'headset', 'earbuds', 'stylus', 'unknown'].includes(art)
     ? art : classify(name);
-  const hasReading = validReading(reading) && typeof lastRead === 'number' && Number.isFinite(lastRead) && lastRead > 0;
+  const hasReading = validReading(reading) && validTimestamp(lastRead) && lastRead > 0 && lastRead <= Date.now();
   return { id, name, connection, art: safeArt, watched, status: 'stale', reason: '等待新读数',
     reading: hasReading ? reading : null, lastRead: hasReading ? lastRead : null };
 }
 
+type WatchedDevice = Pick<Found, 'id' | 'name' | 'connection'>;
+
+function validWatchedDevice(value: unknown): value is WatchedDevice {
+  return isRecord(value) && typeof value.id === 'string' && !!value.id.trim() &&
+    typeof value.name === 'string' && !!value.name.trim() &&
+    typeof value.connection === 'string' && !!value.connection.trim();
+}
+
+function lowerReading(a: Reading, b: Reading) {
+  return a.low < b.low || (a.low === b.low && a.high < b.high);
+}
+
+// Correct the contribution of a replaced point rather than counting it twice.
+function replaceHistoryDay(days: HistoryDay[], points: HistoryPoint[], old: HistoryPoint, point: HistoryPoint) {
+  if (!old.reading) { accumulateHistoryDay(days, point); return; }
+  const date = new Date(point.time);
+  date.setHours(0, 0, 0, 0);
+  const start = date.getTime();
+  let index = days.length - 1;
+  if (days[index]?.day !== start) index = days.findIndex(bucket => bucket.day === start);
+  if (index < 0) { accumulateHistoryDay(days, point); return; }
+  const bucket = days[index]!;
+  const replacedMin = bucket.lowest.time === old.time;
+  const lostMin = replacedMin && (!point.reading || lowerReading(bucket.lowest.reading, point.reading));
+  const lostCharge = bucket.lastCharge === old.time && point.reading?.power !== 'charging';
+  bucket.count -= Number(!point.reading);
+  if (bucket.count <= 0) { days.splice(index, 1); return; }
+
+  if (lostMin || lostCharge) {
+    date.setDate(date.getDate() + 1); // Local calendar day, including DST.
+    const end = date.getTime();
+    const replacement: HistoryDay[] = [];
+    if (!lostMin && bucket.lowest.time !== point.time) accumulateHistoryDay(replacement, bucket.lowest);
+    if (point.reading) accumulateHistoryDay(replacement, point);
+    // Read the pre-replacement array; the raw cap/rolling window may have
+    // dropped another point as part of the same write.
+    for (let i = points.length - 1; i >= 0; i--) {
+      const candidate = points[i]!;
+      if (candidate.time < start) break;
+      if (candidate.time < end && candidate.time !== point.time) accumulateHistoryDay(replacement, candidate);
+    }
+    if (lostMin && replacement[0]) bucket.lowest = replacement[0].lowest;
+    else if (lostMin) {
+      // A legacy aggregate can outlive all its raw points. With its sole
+      // known minimum removed, there is no defensible reading to display.
+      days.splice(index, 1);
+      return;
+    }
+    if (lostCharge) bucket.lastCharge = replacement[0]?.lastCharge;
+  }
+  if (point.reading) {
+    if ((replacedMin && !lostMin) || lowerReading(point.reading, bucket.lowest.reading)) {
+      bucket.lowest = { time: point.time, reading: point.reading };
+    }
+    if (point.reading.power === 'charging') bucket.lastCharge = Math.max(point.time, bucket.lastCharge ?? 0);
+  }
+}
+
 type StateFile = {
   version: 1; settings: Settings; deviceSettings: Record<string, DeviceSettings>; alerts: Record<string, AlertState>;
-  watched: Pick<Found, 'id' | 'name' | 'connection'>[]; devices: Device[]; history: Record<string, HistoryPoint[]>;
+  watched: WatchedDevice[]; devices: Device[]; history: Record<string, HistoryPoint[]>;
   historyDays?: Record<string, HistoryDay[]>;
 };
 type Observation = {
   id: string; name: string; connection: string; aliases: string[]; art: Device['art']; automatic?: boolean;
-  sample: Sample | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
+  sample: Sample | null; pending?: boolean; sampleSequence?: number | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
 };
 export type Scene = { mode: 'desktop' | 'fullscreen' | 'quiet'; allowed: boolean | null; shellAccepts?: boolean; point: { x: number; y: number } | null };
 type Row = { device: Device; due: number; failures: number };
@@ -58,15 +176,18 @@ export class Monitor {
   private found = new Map<string, Found>();
   private timer?: NodeJS.Timeout;
   private polling?: Promise<void>;
-  private forceNext = false;
+  private pollGeneration = 0;
+  private nativePending = false;
   private pollSequence = 0;
   private thresholdEdits = new Map<string, number>();
   private thresholdAlertRevisions = new Map<string, number>();
   private closed = false;
+  private maintenancePaused = false;
   private suspended = false;
   private readyOnce = false;
   private dirty = false;
   private lastSave = 0;
+  private backupRequired?: { prefix: string; savedMessage: string; blockedMessage: string };
   private totals = { polls: 0, failedPolls: 0, pollMs: 0, maxPollMs: 0, saves: 0, saveMs: 0, childExits: 0 };
 
   constructor(readonly directory: string, private executable: string, private changed: () => void, private evaluate: () => void) {
@@ -74,19 +195,39 @@ export class Monitor {
     this.file = join(directory, 'monitor.json');
     let initial: StateFile = { version: 1, settings: { ...defaults }, deviceSettings: {}, alerts: {}, watched: [], devices: [], history: {} };
     let loadError: string | undefined;
+    let rewriteState = false;
     if (existsSync(this.file)) {
       try {
-        const saved = JSON.parse(readFileSync(this.file, 'utf8')) as StateFile;
-        if (saved.version !== 1 || !Array.isArray(saved.devices) || !Array.isArray(saved.watched) ||
-            !saved.settings || !saved.deviceSettings || !saved.alerts || !saved.history) throw new Error('Invalid state');
-        initial = saved;
+        const saved: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
+        if (!isRecord(saved) || saved.version !== 1 || !Array.isArray(saved.devices) || !Array.isArray(saved.watched) ||
+            !isRecord(saved.settings) || !isRecord(saved.deviceSettings) || !isRecord(saved.alerts)) throw new Error('Invalid state');
+        const history = loadHistory(saved.history, saved.historyDays);
+        const watched = saved.watched.filter(validWatchedDevice);
+        const repairedWatched = watched.length !== saved.watched.length;
+        initial = { ...(saved as unknown as StateFile), watched, history: history.points, historyDays: history.days };
+        rewriteState = saved.historyDays === undefined || history.repaired || repairedWatched;
+        if (history.repaired || repairedWatched) {
+          const damaged = history.repaired && repairedWatched ? '部分电量历史和监测设备记录'
+            : history.repaired ? '部分电量历史' : '部分监测设备记录';
+          try {
+            copyFileSync(this.file, join(directory, 'monitor-repair-' + Date.now() + '-' + randomUUID() + '.json'), constants.COPYFILE_EXCL);
+            loadError = damaged + '无法读取，已备份原文件并保留可用记录。';
+          } catch {
+            rewriteState = false;
+            loadError = damaged + '无法读取或备份，暂用可用记录。';
+            this.backupRequired = { prefix: 'monitor-repair-', blockedMessage: loadError,
+              savedMessage: damaged + '无法读取，已备份原文件并保留可用记录。' };
+          }
+        }
       } catch {
-        const backup = join(directory, 'monitor-corrupt-' + Date.now() + '.json');
+        const backup = join(directory, 'monitor-corrupt-' + Date.now() + '-' + randomUUID() + '.json');
         try {
           renameSync(this.file, backup);
           loadError = '本地存档无法读取，已备份并恢复默认设置。';
         } catch {
           loadError = '本地存档无法读取或备份，暂用默认设置。';
+          this.backupRequired = { prefix: 'monitor-corrupt-', blockedMessage: loadError,
+            savedMessage: '本地存档无法读取，已备份并恢复默认设置。' };
         }
       }
     }
@@ -101,12 +242,6 @@ export class Monitor {
     initial.alerts = Object.assign(Object.create(null), initial.alerts);
     initial.history = Object.assign(Object.create(null), initial.history);
     this.historyDays = Object.assign(Object.create(null), initial.historyDays);
-    if (!initial.historyDays) {
-      for (const [id, points] of Object.entries(initial.history)) {
-        const days = this.historyDays[id] = [];
-        for (const point of points) accumulateHistoryDay(days, point);
-      }
-    }
     initial.historyDays = this.historyDays;
     this.data = initial;
     for (const cached of initial.devices) {
@@ -128,6 +263,8 @@ export class Monitor {
       this.publish();
       this.schedule(5000, true);
     });
+    // Once committed, a repaired or migrated file does not repeat startup recovery.
+    if (rewriteState && !this.persist()) this.dirty = true;
   }
 
   start() { void this.poll(true); }
@@ -137,21 +274,34 @@ export class Monitor {
     this.diagnosticDevices.clear();
     clearTimeout(this.timer);
     this.collector.close();
-    this.markStale();
+    // Shutdown is not a failed device reading. On load, cached devices are
+    // already restored as stale, without overwriting the last real sample.
     this.persist();
   }
   async closeForMaintenance() {
     if (!this.persist()) return '无法保存设置或电量历史。';
+    this.maintenancePaused = true;
     this.closed = true;
     this.compatibilityDraft.clear();
     this.diagnosticDevices.clear();
     clearTimeout(this.timer);
-    if (!await this.collector.closeGracefully()) {
-      this.collector.allowRestartAfterClose();
-      this.closed = false;
-      this.schedule(5000, true);
-      return '等待采集程序退出超时。';
-    }
+    if (!await this.collector.closeGracefully()) return '等待采集程序退出超时。';
+  }
+  resumeAfterMaintenance() {
+    if (!this.maintenancePaused) return;
+    this.maintenancePaused = false;
+    // EOF was already sent. A timed-out child cannot be reused; let it exit
+    // before reopening collection. The normal close handler schedules a retry.
+    const childStillRunning = !!this.collector.pid;
+    this.collector.allowRestartAfterClose();
+    if (childStillRunning) this.collector.close();
+    this.closed = false;
+    this.diagnosticEpoch++;
+    this.state.collector = 'retrying';
+    this.markStale();
+    this.publish();
+    if (childStillRunning) this.schedule(5000, true);
+    else this.start();
   }
   suspend(value: boolean) {
     this.suspended = value;
@@ -181,6 +331,20 @@ export class Monitor {
     const start = performance.now();
     try {
       const now = Date.now();
+      if (this.backupRequired) {
+        const backup = this.backupRequired;
+        // Keep the original until a separate copy exists. Record the attempt
+        // so a read-only profile does not trigger disk retries every poll.
+        this.lastSave = now;
+        try {
+          copyFileSync(this.file, join(this.directory, backup.prefix + now + '-' + randomUUID() + '.json'), constants.COPYFILE_EXCL);
+        } catch {
+          this.state.error = backup.blockedMessage;
+          return false;
+        }
+        this.backupRequired = undefined;
+        this.state.error = backup.savedMessage;
+      }
       const cutoff = now - day;
       const history = Object.assign(Object.create(null), this.data.history) as StateFile['history'];
       for (const [id, items] of Object.entries(history)) {
@@ -348,17 +512,39 @@ export class Monitor {
     }
     if (this.data.watched.length >= 128) throw new Error('监测设备已达到上限');
     const { name, connection } = input;
-    this.data.watched.push({ id, name, connection });
-    this.persist();
+    const previousWatched = this.data.watched;
+    this.data.watched = [...previousWatched, { id, name, connection }];
+    if (!this.persist()) {
+      this.data.watched = previousWatched;
+      throw new Error('无法保存设备列表，请重试');
+    }
     void this.poll(true);
   }
   remove(id: string) {
     if (!this.data.watched.some(item => item.id === id)) throw new Error('这个设备由系统自动监测');
-    this.data.watched = this.data.watched.filter(item => item.id !== id);
+    const previousWatched = this.data.watched;
+    const previousRows = this.rows;
+    const previousAlert = this.data.alerts[id];
+    this.data.watched = previousWatched.filter(item => item.id !== id);
+    this.rows = new Map(previousRows);
     this.rows.delete(id);
     delete this.data.alerts[id];
-    this.persist();
+    if (!this.persist()) {
+      this.data.watched = previousWatched;
+      this.rows = previousRows;
+      if (previousAlert) this.data.alerts[id] = previousAlert;
+      throw new Error('无法保存设备列表，请重试');
+    }
     this.publish();
+  }
+  saveAlertAction(id: string, next: AlertState) {
+    const previous = this.state.alerts[id];
+    this.state.alerts[id] = next;
+    if (!this.persist()) {
+      if (previous) this.state.alerts[id] = previous;
+      else delete this.state.alerts[id];
+      throw new Error('无法保存提醒设置，请重试');
+    }
   }
   async resourceSample() {
     // Skip native sampling when it would compete with device IO.
@@ -372,69 +558,147 @@ export class Monitor {
   async scene() { return this.collector.request<Scene>('scene'); }
   async tone() { return (await this.collector.request<{ played: boolean }>('tone')).played; }
 
+  async refresh(): Promise<void> {
+    if (this.closed || this.suspended) return Promise.resolve();
+    if (this.polling || this.nativePending) {
+      this.invalidateDiagnosticSession();
+      // Interrupt the old IPC, and replace its generation in this same turn.
+      // The next request waits for old process exit before touching a device.
+      if (this.collector.pid) this.state.collector = 'retrying';
+      void this.collector.restart();
+    }
+    const scan = this.poll(true);
+    const generation = this.pollGeneration;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const finished = await Promise.race([
+        scan.then(() => true),
+        new Promise<false>(resolve => { timer = setTimeout(() => resolve(false), manualRefreshWait); }),
+      ]);
+      if (!finished && generation === this.pollGeneration && !this.closed && !this.suspended) {
+        this.state.refreshing = false;
+        this.changed();
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private invalidateDiagnosticSession() {
+    this.nativePending = false;
+    this.diagnosticEpoch++;
+    this.diagnosticDevices.clear();
+  }
+
   poll(force = false): Promise<void> {
     if (this.closed || this.suspended) return Promise.resolve();
-    if (this.polling) {
-      this.forceNext ||= force;
-      return this.polling;
+    if (force) {
+      ++this.pollGeneration;
+      this.state.refreshing = true;
+      this.changed();
     }
+    if (this.polling) return this.polling;
     clearTimeout(this.timer);
-    this.state.refreshing = force;
-    if (force) this.changed();
-    const start = performance.now();
-    this.polling = this.collect(force).finally(() => {
-      const ms = performance.now() - start;
-      this.totals.polls++;
-      this.totals.pollMs += ms;
-      this.totals.maxPollMs = Math.max(this.totals.maxPollMs, ms);
+    this.polling = this.runPolls(force).finally(() => {
       this.polling = undefined;
-      this.state.refreshing = false;
+      if (this.state.refreshing) {
+        this.state.refreshing = false;
+        if (!this.closed && !this.suspended) this.changed();
+      }
       if (this.closed || this.suspended) return;
-      const runFull = this.forceNext;
-      this.forceNext = false;
-      if (force) this.changed();
-      this.schedule(this.state.collector === 'ready' ? (runFull ? 0 : 1500) : 5000, runFull || this.state.collector !== 'ready');
+      this.schedule(this.state.collector === 'ready' ? 1500 : 5000, false);
     });
     return this.polling;
   }
+
+  private async runPolls(force: boolean) {
+    // Replace the desired scan, not the native process. At most one IPC
+    // discovery is in flight, and only the latest manual generation is applied.
+    while (!this.closed && !this.suspended) {
+      const generation = this.pollGeneration;
+      const start = performance.now();
+      try {
+        await this.collect(force, generation);
+      } finally {
+        const ms = performance.now() - start;
+        this.totals.polls++;
+        this.totals.pollMs += ms;
+        this.totals.maxPollMs = Math.max(this.totals.maxPollMs, ms);
+      }
+      if (generation === this.pollGeneration) return;
+      force = true;
+    }
+  }
+
   private schedule(delay: number, full: boolean) {
     if (this.closed || this.suspended) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => { void this.poll(full); }, delay);
   }
-  private async collect(force: boolean) {
+  private async collect(force: boolean, generation: number) {
     const sequence = ++this.pollSequence;
     const now = Date.now();
     const due = Object.fromEntries([...this.rows].map(([id, row]) => [id, now >= row.due]));
     try {
-      const results = await this.collector.request<Observation[]>('poll', {
-        due, force, watched: this.data.watched, voltage: this.state.settings.voltage,
+      const reply = await this.collector.request<Observation[] | { rows: Observation[]; workPending: boolean; discoveryPending?: boolean } |
+        { restartRequired: true }>('poll', {
+        due, force, generation, sequence, watched: this.data.watched, voltage: this.state.settings.voltage,
       });
-      if (this.closed || this.suspended) return;
+      if (this.closed || this.suspended || generation !== this.pollGeneration) return;
+      if (!Array.isArray(reply) && 'restartRequired' in reply && reply.restartRequired) {
+        this.log('采集请求超过 5 分钟，正在重新启动采集程序。');
+        this.invalidateDiagnosticSession();
+        this.state.collector = 'retrying';
+        const deadline = Date.now() - maxCurrentReadingAge;
+        for (const row of this.rows.values()) {
+          if (row.device.status === 'current' && row.device.lastRead !== null && row.device.lastRead < deadline) {
+            this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, Date.now());
+          }
+        }
+        this.publish();
+        await this.collector.restart();
+        if (generation === this.pollGeneration) ++this.pollGeneration;
+        return;
+      }
+      const results = Array.isArray(reply) ? reply : 'rows' in reply ? reply.rows : undefined;
+      if (!Array.isArray(results)) throw new Error('采集程序返回了无效的设备列表');
+      const discoveryPending = !Array.isArray(reply) && 'discoveryPending' in reply && reply.discoveryPending === true;
+      this.nativePending = !Array.isArray(reply) && 'workPending' in reply
+        ? reply.workPending === true : results.some(observation => observation.pending === true);
       const becameReady = this.state.collector !== 'ready';
-      this.readyOnce = true;
-      this.state.collector = 'ready';
-      if (this.state.error === collectorStartupError) this.state.error = undefined;
-      let changed = becameReady;
+      const hasReadyInventory = !discoveryPending || results.length > 0 || this.state.collector === 'ready';
+      if (hasReadyInventory) {
+        this.readyOnce = true;
+        this.state.collector = 'ready';
+        if (this.state.error === collectorStartupError) this.state.error = undefined;
+      }
+      let changed = becameReady && hasReadyInventory;
       const sampledAt = Date.now();
       const seen = new Set<string>();
       const watched = new Set(this.data.watched.map(item => item.id));
       for (const observation of results) {
         if (!observation.automatic && observation.art === 'unknown' && !watched.has(observation.id)) continue;
         seen.add(observation.id);
-        changed = this.accept(observation, sampledAt, watched.has(observation.id) && !observation.automatic,
-          !force ? sequence : undefined) || changed;
+        // Async native results keep the sequence of the scan that started
+        // the read, so a pre-edit or manual sample cannot unlock alerts.
+        const regular = observation.sampleSequence !== undefined
+          ? observation.sampleSequence ?? undefined : !force ? sequence : undefined;
+        changed = this.accept(observation, sampledAt, watched.has(observation.id) && !observation.automatic, regular) || changed;
       }
       for (const [id, row] of this.rows) {
-        if (!seen.has(id) && row.device.status !== 'offline') {
-          this.setSample(row, { status: 'offline', reading: null, reason: '设备未连接' }, sampledAt);
-          changed = true;
+        if (seen.has(id)) continue;
+        if (discoveryPending) {
+          changed = this.expire(row, sampledAt) || changed;
+          continue;
         }
+        if (row.device.status === 'offline') continue;
+        this.setSample(row, { status: 'offline', reading: null, reason: '设备未连接' }, sampledAt);
+        changed = true;
       }
       if (this.dirty && (force || sampledAt - this.lastSave >= 60_000)) this.persist();
       if (changed) this.publish();
     } catch (error) {
-      if (this.closed || this.suspended) return;
+      if (this.closed || this.suspended || generation !== this.pollGeneration) return;
       this.totals.failedPolls++;
       if (this.state.collector !== 'occupied') {
         this.state.collector = 'retrying';
@@ -468,15 +732,22 @@ export class Monitor {
       row.device.connection = connection;
       const editedAt = this.thresholdEdits.get(id);
       if (editedAt !== undefined && regularPoll !== undefined && regularPoll > editedAt &&
-          sample.status === 'current' && sample.reading) this.thresholdEdits.delete(id);
+          sample.status === 'current' && validReading(sample.reading)) this.thresholdEdits.delete(id);
       this.setSample(row, sample, now);
       changed = true;
     }
+    if (!sample) changed = this.expire(row, now) || changed;
     if (voltage && this.state.settings.voltage) {
       this.appendLog('dualsense-voltage.tsv', [new Date(now).toISOString(), id, connection,
         sample?.reading?.raw ?? '', sample?.reading?.power ?? '', voltage.millivolts ?? '', voltage.status, voltage.detail].join('\t'));
     }
     return changed;
+  }
+  private expire(row: Row, now: number) {
+    if (row.device.status !== 'current' || row.device.lastRead === null ||
+        now - row.device.lastRead <= maxCurrentReadingAge) return false;
+    this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, now);
+    return true;
   }
   private merge(from: string, to: string) {
     if (from === to || !(this.rows.has(from) || this.data.history[from] || this.historyDays[from] || this.state.deviceSettings[from] || this.state.alerts[from])) return false;
@@ -551,7 +822,10 @@ export class Monitor {
     const points = this.data.history[device.id] ?? [];
     this.data.history[device.id] = recordHistory(points, point);
     device.historyUpdatedAt = time;
-    if (points.at(-1)?.time !== time) accumulateHistoryDay(this.historyDays[device.id] ??= [], point);
+    const tail = points.at(-1);
+    const replaced = tail?.time === time ? tail : tail && time < tail.time ? points.find(item => item.time === time) : undefined;
+    if (replaced) replaceHistoryDay(this.historyDays[device.id] ??= [], points, replaced, point);
+    else if (point.reading) accumulateHistoryDay(this.historyDays[device.id] ??= [], point);
     if (this.thresholdEdits.has(device.id)) return;
     const old = this.state.alerts[device.id] ?? {};
     const next = observeRecovery(device, this.state.settings, rules, old);
@@ -588,8 +862,10 @@ export class Monitor {
   }
   thresholdAlertRevision(id: string) { return this.thresholdAlertRevisions.get(id) ?? 0; }
   eligible(device: Device): Severity | undefined {
-    if (this.thresholdEdits.has(device.id)) return;
+    const now = Date.now();
+    if (this.thresholdEdits.has(device.id) || device.lastRead === null ||
+        device.lastRead > now || now - device.lastRead > maxCurrentReadingAge) return;
     return eligible(device, this.state.settings, this.state.deviceSettings[device.id],
-      this.state.alerts[device.id] ?? {}, this.state.mutedUntil, Date.now());
+      this.state.alerts[device.id] ?? {}, this.state.mutedUntil, now);
   }
 }

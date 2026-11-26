@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstring>
 #include <cwctype>
 #include <map>
 #include <span>
@@ -31,6 +32,10 @@ struct QueryKey { PROPERTYKEY key; DWORD store; PCWSTR locale; };
 struct QueryProperty { QueryKey compoundKey; ULONG type; ULONG size; const void* value; };
 struct QueryObject { ULONG type; PCWSTR id; ULONG count; const QueryProperty* properties; };
 constexpr ULONG deviceContainerDisplay = 9;
+constexpr ULONG deviceAssociationEndpoint = 5;
+// Association endpoint protocol ID for Bluetooth Low Energy (not Classic).
+constexpr GUID bleAssociationProtocol{0xbb7bb05e, 0x5972, 0x42b5,
+    {0x94, 0xfc, 0x76, 0xea, 0xa7, 0x08, 0x4d, 0x49}};
 using GetObjects = HRESULT (WINAPI*)(ULONG, ULONG, ULONG, const QueryKey*, ULONG, const void*,
                                      ULONG*, const QueryObject**);
 using FreeObjects = void (WINAPI*)(ULONG, const QueryObject*);
@@ -74,6 +79,14 @@ public:
     }
 
     bool flag(const PROPERTYKEY& key) const { return byte(key, DEVPROP_TYPE_BOOLEAN).value_or(0) != 0; }
+    std::optional<GUID> guid(const PROPERTYKEY& key) const
+    {
+        const auto* value = find(key, DEVPROP_TYPE_GUID);
+        if (!value || value->size != sizeof(GUID)) return {};
+        GUID result{};
+        std::memcpy(&result, value->value, sizeof(result));
+        return result;
+    }
 
     std::wstring_view string(const PROPERTYKEY& key) const
     {
@@ -187,8 +200,12 @@ std::map<std::wstring, FoundDevice> presentKeyboards()
 
 Sample readBattery(const Properties& props)
 {
-    if (!props.flag(PKEY_Devices_Connected)) {
+    const auto connection = windowsConnectionEvidence(props.byte(PKEY_Devices_Connected, DEVPROP_TYPE_BOOLEAN));
+    if (connection == WindowsConnectionEvidence::disconnected) {
         return {Status::offline, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::disconnected)};
+    }
+    if (connection == WindowsConnectionEvidence::unknown) {
+        return {Status::unavailable, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::unknownConnection)};
     }
     const auto percent = props.byte(PKEY_Devices_BatteryLife);
     if (auto reading = windowsReading(percent, props.byte(PKEY_Devices_ChargingState))) {
@@ -223,8 +240,10 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
     for (const auto& object : std::span(objects, count)) {
         const Properties props({object.properties, object.count});
         const auto sample = readBattery(props);
+        const auto detail = static_cast<WindowsBatteryDetail>(sample.detail);
         if (!object.id || props.flag(PKEY_Devices_LocalMachine) ||
-            (sample.status == Status::offline && !props.flag(PKEY_Devices_Paired))) {
+            ((sample.status == Status::offline || detail == WindowsBatteryDetail::unknownConnection) &&
+                !props.flag(PKEY_Devices_Paired))) {
             continue;
         }
         auto name = std::wstring(props.string(PKEY_ItemNameDisplay));
@@ -267,9 +286,12 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
         }
         const auto connection = bus == WindowsBus::unknown && !keyboard.empty()
             ? keyboard.mapped().connection : std::wstring(windowsConnection(bus));
-        devices.push_back({id, std::move(name), connection, sample.status != Status::offline,
+        const auto connected = detail != WindowsBatteryDetail::disconnected &&
+            (detail != WindowsBatteryDetail::unknownConnection ||
+                (!keyboard.empty() && keyboard.mapped().connection == windowsConnection(WindowsBus::usb)));
+        devices.push_back({id, std::move(name), connection, connected,
                            razer || sony || (!keyboard.empty() && keyboard.mapped().automaticallyMonitored), sample.reading,
-                           false, static_cast<WindowsBatteryDetail>(sample.detail), peripheral || namedBluetooth || !keyboard.empty(),
+                           false, detail, peripheral || namedBluetooth || !keyboard.empty(),
                            bus == WindowsBus::bluetooth || (bus == WindowsBus::unknown && !keyboard.empty() &&
                                keyboard.mapped().connection == windowsConnection(WindowsBus::bluetooth))});
     }
@@ -300,7 +322,7 @@ Sample readWindowsDevice(const std::wstring& id)
                                           batteryKeys.data(), &count, &properties);
     if (FAILED(result)) {
         return result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND) ?
-            Sample{Status::offline, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::notFound)} :
+            Sample{Status::unavailable, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::notFound)} :
             Sample{Status::unavailable, {}, 0, static_cast<unsigned>(WindowsBatteryDetail::queryFailed)};
     }
     const auto sample = readBattery(Properties({properties, count}));
@@ -308,6 +330,45 @@ Sample readWindowsDevice(const std::wstring& id)
         api.freeProperties(count, properties);
     }
     return sample;
+}
+
+WindowsConnectionEvidence inspectWindowsBleConnection(const std::wstring& id)
+{
+    const auto& api = queryApi();
+    if (!api.get || !api.free) return WindowsConnectionEvidence::unknown;
+    GUID expectedContainer{};
+    if (FAILED(CLSIDFromString(id.c_str(), &expectedContainer)) || IsEqualGUID(expectedContainer, GUID{}))
+        return WindowsConnectionEvidence::unknown;
+    const std::array keys{systemKey(PKEY_Devices_Aep_ContainerId), systemKey(PKEY_Devices_Aep_ProtocolId),
+        systemKey(PKEY_Devices_Aep_IsPaired), systemKey(PKEY_Devices_Aep_IsConnected)};
+    ULONG count = 0;
+    const QueryObject* objects = nullptr;
+    // Local property snapshot, not BluetoothLEDevice creation or an inquiry.
+    // Display-container Connected can describe a *Classic* link on a dual-mode
+    // device. Require a positive result for the same unique paired LE endpoint.
+    if (FAILED(api.get(deviceAssociationEndpoint, 0, static_cast<ULONG>(keys.size()), keys.data(), 0, nullptr, &count, &objects)) || !objects)
+        return WindowsConnectionEvidence::unknown;
+    struct Inventory {
+        FreeObjects release;
+        ULONG count;
+        const QueryObject* objects;
+        ~Inventory() { release(count, objects); }
+    } inventory{api.free, count, objects};
+    if (count > 4096) return WindowsConnectionEvidence::unknown;
+    std::optional<WindowsConnectionEvidence> result;
+    for (const auto& object : std::span(objects, count)) {
+        const Properties props({object.properties, object.count});
+        const auto container = props.guid(PKEY_Devices_Aep_ContainerId);
+        if (!container || !IsEqualGUID(*container, expectedContainer)) continue;
+        const auto protocol = props.guid(PKEY_Devices_Aep_ProtocolId);
+        if (!protocol) return WindowsConnectionEvidence::unknown;
+        if (!IsEqualGUID(*protocol, bleAssociationProtocol)) continue;
+        if (!object.id || !*object.id || result ||
+            windowsConnectionEvidence(props.byte(PKEY_Devices_Aep_IsPaired, DEVPROP_TYPE_BOOLEAN)) != WindowsConnectionEvidence::connected)
+            return WindowsConnectionEvidence::unknown;
+        result = windowsConnectionEvidence(props.byte(PKEY_Devices_Aep_IsConnected, DEVPROP_TYPE_BOOLEAN));
+    }
+    return result.value_or(WindowsConnectionEvidence::unknown);
 }
 
 const char* windowsBatteryReason(const Sample& sample)
@@ -320,6 +381,7 @@ const char* windowsBatteryReason(const Sample& sample)
     case WindowsBatteryDetail::apiUnavailable: return "windows_api_unavailable";
     case WindowsBatteryDetail::notFound: return "windows_not_found";
     case WindowsBatteryDetail::queryFailed: return "windows_query_failed";
+    case WindowsBatteryDetail::unknownConnection: return "windows_connection_unknown";
     default: return "windows_unknown";
     }
 }
