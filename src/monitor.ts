@@ -8,9 +8,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { release } from 'node:os';
 
-import { isDualSenseBluetooth, classify, defaults, historyPointEnd, isHistoryRange, isMuteDuration, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type CompatibilitySelection, type CommandResult, type DiagnosticDevice, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
+import { isDualSenseBluetooth, classify, defaults, historyPointEnd, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type CompatibilitySelection, type CommandResult, type DiagnosticDevice, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
 import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 import { accumulateHistoryDay, historyStart } from './history-plot';
+import { loadDeviceSettings, loadSettings } from './settings-validation';
 
 const executeFile = promisify(execFile);
 const maxCurrentReadingAge = 60_000;
@@ -231,14 +232,8 @@ export class Monitor {
         }
       }
     }
-    // Retain the supported settings and drop fields from older versions.
-    initial.settings = Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => {
-      const saved = initial.settings[key as keyof Settings];
-      return [key, typeof saved === typeof fallback ? saved : fallback];
-    })) as Settings;
-    if (!isMuteDuration(initial.settings.muteMinutes)) initial.settings.muteMinutes = defaults.muteMinutes;
-    if (!isHistoryRange(initial.settings.historyRetention)) initial.settings.historyRetention = defaults.historyRetention;
-    initial.deviceSettings = Object.assign(Object.create(null), initial.deviceSettings);
+    initial.settings = loadSettings(initial.settings);
+    initial.deviceSettings = loadDeviceSettings(initial.deviceSettings);
     initial.alerts = Object.assign(Object.create(null), initial.alerts);
     initial.history = Object.assign(Object.create(null), initial.history);
     this.historyDays = Object.assign(Object.create(null), initial.historyDays);
@@ -640,8 +635,8 @@ export class Monitor {
     const now = Date.now();
     const due = Object.fromEntries([...this.rows].map(([id, row]) => [id, now >= row.due]));
     try {
-      const reply = await this.collector.request<Observation[] | { rows: Observation[]; workPending: boolean; discoveryPending?: boolean } |
-        { restartRequired: true }>('poll', {
+      const reply = await this.collector.request<Observation[] | { rows: Observation[]; workPending: boolean;
+        discoveryPending?: boolean; discoveryAbsent?: unknown } | { restartRequired: true }>('poll', {
         due, force, generation, sequence, watched: this.data.watched, voltage: this.state.settings.voltage,
       });
       if (this.closed || this.suspended || generation !== this.pollGeneration) return;
@@ -663,6 +658,8 @@ export class Monitor {
       const results = Array.isArray(reply) ? reply : 'rows' in reply ? reply.rows : undefined;
       if (!Array.isArray(results)) throw new Error('采集程序返回了无效的设备列表');
       const discoveryPending = !Array.isArray(reply) && 'discoveryPending' in reply && reply.discoveryPending === true;
+      const absence = !Array.isArray(reply) && 'discoveryAbsent' in reply ? reply.discoveryAbsent : undefined;
+      const confirmedAbsent = new Set(Array.isArray(absence) ? absence.filter((id): id is string => typeof id === 'string') : []);
       this.nativePending = !Array.isArray(reply) && 'workPending' in reply
         ? reply.workPending === true : results.some(observation => observation.pending === true);
       const becameReady = this.state.collector !== 'ready';
@@ -687,7 +684,7 @@ export class Monitor {
       }
       for (const [id, row] of this.rows) {
         if (seen.has(id)) continue;
-        if (discoveryPending) {
+        if (discoveryPending && !confirmedAbsent.has(id)) {
           changed = this.expire(row, sampledAt) || changed;
           continue;
         }

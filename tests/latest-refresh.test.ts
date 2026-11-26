@@ -25,7 +25,8 @@ function harness(t: TestContext) {
   const collector = (monitor as unknown as { collector: Collector }).collector;
   t.after(() => { monitor.close(); rmSync(directory, { recursive: true, force: true }); });
   type Rows = ReturnType<typeof sample>[];
-  type Reply = Rows | { rows: Rows; workPending: boolean; discoveryPending?: boolean } | { restartRequired: true };
+  type Reply = Rows | { rows: Rows; workPending: boolean; discoveryPending?: boolean; discoveryAbsent?: string[] } |
+    { restartRequired: true };
   const polls: { generation: number; force: boolean; answer: ReturnType<typeof deferred<Reply>> }[] = [];
   t.mock.method(collector, 'request', (_action: string, { generation, force }: { generation: number; force: boolean }) => {
     const answer = deferred<Reply>();
@@ -146,6 +147,22 @@ test('pending HID discovery does not mark missing devices offline or hide comple
   polls[3]!.answer.resolve({ rows: [sample('ble', 80)], workPending: false, discoveryPending: false });
   await fourth;
   assert.equal(receiver().status, 'offline');
+});
+
+test('a verified unplug becomes offline while another receiver is still being discovered', async t => {
+  const { monitor, polls } = harness(t);
+  const initial = monitor.poll();
+  polls[0]!.answer.resolve({ rows: [sample('unplugged', 70), sample('uncertain', 80), sample('healthy', 90)], workPending: false });
+  await initial;
+  const next = monitor.poll();
+  polls[1]!.answer.resolve({ rows: [sample('healthy', 91)], workPending: true, discoveryPending: true,
+    discoveryAbsent: ['unplugged', 'healthy'] });
+  await next;
+  const device = (id: string) => monitor.state.devices.find(value => value.id === id)!;
+  assert.equal(device('unplugged').status, 'offline');
+  assert.equal(device('uncertain').status, 'current');
+  assert.equal(device('healthy').status, 'current', 'a fresh row takes precedence over a negative hint');
+  assert.equal(device('healthy').reading?.low, 91);
 });
 
 test('an invalid sample or an old BLE sequence does not unlock a changed threshold', async t => {

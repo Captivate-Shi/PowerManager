@@ -109,3 +109,34 @@ test('坏存档与启动失败不产生示例数据或已扫描结论；暖启�
     rmSync(path, { recursive: true, force: true });
   }
 });
+
+test('罗技直连从 Windows 电量切回 HID++ 时合并设备记录', async t => {
+  const path = mkdtempSync(join(tmpdir(), 'power-logitech-fallback-'));
+  const container = '{a1b2c3d4-1234-5678-1234-a1b2c3d4e5f6}';
+  const id = 'logitech-hidpp:123';
+  let monitor: Monitor | undefined;
+  try {
+    let native = false;
+    let now = Date.now();
+    t.mock.method(Date, 'now', () => now);
+    t.mock.method(Collector.prototype, 'request', async () => [{
+      ...existing, id: native ? id : container, automatic: true, aliases: native ? [container] : [],
+      sample: { status: 'current', reason: '', reading: native ? reading : { ...reading, source: 'windows' } },
+    }]);
+    monitor = new Monitor(path, noProcess(path), () => {}, () => {});
+    await monitor.poll(true);
+    assert.equal(monitor.state.devices[0].reading?.source, 'windows');
+    assert.equal(monitor.saveDeviceSettings(container, { alias: '工作鼠标' }), true);
+    native = true;
+    now += 1000;
+    await monitor.poll(true);
+    assert.equal(monitor.state.devices.length, 1);
+    assert.equal(monitor.state.devices[0].id, id);
+    assert.equal(monitor.state.devices[0].name, '工作鼠标');
+    assert.equal(monitor.state.devices[0].reading?.source, 'hid');
+    assert.deepEqual(monitor.history(id).map(point => point.reading?.source), ['windows', 'hid']);
+  } finally {
+    monitor?.close();
+    rmSync(path, { recursive: true, force: true });
+  }
+});
