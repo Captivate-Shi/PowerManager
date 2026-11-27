@@ -144,8 +144,8 @@ export function SelectControl({ label, value, choices, onChange, disabled }: {
     </Select.Content></Select.Portal>
   </Select.Root>;
 }
-export function Modal({ title, description, hint, onClose, restoreFocus, children }: {
-  title: string; description?: string; hint?: string; onClose: () => void; restoreFocus?: () => HTMLElement | null; children: ReactNode;
+export function Modal({ title, description, hint, onClose, restoreFocus, className, children }: {
+  title: string; description?: string; hint?: string; onClose: () => void; restoreFocus?: () => HTMLElement | null; className?: string; children: ReactNode;
 }) {
   const opener = useRef(document.activeElement);
   return <Dialog.Root open onOpenChange={value => { if (!value) onClose(); }}><Dialog.Portal>
@@ -156,7 +156,7 @@ export function Modal({ title, description, hint, onClose, restoreFocus, childre
         onClose();
       }
     }} />
-    <Dialog.Content className={s.modal} {...(!description ? { 'aria-describedby': undefined } : {})}
+    <Dialog.Content className={[s.modal, className].filter(Boolean).join(' ')} {...(!description ? { 'aria-describedby': undefined } : {})}
       onOpenAutoFocus={event => {
         const content = event.currentTarget;
         if (!(content instanceof HTMLElement)) return;

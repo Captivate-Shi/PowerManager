@@ -13,7 +13,7 @@ async function run() {
         const animate = Element.prototype.animate;
         Element.prototype.animate = function (...args) {
           const animation = animate.apply(this, args);
-          if (this.hasAttribute('data-detail-photo-flight')) {
+          if (this.hasAttribute('data-detail-photo-flight') || this.hasAttribute('data-detail-photo-settle')) {
             animation.pause();
             animation.currentTime = 0;
           }
@@ -104,14 +104,26 @@ async function run() {
         expect(positions.after).toEqual(positions.before);
       }
       const preview = page.getByRole('region', { name: '设备预览' }).locator('img[data-device-art]');
-      await roundTrip(preview, () => button('DualSense').dblclick(), '返回设备');
-      await roundTrip(preview, () => preview.dblclick(), '返回设备');
+      const inPlace = async (trigger, target) => {
+        await trigger();
+        await expect(flight).toHaveCount(0);
+        await expect(target).toHaveAttribute('data-detail-photo-settle', '');
+        const frames = await target.evaluate(node => node.getAnimations()[0].effect.getKeyframes());
+        expect(frames.map(frame => frame.opacity)).toEqual(['0.65', '1']);
+        expect(frames.every(frame => frame.transform === undefined)).toBe(true);
+        await target.evaluate(node => node.getAnimations()[0].finish());
+        await expect(page.locator('[data-detail-photo-settle]')).toHaveCount(0);
+      };
+      await inPlace(() => button('DualSense').dblclick(), detail);
+      await inPlace(() => button('返回设备').click(), preview);
+      await inPlace(() => preview.dblclick(), detail);
+      await inPlace(() => button('返回设备').click(), preview);
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await button('DualSense').dblclick();
       await expect(page.getByRole('region', { name: '设备详情' })).toBeVisible();
       await expect(flight).toHaveCount(0);
       await page.close();
-      console.log(viewport.width + 'px: stage, half image and right preview match both endpoints.');
+      console.log(viewport.width + 'px: overview flights match both endpoints; device preview and detail fade in place.');
     }
   } finally {
     await browser.close();

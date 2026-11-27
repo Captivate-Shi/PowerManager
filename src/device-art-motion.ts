@@ -81,6 +81,17 @@ export function animateDetailPhoto(origin: Photo, to: HTMLImageElement, duration
   return { finished: animation.finished, cleanup, read };
 }
 
+export function fadeDetailPhoto(image: HTMLImageElement) {
+  image.dataset.detailPhotoSettle = '';
+  const animation = image.animate([{ opacity: .65 }, { opacity: 1 }], {
+    duration: 160, easing: 'ease-out', fill: 'both',
+  });
+  return { finished: animation.finished, cleanup: () => {
+    animation.cancel();
+    delete image.dataset.detailPhotoSettle;
+  } };
+}
+
 export function detailPhoto(image?: HTMLImageElement) {
   if (!image?.naturalWidth || !image.naturalHeight) return;
   return readPhoto(image, image.naturalWidth / image.naturalHeight);

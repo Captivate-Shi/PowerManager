@@ -33,8 +33,10 @@ const output = process.env.DIALOG_REVIEW_OUT;
             command: async command => {
               const count = counts[command.type] = (counts[command.type] ?? 0) + 1;
               if (command.type === 'discover') {
+                await new Promise(resolve => setTimeout(resolve, 300));
                 if (count === 1) return { ok: false, error: '扫描设备失败，请重新扫描。' };
-                return { ok: true, found: [{ id: 'two', name: '新接入外设', connection: '蓝牙', connected: true, reading }] };
+                return { ok: true, found: [{ id: 'two', name: '新接入外设', connection: '蓝牙', connected: true, reading },
+                  { id: 'one', name: '蓝牙鼠标', connection: '蓝牙', connected: false, automatic: true, reading: null }] };
               }
               if (command.type === 'add')
                 return count === 1 ? { ok: false, error: '暂时无法添加设备。' } : { ok: true };
@@ -57,15 +59,21 @@ const output = process.env.DIALOG_REVIEW_OUT;
         await button(page, '设备').click();
         await button(page, '查找设备').click();
         const find = page.getByRole('dialog', { name: '查找设备' });
+        const close = button(find, '关闭对话框');
+        await expect(find.getByRole('status')).toHaveText('正在扫描 Windows 设备…');
+        const anchor = await close.boundingBox();
         await expect(find.getByRole('alert')).toHaveText('扫描设备失败，请重新扫描。');
+        expect(await close.boundingBox()).toEqual(anchor);
         await expect(page.getByText('扫描设备失败，请重新扫描。', { exact: true })).toHaveCount(1);
         await button(find, '重新扫描').click();
+        await expect(find.getByText('蓝牙 · 已加入监测 · 未连接', { exact: true })).toBeVisible();
+        expect(await close.boundingBox()).toEqual(anchor);
         await button(find, '添加到监测').click();
         await expect(find.getByRole('alert')).toHaveText('暂时无法添加设备。');
         await expect(page.getByText('暂时无法添加设备。', { exact: true })).toHaveCount(1);
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '余电-添加失败可重试.png') });
         await button(find, '重试添加').click();
-        await expect(find.getByText(/已监测/)).toBeVisible();
+        await expect(find.getByText('蓝牙 · 已加入监测 · 已连接', { exact: true })).toBeVisible();
         await expect(find.getByRole('alert')).toHaveCount(0);
         await page.keyboard.press('Escape');
 
