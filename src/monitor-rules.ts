@@ -1,4 +1,4 @@
-import { historyPointEnd, severity, threshold, type AlertState, type Device, type DeviceSettings, type HistoryPoint, type Settings, type Severity } from './model';
+import { defaultPollIntervalSeconds, historyPointEnd, severity, threshold, type AlertState, type Device, type DeviceSettings, type HistoryPoint, type Settings, type Severity } from './model';
 import { historyPointLimit, unsampledAfter } from './history-plot';
 
 export const day = 24 * 60 * 60 * 1000;
@@ -39,7 +39,7 @@ export function recordHistory(points: HistoryPoint[], point: HistoryPoint): Hist
 export function delayFor(device: Device, settings: Settings, rules: DeviceSettings | undefined, failures: number) {
   if (device.status === 'current' && device.reading) {
     return device.reading.power === 'charging' || device.reading.low <= threshold(settings, rules) + 10
-      ? 12_000 : (settings.pollIntervalSeconds ?? 30) * 1000;
+      ? 12_000 : (settings.pollIntervalSeconds ?? defaultPollIntervalSeconds) * 1000;
   }
   if (device.status === 'basic_bluetooth') return 10_000;
   const delay = [2_000, 4_000, 8_000, 16_000, 24_000][Math.min(Math.max(failures - 1, 0), 4)];

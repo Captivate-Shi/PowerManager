@@ -5,7 +5,7 @@ import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, C
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { defaults, historyRanges, inventoryState, isConnected, isDesktopToastSeconds, isPollIntervalSeconds, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { defaultPollIntervalSeconds, defaults, historyRanges, inventoryState, isConnected, isDesktopToastSeconds, isPollIntervalSeconds, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, readingTimeLabel, readingUpdated, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -45,7 +45,8 @@ const minutes = (values: number[]) => values.map(value => ({ value: String(value
 const powerLabels = { charging: '充电中', full: '已充满', discharging: '电池供电', unknown: '设备未上报' };
 const historyChoices = historyRanges.map(value => ({ value, label: historyRangeLabels[value] }));
 const pollChoices = [
-  { value: '30', label: '30 秒（推荐）' }, { value: '60', label: '1 分钟' },
+  { value: '30', label: '30 秒', detail: '读取更频繁，可能增加耗电' },
+  { value: '60', label: '1 分钟（推荐）' },
   { value: '300', label: '5 分钟', detail: '低电量可能更晚发现' },
   { value: '600', label: '10 分钟', detail: '设备可能在提醒前耗尽电量' },
 ];
@@ -1204,9 +1205,9 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
         <h2 id="runtime-heading" tabIndex={-1}>运行与托盘</h2>
         <SettingRow title="开机启动" hint="登录 Windows 后在托盘开始监测，不打开主窗口。"><SwitchControl label="随 Windows 登录启动" checked={state.settings.startup} onChange={value => send({ type: 'settings', patch: { startup: value } })} /></SettingRow>
         <SettingRow title="电量轮询间隔"
-          hint="间隔越长，低电量可能越晚发现，设备也可能在提醒前耗尽。已知低电量或正在充电的设备会更频繁检查。"
-          status={(state.settings.pollIntervalSeconds ?? 30) >= 300 ? '设备可能在提醒前耗尽电量' : undefined}>
-          <SelectControl label="电量轮询间隔" value={String(state.settings.pollIntervalSeconds ?? 30)} choices={pollChoices}
+          hint="间隔越短，设备读取越频繁，可能增加耗电。间隔越长，可能来不及提醒。接近低电量阈值或正在充电的设备仍会更频繁检查。"
+          status={(state.settings.pollIntervalSeconds ?? defaultPollIntervalSeconds) >= 300 ? '设备可能在提醒前耗尽电量' : undefined}>
+          <SelectControl label="电量轮询间隔" value={String(state.settings.pollIntervalSeconds ?? defaultPollIntervalSeconds)} choices={pollChoices}
             onChange={value => { const seconds = Number(value); if (isPollIntervalSeconds(seconds)) send({ type: 'settings', patch: { pollIntervalSeconds: seconds } }); }} />
         </SettingRow>
         <SettingRow title="电量采集"><button className={s.button} disabled={state.refreshing || state.collector === 'starting'} onClick={() => send({ type: 'refresh' })}>{state.refreshing ? '刷新中…' : '立即刷新'}</button></SettingRow>

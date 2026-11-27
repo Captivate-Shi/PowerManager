@@ -18,18 +18,19 @@ const device = (value: Reading): Device => ({
 });
 
 test('the four poll intervals round-trip; malformed values recover defaults or reject edits', () => {
-  assert.equal(loadSettings({}).pollIntervalSeconds, 30);
+  assert.equal(loadSettings({}).pollIntervalSeconds, 60);
   for (const seconds of pollIntervalChoices) {
     const saved = patchSettings(defaults, { pollIntervalSeconds: seconds });
     assert.equal(loadSettings(JSON.parse(JSON.stringify(saved))).pollIntervalSeconds, seconds);
   }
   for (const invalid of [null, false, '60', 55, 30.5, 3600]) {
-    assert.equal(loadSettings({ pollIntervalSeconds: invalid, vol: true }).pollIntervalSeconds, 30);
+    assert.equal(loadSettings({ pollIntervalSeconds: invalid, vol: true }).pollIntervalSeconds, 60);
     assert.throws(() => patchSettings(defaults, { pollIntervalSeconds: invalid }), /间隔无效/);
   }
 });
 
 test('only normal cadence stretches; approaching low, charging and retries stay frequent', () => {
+  assert.equal(delayFor(device(reading(71)), { ...defaults, pollIntervalSeconds: undefined }, undefined, 0), 60_000);
   for (const seconds of pollIntervalChoices) {
     const settings = { ...defaults, pollIntervalSeconds: seconds };
     const healthy = device(reading(71));
@@ -73,7 +74,7 @@ test('monitor passes live due gates, preserves a sooner slot, advances a shorten
   const collector = (monitor as unknown as { collector: Collector }).collector;
   const start = Date.now();
   let clock = start;
-  let interval = 30;
+  let interval = 60;
   const seen: Array<{ due: Record<string, boolean>; force: boolean }> = [];
   t.mock.method(Date, 'now', () => clock);
   t.mock.method(collector, 'request', async (name: string, { due, force }: { due: Record<string, boolean>; force: boolean }) => {
@@ -96,7 +97,7 @@ test('monitor passes live due gates, preserves a sooner slot, advances a shorten
   clock = start + 13_000;
   await monitor.poll();
   assert.deepEqual(keys(), { mouse: false, 'near-low': true });
-  clock = start + 30_000;
+  clock = start + 60_000;
   await monitor.poll();
   assert.equal(keys().mouse, true, 'do not delay the first already-planned mouse reading');
   clock = start + 301_000;

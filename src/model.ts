@@ -36,6 +36,7 @@ export const isDesktopToastSeconds = (value: unknown): value is DesktopToastSeco
   typeof value === 'number' && (desktopToastDurations as readonly number[]).includes(value);
 export const pollIntervalChoices = [30, 60, 300, 600] as const;
 export type PollIntervalSeconds = typeof pollIntervalChoices[number];
+export const defaultPollIntervalSeconds: PollIntervalSeconds = 60;
 export const isPollIntervalSeconds = (value: unknown): value is PollIntervalSeconds =>
   pollIntervalChoices.some(seconds => seconds === value);
 export const historyRanges = ['day', 'week', 'month', 'year'] as const;
@@ -112,7 +113,7 @@ export const defaults: Settings = {
   low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true,
   desktopSound: false, voltage: false, startup: false,
   zoom: 100, trayZoom: 100, desktopToasts: true, desktopToastSeconds: defaultDesktopToastSeconds, muteMinutes: 60,
-  historyRetention: 'year', pollIntervalSeconds: 30,
+  historyRetention: 'year', pollIntervalSeconds: defaultPollIntervalSeconds,
 };
 export const midpoint = (reading: Reading) => Math.ceil((reading.low + reading.high) / 2);
 export const percent = (reading: Reading | null) =>

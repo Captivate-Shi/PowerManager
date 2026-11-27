@@ -12,9 +12,10 @@ use device_admission::{good_reading as reading,valid_id};
 
 const DAY:u64=86400000;
 fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
+const DEFAULT_POLL_INTERVAL_SECONDS:u64=60;
 fn n(v:&Value)->u64{v.as_u64().unwrap_or(0)}
 fn defaults()->Value{json!({"low":20,"critical":10,"repeat":0,"snooze":30,"fullscreenSound":true,"desktopSound":false,
-"voltage":false,"startup":false,"zoom":100,"trayZoom":100,"desktopToasts":true,"desktopToastSeconds":super::toast_lifecycle::DEFAULT_SECONDS,"muteMinutes":60,"historyRetention":"year","pollIntervalSeconds":30})}
+"voltage":false,"startup":false,"zoom":100,"trayZoom":100,"desktopToasts":true,"desktopToastSeconds":super::toast_lifecycle::DEFAULT_SECONDS,"muteMinutes":60,"historyRetention":"year","pollIntervalSeconds":DEFAULT_POLL_INTERVAL_SECONDS})}
 fn boolean(v:&Value)->bool{v==true}
 fn alert_channels(settings:&Value,scene:&Value)->(bool,bool){
  if scene["allowed"]==false{return (false,false)}
@@ -47,7 +48,7 @@ fn allowed(key:&str,v:&Value)->bool{
 fn valid_poll_interval(seconds:u64)->bool{matches!(seconds,30|60|300|600)}
 fn battery_period(settings:&Value,reading:&Value,threshold:u64)->u64{
  if reading["power"]=="charging" || n(&reading["low"])<=threshold+10{12000}
- else{settings["pollIntervalSeconds"].as_u64().filter(|s|valid_poll_interval(*s)).unwrap_or(30)*1000}
+ else{settings["pollIntervalSeconds"].as_u64().filter(|s|valid_poll_interval(*s)).unwrap_or(DEFAULT_POLL_INTERVAL_SECONDS)*1000}
 }
 fn stale_after(period:u64)->u64{60000.max(period+30000)}
 
@@ -57,7 +58,9 @@ fn battery_poll_interval_adapts_only_healthy_reads(){
  let regular=json!({"power":"discharging","low":71});
  let near_low=json!({"power":"discharging","low":27});
  let charging=json!({"power":"charging","low":78});
- assert_eq!(battery_period(&defaults(),&regular,20),30000);
+ assert_eq!(battery_period(&defaults(),&regular,20),60000);
+ assert_eq!(battery_period(&json!({}),&regular,20),60000);
+ assert_eq!(battery_period(&json!({"pollIntervalSeconds":"30"}),&regular,20),60000);
  for (seconds,wait) in [(30,30000),(60,60000),(300,300000),(600,600000)]{
   let settings=json!({"pollIntervalSeconds":seconds});
   assert!(allowed("pollIntervalSeconds",&json!(seconds)));
