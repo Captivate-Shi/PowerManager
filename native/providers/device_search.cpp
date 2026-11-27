@@ -170,8 +170,7 @@ std::map<std::wstring, FoundDevice> presentKeyboards()
             continue;
         }
         const auto hardware = lower(instance);
-        if (!hardware.starts_with(L"hid\\vid_") && !hardware.starts_with(L"hid\\{00001124") &&
-            !hardware.starts_with(L"bthenum\\") && !hardware.starts_with(L"bthledevice\\")) {
+        if (!windowsKeyboardInstanceCandidate(hardware)) {
             continue;
         }
         DEVPROPTYPE type{};
@@ -246,9 +245,19 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
                 !props.flag(PKEY_Devices_Paired))) {
             continue;
         }
+        const auto id = lower(object.id);
+        if (id.size() != 38 || id.front() != L'{' || id.back() != L'}') {
+            continue;
+        }
+        const auto keyboard = keyboards.extract(id);
         auto name = std::wstring(props.string(PKEY_ItemNameDisplay));
         if (name.empty()) {
             name = props.string(PKEY_Devices_FriendlyName);
+        }
+        if (name.empty() && !keyboard.empty()) {
+            // Both objects refer to the same physical container; a missing
+            // display label must not hide the verified keyboard class.
+            name = keyboard.mapped().name;
         }
         if (name.empty()) {
             continue;
@@ -276,11 +285,6 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
                            hasHardware(L"vid_1532&pid_00b8");
         const bool sony = folded == L"dualsense" || folded == L"dualsense wireless controller" ||
                           hasHardware(L"vid_054c&pid_0ce6") || hasHardware(L"vid&0002054c_pid&0ce6");
-        const auto id = lower(object.id);
-        if (id.size() != 38 || id.front() != L'{' || id.back() != L'}') {
-            continue;
-        }
-        const auto keyboard = keyboards.extract(id);
         if (!peripheral && bus != WindowsBus::bluetooth && !razer && !sony && keyboard.empty() && !sample.reading) {
             continue;
         }
@@ -297,9 +301,8 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
     }
     cleanup();
     for (auto& [id, keyboard] : keyboards) {
-        keyboard.batteryDetail = WindowsBatteryDetail::missingProperty;
-        keyboard.inputOrHeadset = true;
-        keyboard.knownBluetooth = keyboard.connection == windowsConnection(WindowsBus::bluetooth);
+        markKeyboardWithoutDisplayContainer(keyboard,
+            keyboard.connection == windowsConnection(WindowsBus::bluetooth));
         devices.push_back(std::move(keyboard));
     }
     std::ranges::stable_sort(devices, {}, [](const FoundDevice& candidate) {

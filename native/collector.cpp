@@ -1344,8 +1344,8 @@ private:
                 // A marked input/headset with an exact BAS can ask the worker
                 // to verify its live LE endpoint independently; this does
                 // not infer a connection or a battery from the inventory.
-                const bool canVerifyBle = !alreadyClaimed && device.knownBluetooth && device.inputOrHeadset &&
-                    device.batteryDetail == WindowsBatteryDetail::unknownConnection && basCandidates.contains(device.id);
+                const bool canVerifyBle = eligibleForBleConnectionVerification(device, alreadyClaimed,
+                    basCandidates.contains(device.id));
                 if (vendor != vendorPass ||
                     (!vendor && !canVerifyBle && !defaultPeripheralMonitoring(device, alreadyClaimed))) continue;
                 targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});

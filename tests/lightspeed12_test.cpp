@@ -9,6 +9,8 @@ int main()
     struct Sample { unsigned pid, model, kind, flags; const wchar_t* name; };
     const std::array cases{
         Sample{0xc547, 0x4099, 3, named_percent_1004, L"G502 X PLUS"},
+        Sample{0xc547, 0x409f, 3, named_percent_1004, L"G502 X LIGHTSPEED"},
+        Sample{0xc54d, 0x40a9, 3, named_percent_1004, L"PRO X 2"},
         Sample{0xc545, 0x4093, 3, named_percent_1004, L"PRO X Wireless"},
         Sample{0xc53f, 0x4074, 3, named_legacy_1000, L"G305 Lightspeed Wireless Gaming Mouse"},
         Sample{0xc53d, 0x4065, 0, named_legacy_1000, L"G613 Wireless Mechanical Gaming Keyboard"},
@@ -27,7 +29,13 @@ int main()
     // reports. Bluetooth LE and USB occupy different advertised slots.
     constexpr std::array<std::uint8_t, 13> g502Info{0, 1, 2, 3, 4, 0, 0x0c, 0x40, 0x99, 0xc0, 0x95, 0, 0};
     constexpr std::array<std::uint8_t, 13> g613Info{0, 1, 2, 3, 4, 0, 0x06, 0xb3, 0x4f, 0x40, 0x65, 0, 0};
+    constexpr std::array<std::uint8_t, 13> g502XInfo{0, 1, 2, 3, 4, 0, 0x0c, 0x40, 0x9f, 0xc0, 0x98, 0, 0};
+    constexpr std::array<std::uint8_t, 13> superlight2Info{0, 1, 2, 3, 4, 0, 0x0c, 0x40, 0xa9, 0xc0, 0x9b, 0, 0};
     static_assert(logitechReportedModel(g502Info, 4) == 0x4099);
+    static_assert(logitechReportedModel(g502XInfo, 4) == 0x409f);
+    static_assert(logitechReportedModel(superlight2Info, 4) == 0x40a9);
+    assert(!lightspeed12Identity(0x046d, 0xc547, 0x409f, L"G502 X PLUS", 3));
+    assert(!lightspeed12Identity(0x046d, 0xc54d, 0x4093, L"PRO X 2", 3));
     static_assert(logitechReportedModel(g502Info, 2) == 0);
     static_assert(logitechReportedModel(g613Info, 4) == 0x4065);
     static_assert(logitechReportedModel(g613Info, 2) == 0xb34f);

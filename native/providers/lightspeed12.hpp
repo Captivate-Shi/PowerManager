@@ -32,6 +32,10 @@ inline std::optional<LogitechNamedIdentity> lightspeed12Identity(unsigned vid, u
     if (kind == 3) {
         if (model == 0x4099 && name == L"g502 x plus")
             return LogitechNamedIdentity{L"Logitech G502 X PLUS", 3, model, named_percent_1004};
+        if (model == 0x409f && name == L"g502 x lightspeed")
+            return LogitechNamedIdentity{L"Logitech G502 X LIGHTSPEED", 3, model, named_percent_1004};
+        if (model == 0x40a9 && name == L"pro x 2")
+            return LogitechNamedIdentity{L"Logitech PRO X SUPERLIGHT 2", 3, model, named_percent_1004};
         if (model == 0x4093 && name == L"pro x wireless")
             return LogitechNamedIdentity{L"Logitech PRO X SUPERLIGHT", 3, model, named_percent_1004};
         if (model == 0x4074 && name == L"g305 lightspeed wireless gaming mouse")

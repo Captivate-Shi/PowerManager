@@ -48,6 +48,17 @@ struct FoundDevice {
     bool knownBluetooth{};
 };
 
+// A present Bluetooth Keyboard devnode can outlive the live radio link.
+// It contributes identity/classification only; if BAS exists the worker
+// independently verifies a unique connected, paired LE association endpoint.
+constexpr void markKeyboardWithoutDisplayContainer(FoundDevice& keyboard, bool bluetooth)
+{
+    keyboard.inputOrHeadset = true;
+    keyboard.knownBluetooth = bluetooth;
+    keyboard.batteryDetail = bluetooth ? WindowsBatteryDetail::unknownConnection : WindowsBatteryDetail::missingProperty;
+    if (bluetooth) keyboard.connected = false;
+}
+
 // Do not enroll a phone, laptop, dock, or other general Bluetooth/container
 // entry merely because Windows exposes a battery property on it. A connected
 // Bluetooth peripheral is still shown if none of its sources has a reading.
@@ -58,6 +69,13 @@ constexpr bool defaultPeripheralMonitoring(const FoundDevice& device, bool claim
     // resolve a keyboard model or send a vendor query from the label alone.
     if (device.name == L"Rapoo 2.4G Wireless Device") return true;
     return device.inputOrHeadset && (device.battery.has_value() || device.knownBluetooth);
+}
+
+constexpr bool eligibleForBleConnectionVerification(const FoundDevice& device, bool claimedByNative,
+                                                    bool hasScopedBatteryService)
+{
+    return !claimedByNative && device.knownBluetooth && device.inputOrHeadset &&
+           device.batteryDetail == WindowsBatteryDetail::unknownConnection && hasScopedBatteryService;
 }
 
 std::optional<std::vector<FoundDevice>> findWindowsDevices();
