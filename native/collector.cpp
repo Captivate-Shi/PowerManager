@@ -967,6 +967,7 @@ private:
         const bool force = request.value("force", false);
         const auto& basCandidates = refreshBleCandidates(force);
         const auto& windows = defaultWindowsDevices(force);
+        WindowsBatteryReader windowsBatteryReader;
         const auto containerOwners = nativeContainerOwners(endpoints);
         unsigned basBudget = 2;
         struct StandardBatteryResult {
@@ -978,7 +979,7 @@ private:
         const auto standardBattery = [&](const std::wstring& container, const std::wstring& deviceKey,
             std::optional<std::int64_t> regularSequence, bool vendorReady = false) -> std::optional<StandardBatteryResult> {
             const auto started = std::chrono::steady_clock::now();
-            const auto measured = readWindowsDevice(container);
+            const auto measured = windowsBatteryReader.read(container);
             const auto target = reportTarget(targets_, deviceKey);
             const Device diagnostic{{}, Transport::windows_battery, 0, {}, {}};
             record(diagnostic, sample(measured), started, target, nullptr, windowsBatteryReason(measured));

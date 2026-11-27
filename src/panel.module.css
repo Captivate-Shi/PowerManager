@@ -808,6 +808,89 @@
 .history .chartStatusSlot { height: 19px; }
 .history .historySummary :is(td, th) { padding-block: 2px; }
 .history .historySummary thead th { height: var(--summary-heading); }
+.historyPlaceholder { gap: 8px; }
+.historyPlaceholderCanvas { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; }
+.historyPlaceholderGrid {
+  position: absolute; inset: 22% 16px 10%;
+  display: flex; flex-direction: column; justify-content: space-between;
+}
+.historyPlaceholderGrid i { border-top: 1px solid color-mix(in srgb, var(--line-strong) 42%, transparent); }
+.historyPlaceholderLanes { cursor: default; margin-inline: 0; }
+.historyPlaceholderLanes .eventLane { gap: 9px; padding-inline: 10px; }
+.historyPlaceholderLanes .historyPlaceholderBar:first-child { width: 13px; height: 13px; flex: none; }
+.historyPlaceholderLanes .historyPlaceholderBar:last-child { flex: 1; height: 10px; }
+.historyPlaceholderBar {
+  --placeholder-base: color-mix(in srgb, var(--line-strong) 72%, var(--panel));
+  --placeholder-light: color-mix(in srgb, var(--blue) 46%, var(--placeholder-base));
+  display: inline-block; vertical-align: middle; height: 8px; border-radius: 4px;
+  background: linear-gradient(100deg, var(--placeholder-base) 34%, var(--placeholder-light) 50%, var(--placeholder-base) 66%) 100% 50% / 250% 100%;
+  animation: history-placeholder-sweep 1.8s linear infinite;
+}
+.historySummary td:nth-child(2) > .historyPlaceholderBar { width: min(66%, 70px); }
+.historySummary td:nth-child(3) > .historyPlaceholderBar { width: min(74%, 86px); }
+.historySummary td:nth-child(4) > .historyPlaceholderBar { width: min(60%, 52px); }
+.historySummary thead .historyPlaceholderBar { width: min(68%, 78px); }
+.historySummary tbody th .historyPlaceholderBar:nth-child(2) { width: 19px; height: 14px; flex: none; }
+.historySummary tbody th .historyPlaceholderBar:nth-child(3) { width: min(65%, 126px); }
+@keyframes history-placeholder-sweep {
+  0%, 10% { background-position: 100% 50%; }
+  84%, 100% { background-position: 0 50%; }
+}
+@property --history-skeleton-position {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 100%;
+}
+.history[data-history-skeleton] {
+  --history-skeleton-surface: color-mix(in srgb, var(--panel) 82%, var(--line));
+  --history-skeleton-mark: color-mix(in srgb, var(--line-strong) 53%, var(--panel));
+  --history-skeleton-beam: linear-gradient(104deg, transparent 35%,
+    color-mix(in srgb, var(--blue) 24%, transparent) 50%, transparent 65%);
+  animation: history-layout-sweep 2.05s linear infinite;
+}
+/* Fixed backgrounds sample one viewport-sized gradient at the same phase. */
+.history[data-history-skeleton] :where(.historyPlaceholderCanvas, .historyPlaceholderLanes, .historySummary,
+  .historyRangeGroup > .select, .historyChoice, .historyAdd, .historySpan > span, .historyPlaceholderBar),
+.history[data-history-skeleton] :is(.historyRangeGroup > .select, .historyChoice, .historyAdd)::after,
+.history[data-history-skeleton] .chartGuide::before,
+.history[data-history-skeleton] .chartGuide::after {
+  background-color: var(--history-skeleton-surface);
+  background-image: var(--history-skeleton-beam);
+  background-size: 220vw 100vh;
+  background-position: var(--history-skeleton-position) 50%;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+.history[data-history-skeleton] :is(.historyRangeGroup > .select, .historyChoice, .historyAdd) {
+  position: relative; opacity: 1; cursor: default; border-color: var(--line);
+}
+.history[data-history-skeleton] :is(.historyRangeGroup > .select, .historyChoice, .historyAdd) > *,
+.history[data-history-skeleton] .historyRangeGroup > span,
+.history[data-history-skeleton] .chartGuide > * { visibility: hidden; }
+.history[data-history-skeleton] :is(.historyRangeGroup > .select, .historyChoice, .historyAdd)::after {
+  content: ""; position: absolute; inset: 0 17%; margin-block: auto;
+  height: 9px; border-radius: 4px; background-color: var(--history-skeleton-mark);
+}
+.history[data-history-skeleton] .historySpan > span { color: transparent; border-radius: 4px; pointer-events: none; }
+.history[data-history-skeleton] .historyPlaceholderBar {
+  animation: none; background-color: var(--history-skeleton-mark);
+}
+.history[data-history-skeleton] .chartGuide { position: relative; }
+.history[data-history-skeleton] .chartGuide::before,
+.history[data-history-skeleton] .chartGuide::after {
+  content: ""; position: absolute; inset-block: 0; margin-block: auto;
+  width: 56px; height: 8px; border-radius: 4px; background-color: var(--history-skeleton-mark);
+}
+.history[data-history-skeleton] .chartGuide::before { inset-inline-start: 0; }
+.history[data-history-skeleton] .chartGuide::after { inset-inline-start: 70px; }
+@keyframes history-layout-sweep {
+  0%, 10% { --history-skeleton-position: 100%; }
+  86%, 100% { --history-skeleton-position: 0%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .history[data-history-skeleton], .historyPlaceholderBar { animation: none; }
+  .history[data-history-skeleton] { --history-skeleton-beam: none; }
+}
 .historyToolbar { flex: none; }
 @media (max-width: 900px) {
   .deviceSplit > .details { border-top: 0; border-left: 1px solid var(--line); padding: 0 0 0 9px; }

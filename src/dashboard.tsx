@@ -1,7 +1,7 @@
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, CircleCheck, Clock, Copy, Ellipsis, FolderOpen, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Activity as ReactActivity, useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
 import { pendingChargeRoute, defaultPollIntervalSeconds, defaults, historyRanges, inventoryState, isConnected, isDesktopToastSeconds, isPollIntervalSeconds, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
@@ -86,6 +86,7 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   useLayoutEffect(() => { lastSortConnections.current = sortConnections; }, [sortConnections]);
   const settingsPosition = useRef({ category: 'appearance', top: 0 });
   const [finding, setFinding] = useState(false);
+  const [historyVisited, setHistoryVisited] = useState(remembered?.page === 'history');
   const [currentHistoryRange, setCurrentHistoryRange] = useState<HistoryRange>();
   const [historySlots, setHistorySlots] = useState(readHistorySlots);
   const chooseHistorySlots = (slots: (string | undefined)[]) => {
@@ -246,6 +247,7 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     }
     cancelTransition();
     setDetailId(undefined);
+    if (next === 'history') setHistoryVisited(true);
     setPage(next);
   }
   function showDevices(next: Filter) { search(''); select(undefined); setFilter(next); navigate('devices'); }
@@ -298,7 +300,10 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
         inventory === 'unavailable' ? <Empty button={() => setFinding(true)}>暂无法读取设备，等待采集恢复</Empty> :
         <Devices state={state} sortConnections={sortConnections} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} sort={deviceSort} setSort={setDeviceSort} clearSearch={() => search('')} openDetail={openDetail} run={run} reportFeedback={setFeedback} find={() => setFinding(true)} />)}
       {page === 'alerts' && <Alerts state={state} run={run} open={openDetail} />}
-      {page === 'history' && <History state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={viewRange} retention={historyRetention} chooseRange={chooseHistoryRange} slots={historySlots} setSlots={chooseHistorySlots} />}
+      {historyVisited && <ReactActivity mode={page === 'history' && !detailed ? 'visible' : 'hidden'}>
+        <History key={historyRetention} state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={viewRange}
+          retention={historyRetention} chooseRange={chooseHistoryRange} slots={historySlots} setSlots={chooseHistorySlots} />
+      </ReactActivity>}
       {page === 'settings' && <Settings state={state} run={run} palette={palette} choosePalette={choosePalette} retention={historyRetention} position={settingsPosition} />}
       </div>
       {detailed && <div className={s.pageBody}>
@@ -1059,6 +1064,7 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
 }) {
   const addDevice = useRef<HTMLButtonElement>(null);
   const [clock, setClock] = useState(() => Date.now());
+  useLayoutEffect(() => { setClock(Date.now()); }, []);
   useEffect(() => {
     const sync = () => { if (!document.hidden) setClock(Date.now()); };
     const timer = window.setInterval(sync, 30_000);
@@ -1080,17 +1086,20 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
   const single = selected.length === 1 ? selected[0] : undefined;
   const now = historyAnchor(clock, selected.map(item => item.lastRead), Date.now());
   const dateSpan = `${historyClock.format(historyStart(now, range))} – ${historyClock.format(now)}`;
-  return <section className={s.history} aria-label="电量对比记录">
+  const renderComparison = (chart: ReactNode, loading: boolean) => {
+    const compareButton = <button ref={addDevice} type="button" className={s.historyAdd}
+      aria-label="对比设备" disabled={loading}><Plus size={15} aria-hidden="true" /><span>对比设备</span></button>;
+    return <section className={s.history} aria-label="电量对比记录" data-history-skeleton={loading || undefined}>
     <div className={s.historyToolbar}>
       <div className={s.historySpan}><div className={s.historyRangeGroup}>
-          <SelectControl label="记录范围" value={range} choices={historyChoices.map(choice =>
+          <SelectControl label="记录范围" value={range} disabled={loading} choices={historyChoices.map(choice =>
             ({ ...choice, disabled: !isHistoryRangeWithin(choice.value, retention) }))} onChange={chooseRange} />
-          {retention !== 'year' && <HelpTip label="可查看范围" text={`目前最多保留 ${historyRangeLabels[retention]}。可在设置 → 记录调整；延长期限不会找回已清理的记录。`} />}
+          {retention !== 'year' && <span inert={loading}><HelpTip label="可查看范围" text={`目前最多保留 ${historyRangeLabels[retention]}。可在设置 → 记录调整；延长期限不会找回已清理的记录。`} /></span>}
         </div>
         <span aria-label="实际查看时段" title={dateSpan}>{dateSpan}</span></div>
       <div className={s.historyChoices} role="group" aria-label="选择对比设备">
         {selected.map(item => <button type="button" key={item.id} className={s.historyChoice}
-          data-series={seriesSlots.get(item.id)} data-device={item.id} disabled={activeIds.length === 1}
+          data-series={seriesSlots.get(item.id)} data-device={item.id} disabled={loading || activeIds.length === 1}
           aria-label={activeIds.length > 1 ? '移除对比：' + item.name : item.name} title={item.name}
           onClick={event => {
             if (event.currentTarget === document.activeElement) addDevice.current?.focus();
@@ -1100,8 +1109,8 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
           {item.status === 'offline' && <Unplug size={13} aria-label="当前断开" />}
           {activeIds.length > 1 && <X className={s.historyRemove} size={12} aria-hidden="true" />}
         </button>)}
-        {state.devices.length > 1 && <Menu.Root>
-          <Menu.Trigger asChild><button ref={addDevice} className={s.historyAdd}><Plus size={15} aria-hidden="true" />对比设备</button></Menu.Trigger>
+        {state.devices.length > 1 && (loading ? compareButton : <Menu.Root>
+          <Menu.Trigger asChild>{compareButton}</Menu.Trigger>
           <Menu.Portal><Menu.Content align="end" sideOffset={6} className={s.historyMenu} aria-label="可对比设备">
             {ordered.map(item => {
               const checked = seriesSlots.has(item.id);
@@ -1112,13 +1121,15 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
               </Menu.CheckboxItem>;
             })}
           </Menu.Content></Menu.Portal>
-        </Menu.Root>}
+        </Menu.Root>)}
       </div>
     </div>
-    {!first && !starting ? <Empty button={find}>暂无电量记录</Empty> :
-      <CompareChart devices={selected} starting={starting} anchor={now} range={range} seriesSlots={seriesSlots}
-        threshold={single ? state.deviceSettings[single.id]?.low ?? state.settings.low : undefined} />}
-  </section>;
+    {chart}
+    </section>;
+  };
+  if (!first && !starting) return renderComparison(<Empty button={find}>暂无电量记录</Empty>, false);
+  return <CompareChart devices={selected} starting={starting} anchor={now} range={range} seriesSlots={seriesSlots}
+    threshold={single ? state.deviceSettings[single.id]?.low ?? state.settings.low : undefined} layout={renderComparison} />;
 }
 function Settings({ state, run, palette, choosePalette, retention, position }: {
   state: Snapshot; run: Run; palette: Palette; choosePalette: (palette: Palette) => void;
@@ -1454,6 +1465,7 @@ function FindDevices({ state, run, close }: { state: Snapshot; run: Run; close: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pending, setPending] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState<ReadonlySet<string>>(() => new Set());
   const [addError, setAddError] = useState<{ id: string; text: string }>();
   async function search() {
     setLoading(true);
@@ -1471,16 +1483,22 @@ function FindDevices({ state, run, close }: { state: Snapshot; run: Run; close: 
       <button className={s.button + ' ' + s.discoveryScan} disabled={loading || !!pending} onClick={() => { void search(); }}><RefreshCw size={16} aria-hidden="true" />重新扫描</button>
       <div className={s.discovery}>
         {loading ? <p role="status">正在扫描 Windows 设备…</p> : error ? <small className={s.formError} role="alert">{error}</small> : !found?.length ? <p role="status">未发现设备。</p> : found.map(device => {
-          const watched = state.devices.some(item => item.id === device.id);
+          const listed = state.devices.some(item => item.id === device.id);
+          const added = accepted.has(device.id);
+          const hasBatterySource = !!device.reading || device.batteryCandidate === 'ble_bas';
+          const awaitingReading = added || (device.automatic && device.connected && hasBatterySource);
+          const canAdd = device.connected && hasBatterySource && !device.automatic && !listed && !added;
           return <div key={device.id} className={s.discoveryRow}><div><b>{device.name}</b><small>{device.connection} · {
-            device.automatic || watched ? '已加入监测' : !device.connected ? '已识别 · 未加入监测' : device.reading ? '可添加 · ' + readingLabel(device.reading) : device.batteryCandidate === 'ble_bas' ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small>
+            listed ? '已加入监测' : awaitingReading ? '等待首次采集' : !device.connected ? '已识别 · 未加入监测' :
+            device.automatic ? '暂未读到电量' : device.reading ? '可添加 · ' + readingLabel(device.reading) :
+            hasBatterySource ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small>
             {addError?.id === device.id && <span className={s.formError} role="alert">{addError.text}</span>}</div>
-            {device.connected && (device.reading || device.batteryCandidate === 'ble_bas') && !device.automatic && !watched && <button className={s.button} disabled={!!pending} onClick={() => {
+            {canAdd && <button className={s.button} disabled={!!pending} onClick={() => {
                 setPending(device.id);
                 setAddError(undefined);
                 void run({ type: 'add', id: device.id }, { inlineError: true }).then(reply => {
                   setPending(null);
-                  if (reply.ok) setFound(items => items?.map(item => item.id === device.id ? { ...item, automatic: true } : item));
+                  if (reply.ok) setAccepted(ids => new Set(ids).add(device.id));
                   else setAddError({ id: device.id, text: reply.error });
                 });
               }}>{pending === device.id ? '正在添加…' : addError?.id === device.id ? '重试添加' : '添加到监测'}</button>}

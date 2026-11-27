@@ -2,6 +2,7 @@
 
 #include "battery.hpp"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -9,9 +10,15 @@ namespace pm {
 
 enum class WindowsBatteryDetail : unsigned {
     none = 0, disconnected, missingProperty, invalidPercent, apiUnavailable, notFound, queryFailed,
-    unknownConnection,
+    unknownConnection, bluetoothNodeProperty,
 };
 const char* windowsBatteryReason(const Sample& sample);
+
+constexpr bool permitsBluetoothNodeBatteryFallback(WindowsBatteryDetail detail)
+{
+    // These states already have positive connection evidence from Windows.
+    return detail == WindowsBatteryDetail::missingProperty || detail == WindowsBatteryDetail::invalidPercent;
+}
 
 enum class WindowsConnectionEvidence { unknown, disconnected, connected };
 
@@ -60,8 +67,8 @@ constexpr void markKeyboardWithoutDisplayContainer(FoundDevice& keyboard, bool b
 }
 
 // Do not enroll a phone, laptop, dock, or other general Bluetooth/container
-// entry merely because Windows exposes a battery property on it. A connected
-// Bluetooth peripheral is still shown if none of its sources has a reading.
+// entry merely because Windows exposes a battery property on it. A recognized,
+// connected Bluetooth peripheral can be sampled before its first reading.
 constexpr bool defaultPeripheralMonitoring(const FoundDevice& device, bool claimedByNative)
 {
     if (!device.connected || claimedByNative) return false;
@@ -79,6 +86,18 @@ constexpr bool eligibleForBleConnectionVerification(const FoundDevice& device, b
 }
 
 std::optional<std::vector<FoundDevice>> findWindowsDevices();
+
+// Share one lazy devnode enumeration per discovery scan or sampling batch.
+// A reader is short-lived so a later scan always checks the current properties.
+class WindowsBatteryReader {
+public:
+    Sample read(const std::wstring& id);
+private:
+    friend std::optional<std::vector<FoundDevice>> findWindowsDevices();
+    Sample withBluetoothNodeProperty(const std::wstring& id, Sample sample);
+    std::optional<std::map<std::wstring, std::optional<int>>> bluetoothLevels_;
+};
+
 Sample readWindowsDevice(const std::wstring& id);
 // A fresh Windows connection-only query of a unique, paired LE association
 // endpoint for this exact container. Presence or Classic links cannot qualify.

@@ -241,10 +241,9 @@
 .meter strong { display: block; width: max-content; max-width: 100%; color: var(--ink); font-size: clamp(29px, 3.85vw, 61px); line-height: 1.04; font-weight: 550; letter-spacing: -.035em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .percentUnit { font-size: .62em; font-weight: 500; margin-inline-start: .07em; color: var(--muted); }
 .rangeDash { font-size: .76em; font-weight: 450; margin-inline: .07em; color: var(--muted); }
-.heroData .meter { display: grid; grid-template-columns: auto minmax(0, 120px); align-items: center; gap: clamp(6px, .8vw, 12px); }
-.heroData .meter strong { width: 5.8ch; font-size: clamp(21px, 2.05vw, 33px); }
-.heroData .meter[data-charge-complete] .meterValue { grid-column: 1 / -1; }
-.heroData .meter[data-charge-complete] strong, .heroData .meterValue:has([data-last-battery]) strong { width: auto; }
+.heroData .meter { display: grid; grid-template-columns: max-content minmax(0, 120px); align-items: center; gap: 5px clamp(6px, .8vw, 12px); }
+.heroData .meter strong { font-size: clamp(21px, 2.05vw, 33px); }
+.heroData .meter[data-charge-complete] strong, .heroData .previousBattery { grid-column: 1 / -1; }
 .heroData .meter :is(.track, .progress) { margin-top: 0; }
 .track { margin-top: 14px; }
 .progress { position: relative; height: 5px; width: 100%; border-radius: 8px; isolation: isolate; }
@@ -308,6 +307,7 @@
 @media (max-width: 770px) {
   .desk { grid-template-columns: minmax(0, 1fr); min-height: 0; row-gap: 12px; }
   .hero { padding-bottom: 8px; }
+  .heroData { grid-template-rows: auto auto auto; align-content: center; }
   .carousel { height: clamp(230px, 47vw, 385px); }
   .rail { transform: none; }
   .railRows { max-height: none; }
@@ -394,7 +394,7 @@
   .heroMeta { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 4px; }
   .heroState { min-height: 36px; font-size: 11px; gap: 3px 5px; }
   .heroData .meter strong { font-size: clamp(18px, 4vw, 25px); }
-  .heroData .meter { grid-template-columns: auto minmax(0, 78px); }
+  .heroData .meter { grid-template-columns: max-content minmax(0, 78px); }
 }
 
 /* The cold scan status occupies no permanent device cell; the returning data
@@ -440,5 +440,5 @@
   .desk[data-cold-reveal] :is(.heroData, .rail), .visual img[data-cold-photo-loaded] { animation: none; }
 }
 
-.meterValue { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 9px; }
-.previousBattery { font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.previousBattery { display: block; margin-top: 5px; font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.heroData .previousBattery { margin-top: 0; }
