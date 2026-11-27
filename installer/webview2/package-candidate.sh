@@ -10,7 +10,8 @@ assets="$root/verified-inputs"
 out="${1:?supply output directory}"
 mkdir -p "$out"
 out="$(cd -- "$out" && pwd)"
-name=PowerManager-Setup-0.2.0.exe
+version=$(node -p "require('./package.json').version")
+name="PowerManager-Setup-$version.exe"
 file "$app" | grep -Eq 'PE32\+.*x86-64'
 file "$assets/collector.exe" | grep -Eq 'PE32\+.*x86-64'
 file "$assets/WebView2Loader.dll" | grep -Eq 'PE32\+.*x86-64'

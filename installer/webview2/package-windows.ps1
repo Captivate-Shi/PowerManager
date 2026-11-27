@@ -55,7 +55,20 @@ $exe = Join-Path $out "PowerManager-Setup-$version.exe"
 $icon = (Resolve-Path "$tauri/icons/icon.ico").Path
 & $nsis /WX /V3 /INPUTCHARSET UTF8 "/DOUT=$exe" "/DAPP=$app" "/DAPP_ICON=$icon" "/DLOADER=$( (Get-Item -LiteralPath (Join-Path $payload WebView2Loader.dll)).FullName )" "/DCOLLECTOR=$( (Get-Item -LiteralPath (Join-Path $payload collector.exe)).FullName )" "/DBOOTSTRAPPER=$bootstrap" (Resolve-Path 'installer/webview2/setup.nsi').Path
 Check-Native
+# Copy the same application, loader and collector used by Setup into a true extract-and-run ZIP.
+$staging = Join-Path ([IO.Path]::GetTempPath()) ("PowerManager-Portable-" + [Guid]::NewGuid().ToString("N"))
+$zip = Join-Path $out "PowerManager-$version-win-x64.zip"
+try {
+    $lab = (New-Item -ItemType Directory (Join-Path $staging 'lab') -Force).FullName
+    Copy-Item -LiteralPath $app -Destination (Join-Path $staging 'PowerManager.exe')
+    Copy-Item -LiteralPath $dll -Destination (Join-Path $staging 'WebView2Loader.dll')
+    Copy-Item -LiteralPath (Join-Path $payload 'collector.exe') -Destination $lab
+    Compress-Archive -LiteralPath @((Join-Path $staging 'PowerManager.exe'), (Join-Path $staging 'WebView2Loader.dll'), $lab) -DestinationPath $zip -Force
+} finally {
+    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+}
 $checksum = Join-Path $out 'SHA256SUMS.txt'
-'{0}  {1}' -f (Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant(), (Split-Path $exe -Leaf) |
-  Set-Content -LiteralPath $checksum -Encoding ascii
-Compress-Archive -LiteralPath $exe,$checksum -DestinationPath (Join-Path $out "PowerManager-Setup-$version.zip") -Force
+$lines = foreach ($asset in @($exe, $zip)) {
+    '{0}  {1}' -f (Get-FileHash -LiteralPath $asset).Hash.ToLowerInvariant(), (Split-Path $asset -Leaf)
+}
+$lines | Set-Content -LiteralPath $checksum -Encoding ascii

@@ -9,7 +9,10 @@ if ($install.ExitCode -ne 0) { throw 'Silent installation failed' }
 $app=Join-Path $folder 'PowerManager.exe'
 $uninstall=Join-Path $folder 'Uninstall.exe'
 if (!(Test-Path -LiteralPath $app) -or !(Test-Path -LiteralPath $uninstall)) { throw 'Missing installed app or uninstaller' }
-if ((Get-ItemProperty -LiteralPath $reg).InstallLocation -ne $folder) { throw 'Incorrect install location' }
+$entry = Get-ItemProperty -LiteralPath $reg
+if ($entry.InstallLocation -ne $folder) { throw 'Incorrect install location' }
+$expectedVersion = [IO.Path]::GetFileNameWithoutExtension($setup) -replace '^PowerManager-Setup-', ''
+if ($entry.DisplayVersion -ne $expectedVersion) { throw 'Installer version and installed version do not match' }
 if (Get-Process PowerManager -ErrorAction SilentlyContinue) { throw 'Silent setup launched the app' }
 $sentinel=Join-Path $folder 'do-not-delete.txt'
 Set-Content -LiteralPath $sentinel -Value 'unrelated file'
