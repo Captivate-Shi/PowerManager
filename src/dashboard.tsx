@@ -27,7 +27,7 @@ import { historyStorageEstimate } from './history-storage';
 import { applyMainPalette, palettes, readPalette, savePalette, type Palette } from './theme';
 import { DetentSlider } from './detent-slider';
 import { canReuseStageEntry, paintStage, shifted, stageLanding, stagePose, stageReleaseLead, stageRest, stageTravel, stageVelocity, type StagePose, type StageSample } from './stage-gesture';
-import { animateDetailPhoto, detailPhoto, fadeReflection, freezeReflection, stageReflection } from './device-art-motion';
+import { animateDetailPhoto, detailPhoto, fadeDetailPhoto, fadeReflection, freezeReflection, stageReflection } from './device-art-motion';
 
 const pages = [
   ['overview', '总览'], ['devices', '设备'], ['alerts', '提醒'], ['history', '记录'], ['settings', '设置'],
@@ -161,7 +161,11 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     reflection?: HTMLElement, returning = false, reflectionOpacity?: number) {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const active: DetailMotion[] = [];
-    const photo = from && to && animateDetailPhoto(from, to, duration);
+    // A device-table preview and the full-size art sit on opposite sides.
+    // Animate the destination in place rather than crossing readable controls.
+    const photo = page === 'devices'
+      ? to && fadeDetailPhoto(to)
+      : from && to && animateDetailPhoto(from, to, duration);
     if (photo) active.push(photo);
     if (reflection) active.push(returning ? fadeReflection(reflection, true, 190, reflectionOpacity === undefined ? 95 : 0, reflectionOpacity) : fadeReflection(reflection, false, 230));
     if (!active.length) return;
@@ -197,7 +201,9 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     window.scrollTo(0, returnScroll.current);
     if (returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
     if (!main.current?.contains(document.activeElement)) main.current?.focus({ preventScroll: true });
-    transitionDetail(from, sourcePhoto.current?.isConnected ? sourcePhoto.current : undefined, 285, stageReflection(main.current), true, reflectionOpacity);
+    const returnPhoto = sourcePhoto.current?.isConnected ? sourcePhoto.current : page === 'devices' ?
+      main.current?.querySelector<HTMLImageElement>('[data-full="false"] img[data-device-art]') ?? undefined : undefined;
+    transitionDetail(from, returnPhoto, 285, stageReflection(main.current), true, reflectionOpacity);
   }
   useEffect(() => {
     const skip = () => cancelTransition();
@@ -1427,15 +1433,15 @@ function FindDevices({ state, run, close }: { state: Snapshot; run: Run; close: 
     else setError(reply.ok ? '未收到设备列表，请重新扫描。' : reply.error);
   }
   useEffect(() => { void search(); }, []);
-  return <Modal title="查找设备"
+  return <Modal title="查找设备" className={s.discoveryModal}
     hint="先在 Windows 连接或配对设备。"
     onClose={close}>
-      <button className={s.button} disabled={loading || !!pending} onClick={() => { void search(); }}><RefreshCw size={16} aria-hidden="true" />重新扫描</button>
+      <button className={s.button + ' ' + s.discoveryScan} disabled={loading || !!pending} onClick={() => { void search(); }}><RefreshCw size={16} aria-hidden="true" />重新扫描</button>
       <div className={s.discovery}>
         {loading ? <p role="status">正在扫描 Windows 设备…</p> : error ? <small className={s.formError} role="alert">{error}</small> : !found?.length ? <p role="status">未发现设备。</p> : found.map(device => {
           const watched = state.devices.some(item => item.id === device.id);
           return <div key={device.id} className={s.discoveryRow}><div><b>{device.name}</b><small>{device.connection} · {
-            device.automatic || watched ? '已监测' : !device.connected ? '未连接' : device.reading ? '可添加 · ' + readingLabel(device.reading) : device.batteryCandidate === 'ble_bas' ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small>
+            device.automatic || watched ? `已加入监测 · ${device.connected ? '已连接' : '未连接'}` : !device.connected ? '未连接' : device.reading ? '可添加 · ' + readingLabel(device.reading) : device.batteryCandidate === 'ble_bas' ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small>
             {addError?.id === device.id && <span className={s.formError} role="alert">{addError.text}</span>}</div>
             {device.connected && (device.reading || device.batteryCandidate === 'ble_bas') && !device.automatic && !watched && <button className={s.button} disabled={!!pending} onClick={() => {
                 setPending(device.id);

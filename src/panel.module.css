@@ -361,7 +361,10 @@
 .modalClose { position: absolute; top: 10px; right: 10px; }
 .modalForm, .discoveryRow { display: flex; align-items: center; gap: 8px; }
 .modalForm input { flex: 1; min-width: 0; }
-.discovery { margin-top: 12px; min-height: 50px; }
+.discoveryModal { display: flex; flex-direction: column; height: 320px; }
+.discoveryModal .modalHeading { flex: none; }
+.discoveryScan { flex: none; align-self: flex-start; }
+.discovery { margin-top: 12px; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .discovery p, .smallEmpty { padding: 10px 0; color: var(--muted); }
 .discoveryRow { justify-content: space-between; padding-block: 10px; border-top: 1px solid var(--line); }
 .discoveryRow b { overflow-wrap: anywhere; }
