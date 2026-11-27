@@ -14,6 +14,13 @@ mod power_events;
 mod tray_position;
 mod tray_clicks;
 mod main_frame;
+mod toast_lifecycle;
+use toast_lifecycle::ToastSlot;
+
+static NEXT_TOAST_TICKET: AtomicU64 = AtomicU64::new(1);
+static CLOSED_TOAST_TICKET: AtomicU64 = AtomicU64::new(0);
+static TOAST_SLOT: std::sync::Mutex<Option<ToastSlot>> = std::sync::Mutex::new(None);
+
 use monitor_rust::Bridge;
 
 static TRAY_PINNED: AtomicBool = AtomicBool::new(false);
@@ -162,7 +169,65 @@ fn open_at(app: &AppHandle, label: &'static str, anchor: Option<tray_position::A
     build_surface(app, label, anchor)
 }
 
+fn new_toast_ticket() -> u64 { NEXT_TOAST_TICKET.fetch_add(1, Ordering::Relaxed) }
+fn toast_closed(ticket: u64) -> bool { CLOSED_TOAST_TICKET.load(Ordering::Acquire) >= ticket }
+fn mark_toast_closed(ticket: u64) { CLOSED_TOAST_TICKET.fetch_max(ticket, Ordering::AcqRel); }
+
+// Create/show/close operations are serialized on the native UI thread. The ticket ties
+// delayed callbacks and renderer IPC to the specific toast that created them.
+fn open_toast(app: &AppHandle, ticket: u64, seconds: u64) {
+    if toast_closed(ticket) { return; }
+    if app.get_webview_window("toast").is_some() {
+        mark_toast_closed(ticket);
+        return;
+    }
+    *TOAST_SLOT.lock().unwrap() = Some(ToastSlot::new(ticket, seconds));
+    if build_surface_for(app, "toast", None, Some(ticket)).is_err() {
+        close_toast(app, ticket, false);
+        return;
+    }
+    let gui = app.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(4));
+        let handle = gui.clone();
+        let _ = gui.run_on_main_thread(move || close_toast(&handle, ticket, true));
+    });
+}
+
+fn close_toast(app: &AppHandle, ticket: u64, only_if_hidden: bool) {
+    if !TOAST_SLOT.lock().unwrap().is_some_and(|slot| slot.matches(ticket, only_if_hidden)) { return; }
+    if let Some(window) = app.get_webview_window("toast") {
+        if window.destroy().is_err() { return; }
+    }
+    *TOAST_SLOT.lock().unwrap() = None;
+    mark_toast_closed(ticket);
+}
+
+fn present_toast(app: &AppHandle, ticket: u64) {
+    if !TOAST_SLOT.lock().unwrap().is_some_and(|slot| slot.matches(ticket, true)) { return; }
+    let Some(window) = app.get_webview_window("toast") else {
+        close_toast(app, ticket, false);
+        return;
+    };
+    if window.show().is_err() {
+        close_toast(app, ticket, false);
+        return;
+    }
+    let duration = TOAST_SLOT.lock().unwrap().as_mut().and_then(ToastSlot::present);
+    let Some(duration) = duration else { return; };
+    let gui = app.clone();
+    thread::spawn(move || {
+        thread::sleep(duration);
+        let handle = gui.clone();
+        let _ = gui.run_on_main_thread(move || close_toast(&handle, ticket, false));
+    });
+}
+
 fn build_surface(app: &AppHandle, label: &'static str, anchor: Option<tray_position::Anchor>) -> Result<(), String> {
+    build_surface_for(app, label, anchor, None)
+}
+
+fn build_surface_for(app: &AppHandle, label: &'static str, anchor: Option<tray_position::Anchor>, toast_ticket: Option<u64>) -> Result<(), String> {
     if label == "tray" {
         TRAY_READY.store(false, Ordering::Release);
         TRAY_ACCEPTED.store(false, Ordering::Release);
@@ -170,7 +235,8 @@ fn build_surface(app: &AppHandle, label: &'static str, anchor: Option<tray_posit
 
     if label == "main" { MAIN_READY.store(false, Ordering::Release); }
     let (w, h) = match label { "main" => (1240.0, 820.0), "tray" => (420.0, 565.0), _ => (460.0, 146.0) };
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(format!("index.html?surface={label}").into()))
+    let query = toast_ticket.map(|ticket| format!("&ticket={ticket}")).unwrap_or_default();
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(format!("index.html?surface={label}{query}").into()))
         .title("余电").inner_size(w, h).visible(false)
         .on_navigation(|url| ((matches!(url.scheme(),"http"|"https")&&url.host_str()==Some("tauri.localhost"))||(url.scheme()=="tauri"&&url.host_str()==Some("localhost"))) && url.path()=="/index.html");
     if label != "main" { builder = builder.always_on_top(true).resizable(false).decorations(false).skip_taskbar(true); }
@@ -182,6 +248,11 @@ fn build_surface(app: &AppHandle, label: &'static str, anchor: Option<tray_posit
     }
     if label == "toast" { builder = builder.focused(false); }
     let window = builder.build().map_err(|e| e.to_string())?;
+    if let Some(ticket) = toast_ticket {
+        window.on_window_event(move |event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) { mark_toast_closed(ticket); }
+        });
+    }
     if label == "main" {
         let w = window.clone();
         window.on_window_event(move |evt| {
@@ -229,20 +300,7 @@ fn build_surface(app: &AppHandle, label: &'static str, anchor: Option<tray_posit
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         }
     }
-    if label=="toast"{
-        let expire=window.clone();
-        let gui=app.clone();
-        thread::spawn(move || {
-            thread::sleep(Duration::from_secs(4));
-            let app=gui.clone();
-            let _=gui.run_on_main_thread(move||{
-                if expire.is_visible().is_ok_and(|visible|!visible) && expire.destroy().is_ok(){
-                    let state=app.state::<Arc<Bridge>>().inner().clone();
-                    thread::spawn(move||{let _=state.request("dismiss",Value::Null);});
-                }
-            });
-        });
-    } else if label == "main" {
+    if label == "main" {
         let w = window.clone();
         let gui = app.clone();
         thread::spawn(move || {
@@ -264,6 +322,11 @@ async fn desktop(window: tauri::WebviewWindow, method: String, data: Value) -> R
     let app = window.app_handle().clone();
     let state = app.state::<Arc<Bridge>>().inner().clone();
     let kind = data["type"].as_str().unwrap_or_default();
+    let toast_ticket = if label == "toast" {
+        let url = window.url().map_err(|e| e.to_string())?;
+        Some(url.query_pairs().find(|(key, _)| key == "ticket")
+            .and_then(|(_, value)| value.parse::<u64>().ok()).ok_or("提醒已失效")?)
+    } else { None };
     match (label, method.as_str(), kind) {
         ("main","window-action",_)=>{
             match data.as_str(){
@@ -319,25 +382,17 @@ async fn desktop(window: tauri::WebviewWindow, method: String, data: Value) -> R
             });
             return Ok(Value::Null);
         }
-        ("toast","toast-present",_)=>{
-            if !window.is_visible().unwrap_or(false){
-                window.show().map_err(|e|e.to_string())?;
-                let expire=window.clone();
-                let gui=app.clone();
-                thread::spawn(move||{
-                    thread::sleep(Duration::from_secs(12));
-                    let app=gui.clone();
-                    let _=gui.run_on_main_thread(move||{
-                        if expire.destroy().is_ok(){
-                            let state=app.state::<Arc<Bridge>>().inner().clone();
-                            thread::spawn(move||{let _=state.request("dismiss",Value::Null);});
-                        }
-                    });
-                });
-            }
+        ("toast", "toast-present", _) => {
+            let ticket = toast_ticket.unwrap();
+            let gui = app.clone();
+            app.run_on_main_thread(move || present_toast(&gui, ticket)).map_err(|e| e.to_string())?;
             return Ok(Value::Null);
         }
-        (_, "snapshot", _) | ("toast", "toast", _) | ("main", "view" | "remember" | "evidence" | "test-power", _) => {}
+        ("toast", "toast", _) => {
+            return tauri::async_runtime::spawn_blocking(move || state.request("toast", json!(toast_ticket)))
+                .await.map_err(|_| String::from("实验后端异常"))?;
+        }
+        (_, "snapshot", _) | ("main", "view" | "remember" | "evidence" | "test-power", _) => {}
         ("tray", "tray-test", _) if TRAY_BENCH.load(Ordering::Acquire) => {
             let reopen = kind == "reopen";
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
@@ -370,17 +425,19 @@ async fn desktop(window: tauri::WebviewWindow, method: String, data: Value) -> R
             return Ok(json!({"ok":true}));
         }
         ("toast", "command", "closeSurface") => {
-            window.destroy().map_err(|e| e.to_string())?;
-            if label == "toast" {
-                thread::spawn(move || { let _ = state.request("dismiss", Value::Null); });
-            }
+            let ticket = toast_ticket.unwrap();
+            let gui = app.clone();
+            app.run_on_main_thread(move || close_toast(&gui, ticket, false)).map_err(|e| e.to_string())?;
             return Ok(json!({"ok":true}));
         }
         (_, "command", "open") => {
-            if label=="toast"{let _=window.destroy();let bridge=state.clone();thread::spawn(move||{let _=bridge.request("dismiss",Value::Null);});}
             let gui = app.clone();
             let id = data["id"].as_str().map(|s| s.to_owned());
             app.run_on_main_thread(move || {
+                if let Some(ticket) = toast_ticket {
+                    if !TOAST_SLOT.lock().unwrap().is_some_and(|slot| slot.matches(ticket, false)) { return; }
+                    close_toast(&gui, ticket, false);
+                }
                 if open(&gui, "main").is_ok() {
                     if let Some(id) = id {
                         if MAIN_READY.load(Ordering::Acquire) { let _ = gui.emit("pm-navigate", id); }

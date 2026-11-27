@@ -137,7 +137,7 @@ export function ToastPanel({ toast }: { toast: Toast }) {
   };
   const dismiss = () => { void api.command({ type: 'closeSurface' }); };
   return <main className={s.toast + ' ' + preferences.toastSurface} aria-live="polite" data-critical={severity === 'critical'} data-has-detail={!!detailId} aria-label="桌面电量提醒">
-    <button className={s.toastBody} onClick={dismiss}
+    <div className={s.toastBody} tabIndex={0} data-toast-body=""
       onFocus={event => { if (event.currentTarget.matches(':focus-visible')) revealName(); }}
       onBlur={() => setShowName(false)} onKeyDown={event => { if (event.key === 'Escape') setShowName(false); }}>
       <span className={preferences.toastArt} aria-hidden="true"><Art device={device} /></span>
@@ -146,7 +146,7 @@ export function ToastPanel({ toast }: { toast: Toast }) {
         <span className={preferences.toastReading}>{readingLabel(device.reading)}</span>
         <small className={s.toastHint}>{severity === 'critical' ? '电量告急' : '低电量'}{preview && ' · 测试提醒'}</small>
       </span>
-    </button>
+    </div>
     {detailId && <button className={s.toastDetail} onClick={() => { void api.command({ type: 'open', id: detailId }); }}>
       查看详情 <ChevronRight size={15} aria-hidden="true" />
     </button>}

@@ -144,8 +144,8 @@ export function SelectControl({ label, value, choices, onChange, disabled }: {
     </Select.Content></Select.Portal>
   </Select.Root>;
 }
-export function Modal({ title, description, hint, onClose, children }: {
-  title: string; description?: string; hint?: string; onClose: () => void; children: ReactNode;
+export function Modal({ title, description, hint, onClose, restoreFocus, children }: {
+  title: string; description?: string; hint?: string; onClose: () => void; restoreFocus?: () => HTMLElement | null; children: ReactNode;
 }) {
   const opener = useRef(document.activeElement);
   return <Dialog.Root open onOpenChange={value => { if (!value) onClose(); }}><Dialog.Portal>
@@ -158,19 +158,20 @@ export function Modal({ title, description, hint, onClose, children }: {
     }} />
     <Dialog.Content className={s.modal} {...(!description ? { 'aria-describedby': undefined } : {})}
       onOpenAutoFocus={event => {
-        if (!hint) return;
         const content = event.currentTarget;
         if (!(content instanceof HTMLElement)) return;
-        const focus = content.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled]):not([data-copy-tip]):not(.' + s.modalClose + ')') ??
-          content.querySelector<HTMLElement>('.' + s.modalClose);
+        const focus = content.querySelector<HTMLElement>('[data-dialog-initial]:not([disabled])') ??
+          (hint ? content.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled]):not([data-copy-tip]):not(.' + s.modalClose + ')') ??
+            content.querySelector<HTMLElement>('.' + s.modalClose) : null);
         if (focus) { event.preventDefault(); focus.focus(); }
       }}
       onCloseAutoFocus={event => {
-      if (opener.current instanceof HTMLElement && opener.current.isConnected) {
-        event.preventDefault();
-        opener.current.focus({ preventScroll: true });
-      }
-    }}>
+        const target = restoreFocus?.() ?? opener.current;
+        if (target instanceof HTMLElement && target.isConnected) {
+          event.preventDefault();
+          target.focus({ preventScroll: true });
+        }
+      }}>
       <div className={s.modalHeading}><Dialog.Title>{title}</Dialog.Title>{hint && <HelpTip label={title} text={hint} />}</div>
       {description && <Dialog.Description>{description}</Dialog.Description>}
       <Dialog.Close asChild><button className={s.iconButton + ' ' + s.modalClose} aria-label="关闭对话框"><X size={20} /></button></Dialog.Close>

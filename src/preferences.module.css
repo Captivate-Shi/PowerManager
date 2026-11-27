@@ -187,7 +187,10 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scroll-padding-block: 8px;
-  padding: 4px 8px 10px 3px;
+  /* Scroll even over the outer gutter without changing reading width. */
+  width: auto;
+  margin-inline-end: calc(-1 * var(--content-gutter));
+  padding: 4px calc(8px + var(--content-gutter)) 10px 3px;
 }
 .settingsSections:focus-visible { outline-offset: -2px; }
 .settingsSections > section {

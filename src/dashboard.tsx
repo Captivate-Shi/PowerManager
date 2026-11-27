@@ -5,7 +5,7 @@ import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, C
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { defaults, historyRanges, inventoryState, isConnected, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { defaults, historyRanges, inventoryState, isConnected, isDesktopToastSeconds, isPollIntervalSeconds, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, readingTimeLabel, readingUpdated, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -34,7 +34,7 @@ const pages = [
 ] as const;
 type Page = typeof pages[number][0];
 type Filter = 'all' | 'online' | 'low' | 'offline' | 'recent';
-type Run = (command: Command) => Promise<CommandResult>;
+type Run = (command: Command, options?: { inlineError?: boolean }) => Promise<CommandResult>;
 type ReportFeedback = (feedback: { text: string; error?: boolean }) => void;
 
 
@@ -44,6 +44,16 @@ const needCharge = (state: Snapshot) => state.devices.filter(device => level(dev
 const minutes = (values: number[]) => values.map(value => ({ value: String(value), label: value ? value + ' 分钟' : '关闭' }));
 const powerLabels = { charging: '充电中', full: '已充满', discharging: '电池供电', unknown: '设备未上报' };
 const historyChoices = historyRanges.map(value => ({ value, label: historyRangeLabels[value] }));
+const pollChoices = [
+  { value: '30', label: '30 秒（推荐）' }, { value: '60', label: '1 分钟' },
+  { value: '300', label: '5 分钟', detail: '低电量可能更晚发现' },
+  { value: '600', label: '10 分钟', detail: '设备可能在提醒前耗尽电量' },
+];
+const toastDurationChoices = [
+  { value: '5', label: '5 秒' }, { value: '10', label: '10 秒' },
+  { value: '12', label: '12 秒（默认）' }, { value: '15', label: '15 秒' },
+  { value: '0', label: '一直显示', detail: '手动关闭或查看详情' },
+];
 const retentionChoices = historyChoices.map(choice => ({ ...choice, detail: historyStorageEstimate(choice.value) }));
 const thresholdDetents = Array.from({ length: 9 }, (_, index) => ({ value: (index + 1) * 10, major: index % 2 === 0 }));
 
@@ -110,10 +120,11 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
-  const run: Run = async command => {
+  const run: Run = async (command, options) => {
     const result = await api.command(command).catch((): CommandResult => ({ ok: false, error: '与应用主进程的连接已断开' }));
-    if (!result.ok) setFeedback({ text: result.error, error: true });
-    else setFeedback(result.message ? { text: result.message } : undefined);
+    if (!result.ok) {
+      if (!options?.inlineError) setFeedback({ text: result.error, error: true });
+    } else setFeedback(result.message ? { text: result.message } : undefined);
     return result;
   };
   useEffect(() => {
@@ -837,10 +848,13 @@ function Devices({ state, sortConnections, selected, pick, filter, setFilter, qu
 }
 function Details({ device, state, run, reportFeedback, full, openFull }: { device: Device; state: Snapshot; run: Run; reportFeedback: ReportFeedback; full?: boolean; openFull?: (source: HTMLElement) => void }) {
   const detailRef = useRef<HTMLElement>(null);
+  const moreActions = useRef<HTMLButtonElement>(null);
   const [editing, edit] = useState(false);
   const [alias, setAlias] = useState(state.deviceSettings[device.id]?.alias ?? '');
   const aliasTooLong = [...alias.trim()].length > 50;
   const [confirmRemove, setRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState('');
   const rules = state.deviceSettings[device.id];
   const savedLimit = deviceLowThreshold(device, state);
   useEffect(() => { if (!full) prepareHero(device); }, [device.art, full]);
@@ -890,13 +904,17 @@ function Details({ device, state, run, reportFeedback, full, openFull }: { devic
           </Collapsible.Content>
         </Collapsible.Root>
         <footer className={s.detailActions}>{openFull && <button className={s.primary} onClick={() => { if (detailRef.current) openFull(detailRef.current); }}>查看详情 <ChevronRight size={16} aria-hidden="true" /></button>}<button className={s.button} onClick={() => send({ type: 'preview', severity: low ?? 'low', id: device.id })}><Bell size={19} />提醒测试</button>
-          <Menu.Root><Menu.Trigger asChild><button className={s.button}><Ellipsis size={20} />更多操作</button></Menu.Trigger>
-            <Menu.Portal><Menu.Content align="end" sideOffset={5} className={s.popover}>
+          <Menu.Root><Menu.Trigger asChild><button ref={moreActions} className={s.button}><Ellipsis size={20} />更多操作</button></Menu.Trigger>
+            <Menu.Portal><Menu.Content align="end" sideOffset={5} className={s.popover}
+              onCloseAutoFocus={event => { if (confirmRemove) event.preventDefault(); }}>
               <Menu.Item className={s.menuOption} onSelect={() => void copyDevice()}><Copy size={15} aria-hidden="true" />复制设备信息</Menu.Item>
               <Menu.Item className={s.menuOption} onSelect={() => send({ type: 'refresh' })}><RefreshCw size={15} aria-hidden="true" />立即刷新</Menu.Item>
               <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'snooze', id: device.id })}><Clock size={15} aria-hidden="true" />{snoozeAction(state.settings.snooze)}</Menu.Item>
               <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'ignore', id: device.id })}><BellOff size={15} aria-hidden="true" />忽略本次</Menu.Item>
-              {device.watched && <><Menu.Separator className={s.menuDivider} /><Menu.Item className={s.menuOption} data-destructive onSelect={() => setRemove(true)}>
+              {device.watched && <><Menu.Separator className={s.menuDivider} /><Menu.Item className={s.menuOption} data-destructive onSelect={() => {
+                setRemoveError('');
+                setRemove(true);
+              }}>
                 <MonitorSmartphone size={15} aria-hidden="true" />停止监测</Menu.Item></>}
             </Menu.Content></Menu.Portal></Menu.Root>
         </footer>
@@ -915,10 +933,22 @@ function Details({ device, state, run, reportFeedback, full, openFull }: { devic
         <button type="submit" className={s.primary} disabled={aliasTooLong}>保存备注</button></form>
       {aliasTooLong && <small role="alert">设备备注最多 50 个字符</small>}
     </Modal>}
-    {confirmRemove && <Modal title="停止监测设备？" description={'将从监测列表移除' + device.name + '。'} onClose={() => setRemove(false)}>
-      <button className={s.button} onClick={() => {
-        void run({ type: 'remove', id: device.id }).then(reply => { if (reply.ok) setRemove(false); });
-      }}>停止监测</button>
+    {confirmRemove && <Modal title="停止监测设备？" description={'将从监测列表移除' + device.name + '。'}
+      onClose={() => { if (!removing) setRemove(false); }}
+      restoreFocus={() => moreActions.current ?? document.querySelector<HTMLElement>('#main-content')}>
+      {removeError && <p className={s.formError} role="alert">{removeError}</p>}
+      <div className={s.confirmActions}>
+        <button className={s.button} type="button" data-dialog-initial="" disabled={removing} onClick={() => setRemove(false)}>取消</button>
+        <button className={s.deleteAction} type="button" disabled={removing} onClick={() => {
+          setRemoving(true);
+          setRemoveError('');
+          void run({ type: 'remove', id: device.id }, { inlineError: true }).then(reply => {
+            setRemoving(false);
+            if (reply.ok) setRemove(false);
+            else setRemoveError(reply.error);
+          });
+        }}>{removing ? '正在停止…' : '停止监测'}</button>
+      </div>
     </Modal>}
   </section>;
 }
@@ -990,6 +1020,10 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
       </div>
       <details className={preferences.morePreferences}><summary>通知与静音 <ChevronDown size={16} /></summary>
         <SettingRow title="桌面弹窗"><SwitchControl label="桌面弹窗" checked={state.settings.desktopToasts} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopToasts' }); }} /></SettingRow>
+        <SettingRow title="弹窗停留" hint="适用于低电量和电量告急。选择一直显示时，点击关闭或查看详情即可收起。">
+          <SelectControl label="弹窗停留时间" value={String(state.settings.desktopToastSeconds ?? 12)} choices={toastDurationChoices}
+            disabled={!state.settings.desktopToasts} onChange={value => { const seconds = Number(value); if (isDesktopToastSeconds(seconds)) patch({ desktopToastSeconds: seconds }); }} />
+        </SettingRow>
         <SettingRow title="全屏提示音"><SwitchControl label="全屏提示音" checked={state.settings.fullscreenSound} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'fullscreenSound' }); }} /></SettingRow>
         <SettingRow title="桌面提示音"><SwitchControl label="桌面提示音" checked={state.settings.desktopSound} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopSound' }); }} /></SettingRow>
         <SettingRow title="稍后提醒"><SelectControl label="稍后提醒时间" value={String(state.settings.snooze)} onChange={value => patch({ snooze: Number(value) })} choices={minutes([5, 15, 30, 60])} /></SettingRow>
@@ -1045,7 +1079,7 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
             if (event.currentTarget === document.activeElement) addDevice.current?.focus();
             toggle(item.id);
           }}>
-          <Art device={item} /><i aria-hidden="true" /><span>{item.name}</span>
+          <Art device={item} /><i data-series-shape={seriesSlots.get(item.id)} aria-hidden="true" /><span>{item.name}</span>
           {item.status === 'offline' && <Unplug size={13} aria-label="当前断开" />}
           {activeIds.length > 1 && <X className={s.historyRemove} size={12} aria-hidden="true" />}
         </button>)}
@@ -1169,7 +1203,13 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
       <section id="settings-runtime" className={preferences.settingsSection} aria-labelledby="runtime-heading">
         <h2 id="runtime-heading" tabIndex={-1}>运行与托盘</h2>
         <SettingRow title="开机启动" hint="登录 Windows 后在托盘开始监测，不打开主窗口。"><SwitchControl label="随 Windows 登录启动" checked={state.settings.startup} onChange={value => send({ type: 'settings', patch: { startup: value } })} /></SettingRow>
-        <SettingRow title="电量采集" hint="低电量和充电中的设备会更频繁更新；读不到时自动重试。"><button className={s.button} disabled={state.refreshing || state.collector === 'starting'} onClick={() => send({ type: 'refresh' })}>{state.refreshing ? '刷新中…' : '立即刷新'}</button></SettingRow>
+        <SettingRow title="电量轮询间隔"
+          hint="间隔越长，低电量可能越晚发现，设备也可能在提醒前耗尽。已知低电量或正在充电的设备会更频繁检查。"
+          status={(state.settings.pollIntervalSeconds ?? 30) >= 300 ? '设备可能在提醒前耗尽电量' : undefined}>
+          <SelectControl label="电量轮询间隔" value={String(state.settings.pollIntervalSeconds ?? 30)} choices={pollChoices}
+            onChange={value => { const seconds = Number(value); if (isPollIntervalSeconds(seconds)) send({ type: 'settings', patch: { pollIntervalSeconds: seconds } }); }} />
+        </SettingRow>
+        <SettingRow title="电量采集"><button className={s.button} disabled={state.refreshing || state.collector === 'starting'} onClick={() => send({ type: 'refresh' })}>{state.refreshing ? '刷新中…' : '立即刷新'}</button></SettingRow>
       </section>
       <section ref={retentionControl} id="settings-history" className={preferences.settingsSection} aria-labelledby="settings-history-heading">
         <h2 id="settings-history-heading" tabIndex={-1}>记录</h2>
@@ -1211,6 +1251,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
   const [firmwareAttempted, setFirmwareAttempted] = useState(false);
   const [preview, setPreview] = useState<CompatibilityPreview>();
   const [error, setError] = useState('');
+  const [scanError, setScanError] = useState('');
   const mounted = useRef(true);
   const scanSequence = useRef(0);
   const runRef = useRef(run);
@@ -1218,7 +1259,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
   const selected = devices.find(device => device.key === choice);
   const manual = choice === 'manual';
   const options = [
-    { value: 'choose', label: scanning ? '正在扫描…' : '请选择' },
+    { value: 'choose', label: scanning ? '正在扫描…' : scanError ? '扫描未完成' : '请选择' },
     ...devices.map((device, index) => {
       const label = device.model || device.label || '未识别型号';
       const duplicate = devices.some((other, n) => n !== index &&
@@ -1226,16 +1267,19 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
       return { value: device.key, label: duplicate ? label + ' · ' + (index + 1) : label,
         detail: [device.connection, !device.connected ? '未连接' : undefined].filter(Boolean).join(' · ') };
     }),
-    { value: 'manual', label: '列表中没有我的设备' },
+    ...(!scanError ? [{ value: 'manual', label: '列表中没有我的设备' }] : []),
   ];
   async function scan() {
     const sequence = ++scanSequence.current;
     setScanning(true);
     setDevices([]);
+    setScanError('');
     changeChoice('choose');
     try {
-      const reply = await runRef.current({ type: 'diagnosticDevices' });
-      if (mounted.current && sequence === scanSequence.current && reply.ok) setDevices(reply.diagnosticDevices || []);
+      const reply = await runRef.current({ type: 'diagnosticDevices' }, { inlineError: true });
+      if (!mounted.current || sequence !== scanSequence.current) return;
+      if (reply.ok && Array.isArray(reply.diagnosticDevices)) setDevices(reply.diagnosticDevices);
+      else setScanError(reply.ok ? '未收到设备列表，请重新扫描。' : reply.error);
     } finally { if (mounted.current && sequence === scanSequence.current) setScanning(false); }
   }
   useEffect(() => {
@@ -1258,7 +1302,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
       for (let attempt = 0; attempt < 4; attempt++) {
         if (attempt) await new Promise(resolve => setTimeout(resolve, 650));
         if (!mounted.current) return;
-        const reply = await runRef.current({ type: 'diagnosticFirmware', deviceKey: device.key });
+        const reply = await runRef.current({ type: 'diagnosticFirmware', deviceKey: device.key }, { inlineError: true });
         if (!mounted.current) return;
         const info = reply.ok ? reply.diagnosticFirmware : undefined;
         if (info?.status === 'ready' && info.firmware) {
@@ -1282,7 +1326,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
     setWorking(true);
     setError('');
     try {
-      const reply = await run({ type: 'compatibility', selection });
+      const reply = await run({ type: 'compatibility', selection }, { inlineError: true });
       if (!mounted.current) return;
       if (reply.ok && reply.compatibility) setPreview(reply.compatibility);
       else setError(reply.ok ? '无法生成报告。' : reply.error);
@@ -1292,7 +1336,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
     setWorking(true);
     setError('');
     try {
-      const reply = await run({ type: 'compatibility', reportToken: report.token });
+      const reply = await run({ type: 'compatibility', reportToken: report.token }, { inlineError: true });
       if (!mounted.current) return;
       if (reply.ok) close();
       else setError(reply.error);
@@ -1319,7 +1363,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
         <span>设备型号</span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select aria-label="设备型号" className={s.select} style={{ minHeight: 34, minWidth: 145 }}
-            value={choice} onChange={event => changeChoice(event.target.value)} disabled={scanning || working}>
+            value={choice} onChange={event => changeChoice(event.target.value)} disabled={scanning || working || !!scanError}>
             {options.map(option => <option key={option.value} value={option.value}>
               {option.label}{'detail' in option && option.detail ? ' · ' + option.detail : ''}
             </option>)}
@@ -1327,7 +1371,8 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
           <button className={s.button} type="button" disabled={scanning || working} onClick={() => { void scan(); }}>重新扫描</button>
         </div>
       </div>
-      {!scanning && devices.length === 0 && !manual && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
+      {scanError && <p className={s.formError} role="alert">{scanError}</p>}
+      {!scanning && !scanError && devices.length === 0 && !manual && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
       {manual && <small role="status">手动补录不关联接口。若列表中有对应的通用设备，请选中它。</small>}
       {(manual || (selected && !selected.model)) && <label style={fieldStyle}>填写设备型号
         <input maxLength={80} autoComplete="off" style={inputStyle} required value={model} disabled={working}
@@ -1359,30 +1404,36 @@ function FindDevices({ state, run, close }: { state: Snapshot; run: Run; close: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pending, setPending] = useState<string | null>(null);
-   async function search() {
+  const [addError, setAddError] = useState<{ id: string; text: string }>();
+  async function search() {
     setLoading(true);
-    const reply = await run({ type: 'discover' });
+    setError('');
+    setAddError(undefined);
+    const reply = await run({ type: 'discover' }, { inlineError: true });
     setLoading(false);
-    if (reply.ok) { setFound(reply.found); setError(''); }
-    else setError(reply.error);
+    if (reply.ok && Array.isArray(reply.found)) setFound(reply.found);
+    else setError(reply.ok ? '未收到设备列表，请重新扫描。' : reply.error);
   }
   useEffect(() => { void search(); }, []);
   return <Modal title="查找设备"
     hint="先在 Windows 连接或配对设备。"
     onClose={close}>
-      <button className={s.button} disabled={loading} onClick={() => { void search(); }}><RefreshCw size={16} />重新扫描</button>
-      <div className={s.discovery} aria-live="polite">
-        {loading ? <p>正在扫描 Windows 设备…</p> : error ? <p>{error}</p> : !found?.length ? <p>未发现设备。</p> : found.map(device => {
+      <button className={s.button} disabled={loading || !!pending} onClick={() => { void search(); }}><RefreshCw size={16} aria-hidden="true" />重新扫描</button>
+      <div className={s.discovery}>
+        {loading ? <p role="status">正在扫描 Windows 设备…</p> : error ? <small className={s.formError} role="alert">{error}</small> : !found?.length ? <p role="status">未发现设备。</p> : found.map(device => {
           const watched = state.devices.some(item => item.id === device.id);
           return <div key={device.id} className={s.discoveryRow}><div><b>{device.name}</b><small>{device.connection} · {
-            device.automatic || watched ? '已监测' : !device.connected ? '未连接' : device.reading ? '可添加 · ' + readingLabel(device.reading) : device.batteryCandidate === 'ble_bas' ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small></div>
+            device.automatic || watched ? '已监测' : !device.connected ? '未连接' : device.reading ? '可添加 · ' + readingLabel(device.reading) : device.batteryCandidate === 'ble_bas' ? '可尝试读取蓝牙电量' : 'Windows 暂无可用电量'}</small>
+            {addError?.id === device.id && <span className={s.formError} role="alert">{addError.text}</span>}</div>
             {device.connected && (device.reading || device.batteryCandidate === 'ble_bas') && !device.automatic && !watched && <button className={s.button} disabled={!!pending} onClick={() => {
                 setPending(device.id);
-                void run({ type: 'add', id: device.id }).then(reply => {
+                setAddError(undefined);
+                void run({ type: 'add', id: device.id }, { inlineError: true }).then(reply => {
                   setPending(null);
                   if (reply.ok) setFound(items => items?.map(item => item.id === device.id ? { ...item, automatic: true } : item));
+                  else setAddError({ id: device.id, text: reply.error });
                 });
-              }}>添加到监测</button>}
+              }}>{pending === device.id ? '正在添加…' : addError?.id === device.id ? '重试添加' : '添加到监测'}</button>}
           </div>;
         })}
       </div>

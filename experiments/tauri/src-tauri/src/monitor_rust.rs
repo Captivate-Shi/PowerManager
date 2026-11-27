@@ -1,4 +1,4 @@
-use super::{open, Reply};
+use super::Reply;
 use serde_json::{json,Value};
 use std::{collections::{BTreeMap,HashSet},fs,io::{BufRead,BufReader,Write},path::{Path,PathBuf},
  process::{Child,ChildStdin,Command,Stdio},sync::{mpsc,Arc,Mutex,atomic::{AtomicBool,Ordering}},thread,time::{Duration,Instant,SystemTime,UNIX_EPOCH}};
@@ -14,7 +14,7 @@ const DAY:u64=86400000;
 fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
 fn n(v:&Value)->u64{v.as_u64().unwrap_or(0)}
 fn defaults()->Value{json!({"low":20,"critical":10,"repeat":0,"snooze":30,"fullscreenSound":true,"desktopSound":false,
-"voltage":false,"startup":false,"zoom":100,"trayZoom":100,"desktopToasts":true,"muteMinutes":60,"historyRetention":"year"})}
+"voltage":false,"startup":false,"zoom":100,"trayZoom":100,"desktopToasts":true,"desktopToastSeconds":super::toast_lifecycle::DEFAULT_SECONDS,"muteMinutes":60,"historyRetention":"year","pollIntervalSeconds":30})}
 fn boolean(v:&Value)->bool{v==true}
 fn alert_channels(settings:&Value,scene:&Value)->(bool,bool){
  if scene["allowed"]==false{return (false,false)}
@@ -39,8 +39,36 @@ fn days(r:&str)->Option<u64>{match r{"day"=>Some(1),"week"=>Some(7),"month"=>Som
 fn allowed(key:&str,v:&Value)->bool{
  let bounded=|l,h| v.as_u64().is_some_and(|x|x>=l&&x<=h);
  match key{"low"=>bounded(2,95),"critical"=>bounded(1,94),"repeat"=>bounded(0,180),"snooze"=>bounded(5,180),"muteMinutes"=>[15,30,60,120].contains(&n(v)),
+ "desktopToastSeconds"=>v.as_u64().is_some_and(super::toast_lifecycle::valid_seconds),
+ "pollIntervalSeconds"=>v.as_u64().is_some_and(valid_poll_interval),
  "zoom"|"trayZoom"=>bounded(75,150),"historyRetention"=>v.as_str().and_then(days).is_some(),
  "fullscreenSound"|"desktopSound"|"voltage"|"startup"|"desktopToasts"=>v.is_boolean(),_=>false}
+}
+fn valid_poll_interval(seconds:u64)->bool{matches!(seconds,30|60|300|600)}
+fn battery_period(settings:&Value,reading:&Value,threshold:u64)->u64{
+ if reading["power"]=="charging" || n(&reading["low"])<=threshold+10{12000}
+ else{settings["pollIntervalSeconds"].as_u64().filter(|s|valid_poll_interval(*s)).unwrap_or(30)*1000}
+}
+fn stale_after(period:u64)->u64{60000.max(period+30000)}
+
+#[cfg(test)]
+#[test]
+fn battery_poll_interval_adapts_only_healthy_reads(){
+ let regular=json!({"power":"discharging","low":71});
+ let near_low=json!({"power":"discharging","low":27});
+ let charging=json!({"power":"charging","low":78});
+ assert_eq!(battery_period(&defaults(),&regular,20),30000);
+ for (seconds,wait) in [(30,30000),(60,60000),(300,300000),(600,600000)]{
+  let settings=json!({"pollIntervalSeconds":seconds});
+  assert!(allowed("pollIntervalSeconds",&json!(seconds)));
+  assert_eq!(battery_period(&settings,&regular,20),wait);
+  assert_eq!(battery_period(&settings,&near_low,20),12000);
+  assert_eq!(battery_period(&settings,&charging,20),12000);
+  assert!(stale_after(wait)>wait);
+ }
+ for malformed in [json!(null),json!("60"),json!(0),json!(55),json!(30.5),json!(3600)]{
+  assert!(!allowed("pollIntervalSeconds",&malformed));
+ }
 }
 fn save(path:&Path,v:&Value)->Result<(),String>{write_bytes(path,&serde_json::to_vec(v).map_err(|e|e.to_string())?)}
 pub(crate) fn write_bytes(path:&Path,bytes:&[u8])->Result<(),String>{
@@ -191,13 +219,15 @@ impl State{
   self.rollup=buckets;self.last_save=now();self.dirty=false;Ok(())
  }
  fn threshold(&self,id:&str)->u64{n(&self.snapshot["deviceSettings"][id]["low"].as_u64().map(Value::from).unwrap_or_else(||self.snapshot["settings"]["low"].clone())).max(n(&self.snapshot["settings"]["critical"]))}
- fn record(&mut self,id:&str,stamp:u64,read:Value){
+ fn record(&mut self,id:&str,stamp:u64,read:Value,period:u64){
   if !self.hist[id].is_array(){self.hist[id]=json!([])}
   let h=self.hist[id].as_array_mut().unwrap();
   h.retain(|v|n(&v["time"])>=stamp.saturating_sub(DAY));
   let last=h.last().map(|t|n(&t["time"]));
   if last==Some(stamp){h.pop();}
-  h.push(json!({"time":stamp,"reading":read}));
+  let mut point=json!({"time":stamp,"reading":read});
+  if matches!(period,300000|600000){point["sampleIntervalMs"]=json!(period);}
+  h.push(point);
   if h.len()>10000{let d=h.len()-10000;h.drain(..d);}
   if !reading(&read){return}
   if !self.rollup[id].is_array(){self.rollup[id]=json!([])}
@@ -235,11 +265,12 @@ impl State{
   let marker=super::power_events::marker();
   if marker==self.power_marker{return false}
   self.power_marker=marker;
-  self.generation+=1;self.diagnostics=Diagnostics::default();self.pipe.take();self.next.clear();self.toast=Value::Null;
+  self.generation+=1;self.diagnostics=Diagnostics::default();self.pipe.take();self.next.clear();
+  let toast_ticket=self.toast["ticket"].as_u64();self.toast=Value::Null;
   for d in self.snapshot["devices"].as_array_mut().unwrap(){if d["status"]=="current"{d["status"]=json!("stale");d["reason"]=json!("等待新读数");}}
   self.snapshot["collector"]=json!("starting");
   let app=self.app.clone();let gui=app.clone();
-  let _=app.run_on_main_thread(move||{if let Some(w)=gui.get_webview_window("toast"){let _=w.destroy();}});
+  if let Some(ticket)=toast_ticket { let _=app.run_on_main_thread(move||super::close_toast(&gui,ticket,false)); }
   self.evidence(if marker&1==1{"suspend"}else{"resume"});self.event();
   true
  }
@@ -253,7 +284,7 @@ impl State{
   if super::power_events::marker()!=marker{self.apply_power();return 0}
   let packet=match packet{
    Ok(p) if !boolean(&p["restartRequired"])=>p,
-   _=>{self.pipe.take();self.diagnostics=Diagnostics::default();self.generation+=1;self.snapshot["collector"]=json!("retrying");
+   _=>{self.pipe.take();self.next.clear();self.diagnostics=Diagnostics::default();self.generation+=1;self.snapshot["collector"]=json!("retrying");
        for d in self.snapshot["devices"].as_array_mut().unwrap(){if d["status"]=="current" && now().saturating_sub(n(&d["lastRead"]))>60000{d["status"]=json!("stale");}}
        self.event();return 5000}
   };
@@ -292,9 +323,9 @@ impl State{
       if self.edits.get(id).is_some_and(|edit|seq.is_some_and(|s|s>*edit)){self.edits.remove(id);}
      }
      let threshold=self.threshold(id);
-     let period=if live{if n(&sample["reading"]["low"])<=threshold+10||sample["reading"]["power"]=="charging"{12000}else{22000}}else{6000};
+     let period=if live{battery_period(&self.snapshot["settings"],&sample["reading"],threshold)}else{6000};
      self.next.insert(id.into(),sampled+period);
-     self.record(id,sampled,if live{sample["reading"].clone()}else{Value::Null});
+     self.record(id,sampled,if live{sample["reading"].clone()}else{Value::Null},period);
      previous["historyUpdatedAt"]=json!(sampled);
      if !self.edits.contains_key(id){
       if !self.snapshot["alerts"][id].is_object(){self.snapshot["alerts"][id]=json!({});}
@@ -304,7 +335,7 @@ impl State{
      }
      self.dirty=true;
     }
-   }else if previous["status"]=="current"&&sampled.saturating_sub(n(&previous["lastRead"]))>60000{
+   }else if self.reading_expired(&previous,sampled){
     previous["status"]=json!("stale");previous["reason"]=json!("等待读数");
    }
    changes.push(previous);
@@ -313,8 +344,9 @@ impl State{
    let id=d["id"].as_str().unwrap_or_default().to_owned();
    if id.is_empty()||seen.contains(&id){continue}
    if (!pending||packet["discoveryAbsent"].as_array().is_some_and(|a|a.contains(&json!(id))))&&d["status"]!="offline"{
-    d["status"]=json!("offline");d["reason"]=json!("设备未连接");self.record(&id,sampled,Value::Null);self.dirty=true;
-   }else if d["status"]=="current"&&sampled.saturating_sub(n(&d["lastRead"]))>60000{d["status"]=json!("stale");}
+    self.next.remove(&id);
+    d["status"]=json!("offline");d["reason"]=json!("设备未连接");self.record(&id,sampled,Value::Null,0);self.dirty=true;
+   }else if self.reading_expired(&d,sampled){d["status"]=json!("stale");d["reason"]=json!("等待读数");}
    changes.push(d);
   }
   self.snapshot["devices"]=json!(changes);
@@ -322,6 +354,23 @@ impl State{
   if self.dirty&&(force||sampled.saturating_sub(self.last_save)>=60000){let _=self.persist();}
   self.evidence("poll");self.event();
   if boolean(&packet["workPending"]){350}else{1500}
+ }
+ fn reading_expired(&self,device:&Value,stamp:u64)->bool{
+  let Some(id)=device["id"].as_str() else{return false};
+  let period=battery_period(&self.snapshot["settings"],&device["reading"],self.threshold(id));
+  device["status"]=="current"&&stamp.saturating_sub(n(&device["lastRead"]))>stale_after(period)
+ }
+ fn apply_poll_interval(&mut self){
+  let Some(devices)=self.snapshot["devices"].as_array() else{return};
+  for d in devices{
+   if d["status"]!="current"||!reading(&d["reading"]){continue}
+   let Some(id)=d["id"].as_str() else{continue};
+   let period=battery_period(&self.snapshot["settings"],&d["reading"],self.threshold(id));
+   let deadline=n(&d["lastRead"]).saturating_add(period);
+   // Honor an existing, sooner slot. The just-completed reading still
+   // describes the next historical interval until the new reading arrives.
+   self.next.entry(id.to_owned()).and_modify(|due|*due=(*due).min(deadline)).or_insert(deadline);
+  }
  }
  fn level(&self,d:&Value)->Option<&'static str>{
   let r=&d["reading"];
@@ -331,13 +380,19 @@ impl State{
   else if n(&r["high"])<=self.threshold(id){Some("low")}else{None}
  }
  fn show(&mut self,d:Value,level:&str,preview:bool){
-  self.toast=json!({"device":d,"severity":level,"preview":preview,"detailId":d["id"]});
+  let ticket=super::new_toast_ticket();
+  let seconds=self.snapshot["settings"]["desktopToastSeconds"].as_u64().unwrap_or(super::toast_lifecycle::DEFAULT_SECONDS);
+  self.toast=json!({"device":d,"severity":level,"preview":preview,"detailId":d["id"],"ticket":ticket});
   let gui=self.app.clone();let app=gui.clone();
-  let _=gui.run_on_main_thread(move||{let _=open(&app,"toast");});
+  if gui.run_on_main_thread(move||super::open_toast(&app,ticket,seconds)).is_err(){self.toast=Value::Null;}
+ }
+ fn clear_closed_toast(&mut self){
+  if self.toast["ticket"].as_u64().is_some_and(super::toast_closed){self.toast=Value::Null;}
  }
  fn evaluate(&mut self){
+  self.clear_closed_toast();
   let stamp=now();
-  if super::power_events::marker()!=self.power_marker || self.power_marker&1==1 || self.snapshot["collector"]!="ready" || !self.toast.is_null() || n(&self.snapshot["mutedUntil"])>stamp{return}
+  if super::power_events::marker()!=self.power_marker || self.power_marker&1==1 || self.snapshot["collector"]!="ready" || n(&self.snapshot["mutedUntil"])>stamp{return}
   for level in ["critical","low"]{
    let chosen=self.snapshot["devices"].as_array().unwrap().iter().find(|d|{
     let id=d["id"].as_str().unwrap_or_default();let state=&self.snapshot["alerts"][id];
@@ -355,6 +410,8 @@ impl State{
    let Ok(scene)=self.native("scene",json!({})) else{return};
    if super::power_events::marker()!=self.power_marker{return}
    let (show_popup,play_sound)=alert_channels(&choices,&scene);
+   // A persistent popup occupies the single visual slot, not the sound channel.
+   let show_popup=show_popup&&self.toast.is_null();
    if show_popup{
     self.show(d.clone(),level,false);self.evidence("toast");
    }
@@ -367,14 +424,14 @@ impl State{
   }
  }
  fn handle(&mut self,m:&str,d:Value)->Reply{
+  self.clear_closed_toast();
   let okay=json!({"ok":true});
   match m {
    "test-power" if self.bench&&d.is_boolean()=>{super::power_events::set(d==true);return Ok(json!({"ok":true}))},
    "snapshot"=>return Ok(self.snapshot.clone()),
    "view"=>return Ok(self.view.clone()),
    "remember"=>{if matches!(d["page"].as_str(),Some("overview"|"devices"|"alerts"|"history"|"settings")){self.view=d}return Ok(Value::Null)}
-   "toast"=>return Ok(self.toast.clone()),
-   "dismiss"=>{self.toast=Value::Null;return Ok(Value::Null)}
+   "toast"=>return Ok(if d.as_u64().is_some()&&self.toast["ticket"]==d {self.toast.clone()}else{Value::Null}),
    "evidence"=>{self.evidence("renderer-ready");return Ok(Value::Null)}
    "command"=>{},
    _=>return Err("操作不受支持".into())
@@ -417,7 +474,9 @@ impl State{
     let boot_changed=next["startup"]!=previous["startup"];
     if boot_changed&&!self.bench{startup::set(next["startup"]==true)?;}
     self.snapshot["settings"]=next;
-    if let Err(e)=self.persist(){if boot_changed&&!self.bench{let _=startup::set(previous["startup"]==true);}self.snapshot["settings"]=previous;return Err(e)}super::apply_settings(&self.app,&self.snapshot["settings"]);self.event();
+    if let Err(e)=self.persist(){if boot_changed&&!self.bench{let _=startup::set(previous["startup"]==true);}self.snapshot["settings"]=previous;return Err(e)}
+    if self.snapshot["settings"]["pollIntervalSeconds"]!=previous["pollIntervalSeconds"]{self.apply_poll_interval();}
+    super::apply_settings(&self.app,&self.snapshot["settings"]);self.event();
    }
    "toggleAlertSetting"=>{
     let k=d["key"].as_str().unwrap_or_default();if !matches!(k,"fullscreenSound"|"desktopSound"|"desktopToasts"){return Err("不支持的开关".into())}

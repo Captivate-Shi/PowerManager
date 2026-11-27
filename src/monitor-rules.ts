@@ -38,9 +38,14 @@ export function recordHistory(points: HistoryPoint[], point: HistoryPoint): Hist
 }
 export function delayFor(device: Device, settings: Settings, rules: DeviceSettings | undefined, failures: number) {
   if (device.status === 'current' && device.reading) {
-    return device.reading.power === 'charging' || device.reading.low <= threshold(settings, rules) + 10 ? 12_000 : 22_000;
+    return device.reading.power === 'charging' || device.reading.low <= threshold(settings, rules) + 10
+      ? 12_000 : (settings.pollIntervalSeconds ?? 30) * 1000;
   }
   if (device.status === 'basic_bluetooth') return 10_000;
   const delay = [2_000, 4_000, 8_000, 16_000, 24_000][Math.min(Math.max(failures - 1, 0), 4)];
   return device.status === 'no_radio_reply' ? Math.min(delay, 12_000) : delay;
+}
+/** Preserve the old minimum age, allowing a grace period after longer planned polls. */
+export function currentReadingAge(device: Device, settings: Settings, rules: DeviceSettings | undefined) {
+  return Math.max(60_000, delayFor(device, settings, rules, 0) + 30_000);
 }

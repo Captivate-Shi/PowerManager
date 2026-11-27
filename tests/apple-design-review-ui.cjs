@@ -29,9 +29,10 @@ async function main() {
         for (const [label, id] of [['诊断', 'diagnostics'], ['记录', 'history'], ['运行与托盘', 'runtime']]) {
           await button(nav, label).click();
           await expect(button(nav, label)).toHaveAttribute('aria-current', 'location');
-          await expect.poll(() => page.locator('#settings-' + id).evaluate(el => {
-            const top = el.getBoundingClientRect().top;
-            return top >= 45 && top < innerHeight - 65;
+          await expect.poll(() => page.locator('#settings-' + id + ' h2').evaluate(el => {
+            const heading = el.getBoundingClientRect();
+            const pane = el.closest('[data-scroll-pane]').getBoundingClientRect();
+            return heading.top >= pane.top - 2 && heading.bottom <= pane.bottom + 2;
           })).toBe(true);
           // Smooth scrolling may pass other section headings; let it finish.
           await page.waitForTimeout(520);

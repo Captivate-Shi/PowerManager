@@ -26,7 +26,18 @@ export type Settings = {
   desktopSound: boolean; voltage: boolean; startup: boolean;
   zoom: number; trayZoom: number; desktopToasts: boolean; muteMinutes: MuteMinutes;
   historyRetention: HistoryRange;
+  pollIntervalSeconds?: PollIntervalSeconds;
+  desktopToastSeconds?: DesktopToastSeconds;
 };
+export const desktopToastDurations = [5, 10, 12, 15, 0] as const;
+export type DesktopToastSeconds = typeof desktopToastDurations[number];
+export const defaultDesktopToastSeconds: DesktopToastSeconds = 12;
+export const isDesktopToastSeconds = (value: unknown): value is DesktopToastSeconds =>
+  typeof value === 'number' && (desktopToastDurations as readonly number[]).includes(value);
+export const pollIntervalChoices = [30, 60, 300, 600] as const;
+export type PollIntervalSeconds = typeof pollIntervalChoices[number];
+export const isPollIntervalSeconds = (value: unknown): value is PollIntervalSeconds =>
+  pollIntervalChoices.some(seconds => seconds === value);
 export const historyRanges = ['day', 'week', 'month', 'year'] as const;
 export type HistoryRange = typeof historyRanges[number];
 export const isHistoryRangeWithin = (range: HistoryRange, limit: HistoryRange) =>
@@ -34,7 +45,7 @@ export const isHistoryRangeWithin = (range: HistoryRange, limit: HistoryRange) =
 export const limitHistoryRange = (range: HistoryRange, limit: HistoryRange) => isHistoryRangeWithin(range, limit) ? range : limit;
 export const isHistoryRange = (value: unknown): value is HistoryRange => historyRanges.some(range => range === value);
 export type DeviceSettings = { alias?: string; low?: number; muted?: boolean };
-export type HistoryPoint = { time: number; reading: Reading | null; invalidThrough?: number };
+export type HistoryPoint = { time: number; reading: Reading | null; invalidThrough?: number; sampleIntervalMs?: 300_000 | 600_000 };
 export function historyPointEnd({ reading, time, invalidThrough }: HistoryPoint) {
   return !reading && invalidThrough !== undefined && Number.isFinite(invalidThrough) ? Math.max(time, invalidThrough) : time;
 }
@@ -100,8 +111,8 @@ export const muteDurationLabel = (minutes: MuteMinutes) =>
 export const defaults: Settings = {
   low: 20, critical: 10, repeat: 0, snooze: 30, fullscreenSound: true,
   desktopSound: false, voltage: false, startup: false,
-  zoom: 100, trayZoom: 100, desktopToasts: true, muteMinutes: 60,
-  historyRetention: 'year',
+  zoom: 100, trayZoom: 100, desktopToasts: true, desktopToastSeconds: defaultDesktopToastSeconds, muteMinutes: 60,
+  historyRetention: 'year', pollIntervalSeconds: 30,
 };
 export const midpoint = (reading: Reading) => Math.ceil((reading.low + reading.high) / 2);
 export const percent = (reading: Reading | null) =>

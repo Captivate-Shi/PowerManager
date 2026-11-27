@@ -3,7 +3,7 @@ import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { demoDiscovery, demoHistory, demoSnapshot, previewDevice } from './demo';
-import { classify, isHistoryRange, isHistoryRangeWithin, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type HistoryDay,
+import { classify, defaultDesktopToastSeconds, isHistoryRange, isHistoryRangeWithin, muteDurationLabel, percent, severity, type Command, type CommandResult, type Device, type HistoryDay,
   type MainView, type Severity, type Snapshot, type Surface, type Toast } from './model';
 import { Monitor } from './monitor';
 import { startMetrics } from './metrics';
@@ -333,6 +333,7 @@ function showPreview(severity: Severity, device = snapshot.devices.find(item => 
   return showToast({ severity, device: previewDevice(severity, device), preview: true, detailId: device?.id });
 }
 async function showToast(value: Toast, point?: { x: number; y: number } | null, canShow?: () => boolean): Promise<boolean> {
+  const seconds = snapshot.settings.desktopToastSeconds ?? defaultDesktopToastSeconds;
   if (windows.toast) closeToast();
   toast = value;
   const origin = BrowserWindow.getFocusedWindow() ?? windows.main;
@@ -359,7 +360,9 @@ async function showToast(value: Toast, point?: { x: number; y: number } | null, 
       window.setAlwaysOnTop(true, 'pop-up-menu');
       window.showInactive();
       window.moveTop();
-      toastTimer = setTimeout(closeToast, 12000);
+      if (seconds) toastTimer = setTimeout(() => {
+        if (windows.toast === window) closeToast();
+      }, seconds * 1000);
       resolve(true);
     });
   });
@@ -510,6 +513,7 @@ function saveSettings(patch: unknown, confirmHistoryShorten = false) {
   applyZoom('main');
   applyZoom('tray');
   if (next.muteMinutes !== previous.muteMinutes) refreshTrayMenu();
+  if (next.pollIntervalSeconds !== previous.pollIntervalSeconds) monitor?.applyPollInterval();
   broadcast();
   queueAlerts();
 }

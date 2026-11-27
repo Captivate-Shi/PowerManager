@@ -39,7 +39,7 @@ const out = process.env.SETTINGS_REVIEW_OUT;
             diagnostics: offset(compatibilityButton.closest('[data-setting-row]').querySelector('[data-setting-label]'), compatibilityButton),
             overflow:document.documentElement.scrollWidth - innerWidth };
         });
-        expect(geometry.rows).toHaveLength(6);
+        expect(geometry.rows).toHaveLength(7);
         expect(Math.max(...geometry.rows)).toBeLessThan(1);
         expect(geometry.zooms).toHaveLength(2);
         for (const zoom of geometry.zooms) {

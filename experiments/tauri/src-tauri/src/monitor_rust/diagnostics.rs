@@ -78,10 +78,11 @@ impl State{
   match kind{
    "diagnosticDevices"=>{
     self.diagnostics=Diagnostics::default();
-    if self.snapshot["collector"]!="ready"{return Ok(json!({"ok":true,"diagnosticDevices":[]}))}
-    let r=self.native("diagnostic_devices",json!({})).unwrap_or_default();
+    if self.snapshot["collector"]!="ready"{return Err("采集程序尚未就绪，请稍后重新扫描。".into())}
+    let r=self.native("diagnostic_devices",json!({})).map_err(|_|"扫描设备失败，请重新扫描。")?;
+    let rows=r.as_array().filter(|rows|rows.iter().all(Value::is_object)).ok_or("设备列表无效，请重新扫描。")?;
     let mut list=vec![];
-    for v in r.as_array().into_iter().flatten().take(256){
+    for v in rows.iter().take(256){
      let model=text(&v["model"],80);let label=text(&v["label"],80);
      if model.is_none()&&label.is_none(){continue}
      let id=key();
