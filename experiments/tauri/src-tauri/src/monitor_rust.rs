@@ -4,6 +4,7 @@ use std::{collections::{BTreeMap,HashSet},fs,io::{BufRead,BufReader,Write},path:
  process::{Child,ChildStdin,Command,Stdio},sync::{mpsc,Arc,Mutex,atomic::{AtomicBool,Ordering}},thread,time::{Duration,Instant,SystemTime,UNIX_EPOCH}};
 use tauri::{AppHandle,Emitter,Manager};
 mod diagnostics;
+pub(crate) use diagnostics::reveal_report;
 mod device_admission;
 mod migration;
 mod startup;

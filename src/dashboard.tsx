@@ -1,7 +1,6 @@
-import type { CompatibilityPreview } from './compatibility-report';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Copy, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Bluetooth, Cable, ChevronDown, ChevronRight, CircleAlert, CircleCheck, Clock, Copy, Ellipsis, FolderOpen, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
@@ -1248,9 +1247,9 @@ function Settings({ state, run, palette, choosePalette, retention, position }: {
       <section id="settings-diagnostics" className={preferences.settingsSection} aria-labelledby="diagnostics-heading">
         <h2 id="diagnostics-heading" tabIndex={-1}>诊断</h2>
         <SettingRow title="记录 DualSense 电池电压" hint="电压记在本地诊断日志。"><SwitchControl label="记录 DualSense 电池电压" checked={state.settings.voltage} onChange={value => send({ type: 'settings', patch: { voltage: value } })} /></SettingRow>
-        <SettingRow title="诊断日志"><button className={s.button} onClick={() => send({ type: 'diagnostics' })}>打开诊断目录 <ChevronRight size={16} /></button></SettingRow>
-        <SettingRow title="兼容性报告" hint="选遇到问题的外设，预览后可保存诊断报告。不自动发送。">
-          <button className={s.button} data-compat-report="" disabled={state.demo} onClick={() => setDiagnosticOpen(true)}>生成兼容性报告</button>
+        <SettingRow title="诊断日志"><button className={s.button} onClick={() => send({ type: 'diagnostics' })}>打开日志目录 <ChevronRight size={16} /></button></SettingRow>
+        <SettingRow title="兼容性报告" hint="选择遇到问题的外设，导出报告后可复制内容或定位文件。">
+          <button className={s.button} data-compat-report="" disabled={state.demo} onClick={() => setDiagnosticOpen(true)}>导出兼容性报告</button>
         </SettingRow>
         {diagnosticOpen && <CompatibilityPicker run={run} close={() => setDiagnosticOpen(false)} />}
       </section>
@@ -1267,7 +1266,10 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
   const [working, setWorking] = useState(false);
   const [firmwareState, setFirmwareState] = useState('');
   const [firmwareAttempted, setFirmwareAttempted] = useState(false);
-  const [preview, setPreview] = useState<CompatibilityPreview>();
+  const [saved, setSaved] = useState<{ file: string; json: string }>();
+  const [copied, setCopied] = useState(false);
+  const resultFocus = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (saved) resultFocus.current?.focus({ preventScroll: true }); }, [saved]);
   const [error, setError] = useState('');
   const [scanError, setScanError] = useState('');
   const mounted = useRef(true);
@@ -1276,6 +1278,8 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
   runRef.current = run;
   const selected = devices.find(device => device.key === choice);
   const manual = choice === 'manual';
+  const transport = selected?.connection;
+  const TransportIcon = transport?.includes('蓝牙') ? Bluetooth : Cable;
   const options = [
     { value: 'choose', label: scanning ? '正在扫描…' : scanError ? '扫描未完成' : '请选择' },
     ...devices.map((device, index) => {
@@ -1336,7 +1340,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
     } finally { if (mounted.current) { setWorking(false); setFirmwareAttempted(true); } }
   }
   async function generate() {
-    if (!manual && !selected) return;
+    if (working || (!manual && !selected)) return;
     const selection: CompatibilitySelection = manual
       ? { kind: 'manual', model: model.trim(), firmware: firmware.trim() || undefined }
       : { kind: 'device', deviceKey: selected!.key, model: selected?.model ? undefined : model.trim(),
@@ -1344,51 +1348,80 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
     setWorking(true);
     setError('');
     try {
-      const reply = await run({ type: 'compatibility', selection }, { inlineError: true });
+      const draft = await run({ type: 'compatibility', selection }, { inlineError: true });
       if (!mounted.current) return;
-      if (reply.ok && reply.compatibility) setPreview(reply.compatibility);
-      else setError(reply.ok ? '无法生成报告。' : reply.error);
+      if (!draft.ok || !draft.compatibility) {
+        setError(draft.ok ? '无法生成报告，请重试。' : draft.error);
+        return;
+      }
+      const reply = await run({ type: 'compatibility', reportToken: draft.compatibility.token }, { inlineError: true });
+      if (!mounted.current) return;
+      if (reply.ok && reply.reportName) setSaved({ file: reply.reportName, json: draft.compatibility.json });
+      else setError(reply.ok ? '未收到保存结果，请重试。' : reply.error);
     } finally { if (mounted.current) setWorking(false); }
   }
-  async function save(report: CompatibilityPreview) {
-    setWorking(true);
+  async function copyReport() {
+    if (!saved) return;
+    setCopied(false);
     setError('');
     try {
-      const reply = await run({ type: 'compatibility', reportToken: report.token }, { inlineError: true });
-      if (!mounted.current) return;
-      if (reply.ok) close();
-      else setError(reply.error);
+      await navigator.clipboard.writeText(saved.json);
+      if (mounted.current) setCopied(true);
+    } catch {
+      if (mounted.current) setError('无法复制，请在资源管理器中定位报告。');
+    }
+  }
+  async function revealReport() {
+    if (!saved || working) return;
+    setWorking(true);
+    setCopied(false);
+    setError('');
+    try {
+      const reply = await run({ type: 'revealCompatibility', reportName: saved.file }, { inlineError: true });
+      if (mounted.current && !reply.ok) setError(reply.error);
     } finally { if (mounted.current) setWorking(false); }
   }
   const fieldStyle: CSSProperties = { display: 'grid', gap: 7 };
   const inputStyle: CSSProperties = { minWidth: 0, width: '100%', background: 'var(--panel)', border: '1px solid var(--line)',
     borderRadius: 8, padding: '8px 10px' };
-  return <Modal title={preview ? '兼容性报告预览' : '选择要诊断的设备'}
-    description={preview ? '只保存到本地，不会自动发送。' : '请选择遇到问题的设备。只显示通用名称时，也请先选中，再填写型号。'}
-    onClose={() => { if (!working) close(); }}>
-    {preview ? <>
-      <pre data-selectable="" tabIndex={0} aria-label="兼容性报告内容" style={{ maxHeight: 'min(45vh, 430px)', overflow: 'auto',
-        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: 12, border: '1px solid var(--line)',
-        borderRadius: 8, background: 'var(--panel)', fontSize: 12 }}>{preview.json}</pre>
-      {error && <p className={s.formError} role="alert">{error}</p>}
-      <div className={s.confirmActions}>
-        <button type="button" className={s.button} disabled={working} onClick={() => { setPreview(undefined); setError(''); }}>返回</button>
-        <button type="button" className={s.primary} disabled={working} onClick={() => { void save(preview); }}>
-          {working ? '正在保存…' : '保存到本地'}</button>
+  return <Modal title={saved ? '报告已保存' : '导出兼容性报告'}
+    description={saved ? undefined : '报告保存在本机，不会自动发送。'}
+    className={preferences.reportDialog} onClose={() => { if (!working) close(); }}>
+    {saved ? <div className={preferences.reportReceipt}>
+      <div ref={resultFocus} tabIndex={-1} className={preferences.reportFile}>
+        <CircleCheck size={18} aria-hidden="true" /><span>{saved.file}</span>
       </div>
-    </> : <form style={{ display: 'grid', gap: 14, marginTop: 14 }} onSubmit={event => { event.preventDefault(); void generate(); }}>
+      <div className={preferences.reportActions}>
+        <button type="button" className={s.button} onClick={() => { void copyReport(); }}>
+          <Copy size={16} aria-hidden="true" />复制报告内容
+        </button>
+        <button type="button" className={s.button} disabled={working} onClick={() => { void revealReport(); }}>
+          <FolderOpen size={16} aria-hidden="true" />在资源管理器中定位
+        </button>
+      </div>
+      {copied && <div className={preferences.reportStatus} role="status">已复制到剪贴板</div>}
+      {error && <p className={s.formError} role="alert">{error}</p>}
+      <div className={preferences.reportFooter}>
+        <button type="button" className={s.primary} disabled={working} onClick={close}>完成</button>
+      </div>
+    </div> : <form style={{ display: 'grid', gap: 14, marginTop: 14 }} onSubmit={event => { event.preventDefault(); void generate(); }}>
       <div style={fieldStyle}>
         <span>设备型号</span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <select aria-label="设备型号" className={s.select} style={{ minHeight: 34, minWidth: 145 }}
             value={choice} onChange={event => changeChoice(event.target.value)} disabled={scanning || working || !!scanError}>
             {options.map(option => <option key={option.value} value={option.value}>
-              {option.label}{'detail' in option && option.detail ? ' · ' + option.detail : ''}
+              {option.label}{option.value !== choice && 'detail' in option && option.detail ? ' · ' + option.detail : ''}
             </option>)}
           </select>
           <button className={s.button} type="button" disabled={scanning || working} onClick={() => { void scan(); }}>重新扫描</button>
         </div>
       </div>
+      {selected && (transport || selected.firmware) && <div className={preferences.reportMetadata}>
+        {transport && <div><TransportIcon size={15} aria-hidden="true" /><span>{transport}</span></div>}
+        {selected.firmware && <div><span className={preferences.reportMetaLabel}>固件</span>
+          <output aria-label="已识别固件版本">{selected.firmware}</output></div>}
+      </div>}
       {scanError && <p className={s.formError} role="alert">{scanError}</p>}
       {!scanning && !scanError && devices.length === 0 && !manual && <small role="status">未识别到可选设备，可选「列表中没有我的设备」补录。</small>}
       {manual && <small role="status">手动补录不关联接口。若列表中有对应的通用设备，请选中它。</small>}
@@ -1396,8 +1429,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
         <input maxLength={80} autoComplete="off" style={inputStyle} required value={model} disabled={working}
           onChange={event => setModel(event.target.value)} placeholder="例如 V98 Pro V3" />
       </label>}
-      {selected?.firmware ? <div style={fieldStyle}><span>固件版本</span><output aria-label="已识别固件版本">{selected.firmware}</output></div>
-        : (selected || manual) && <div style={fieldStyle}>
+      {!selected?.firmware && (selected || manual) && <div style={fieldStyle}>
           {(!selected?.firmwareReadable || firmwareAttempted) && <label style={fieldStyle}>固件版本 <small>未识别，可选填</small>
             <input maxLength={48} autoComplete="off" style={inputStyle} value={firmware} disabled={working}
               onChange={event => setFirmware(event.target.value)} placeholder="例如 1.2.3" />
@@ -1410,7 +1442,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
       <div className={s.confirmActions}>
         <button type="button" className={s.button} disabled={working} onClick={close}>取消</button>
         <button type="submit" className={s.primary} disabled={working || (!selected && !manual) || ((!selected?.model) && !model.trim())}>
-          预览兼容性报告
+          {working ? '正在导出…' : '导出报告'}
         </button>
       </div>
     </form>}

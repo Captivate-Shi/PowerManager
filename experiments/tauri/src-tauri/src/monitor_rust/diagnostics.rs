@@ -1,7 +1,7 @@
 use super::{State,Reply};
 use regex::Regex;
 use serde_json::{json,Map,Value};
-use std::{collections::BTreeMap,sync::LazyLock,time::{Duration,Instant}};
+use std::{collections::BTreeMap,fs,io::Write,path::Path,sync::LazyLock,time::{Duration,Instant}};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -12,6 +12,41 @@ pub(super) struct Diagnostics {
  capture:Option<(String,Instant,Value)>, preview:Option<(String,Instant,String)>
 }
 fn key()->String{Uuid::new_v4().to_string()}
+fn report_name(bytes:&str)->Result<String,String>{
+ static STAMP:LazyLock<Regex>=LazyLock::new(||Regex::new(r"\A([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.[0-9]{3}Z\z").unwrap());
+ let report:Value=serde_json::from_str(bytes).map_err(|_|"报告格式无效。")?;
+ let stamp=STAMP.captures(report["generatedAt"].as_str().unwrap_or_default()).ok_or("报告时间无效，请重新导出。")?;
+ Ok(format!("compatibility-report-{}{}{}-{}{}{}-{}.json",&stamp[1],&stamp[2],&stamp[3],&stamp[4],&stamp[5],&stamp[6],&key()[..8]))
+}
+fn save_report(dir:&Path,bytes:&str)->Result<String,String>{
+ let name=report_name(bytes)?;
+ let path=dir.join(&name);
+ let mut file=fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|_|"无法保存报告，请检查可用空间和目录权限。")?;
+ let result=file.write_all(bytes.as_bytes()).and_then(|_|file.sync_all());
+ drop(file);
+ if result.is_err(){
+  let _=fs::remove_file(path);
+  return Err("无法保存报告，请检查可用空间和目录权限。".into());
+ }
+ Ok(name)
+}
+pub(crate) fn reveal_report(dir:&Path,name:&str)->Result<(),String>{
+ static NAME:LazyLock<Regex>=LazyLock::new(||Regex::new(r"\Acompatibility-report-[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.json\z").unwrap());
+ if !NAME.is_match(name){return Err("报告文件名无效。".into())}
+ let path=dir.join(name);
+ if !fs::symlink_metadata(&path).is_ok_and(|m|m.file_type().is_file()){return Err("报告文件已移动或删除。".into())}
+ #[cfg(windows)]
+ {
+  use std::os::windows::process::CommandExt;
+  let mut arg=std::ffi::OsString::from("/select,\"");
+  arg.push(path.as_os_str());
+  arg.push("\"");
+  std::process::Command::new("explorer.exe").raw_arg(arg).spawn().map_err(|_|"无法打开资源管理器。")?;
+  Ok(())
+ }
+ #[cfg(not(windows))]
+ Err("当前系统不支持此操作。".into())
+}
 fn deadline()->Instant{Instant::now()+Duration::from_secs(600)}
 fn active(t:Instant)->bool{Instant::now()<t}
 fn target(s:&str)->bool{
@@ -115,9 +150,9 @@ impl State{
    "compatibility" if d.get("reportToken").is_some()=>{
     let Some((token,time,bytes))=self.diagnostics.preview.as_ref() else{return Err("预览已失效，请重新生成。".into())};
     if d["reportToken"]!=*token||!active(*time){return Err("预览已失效，请重新生成。".into())}
-    super::write_bytes(&self.dir.join("compatibility-report.json"),bytes.as_bytes())?;
+    let name=save_report(&self.dir,bytes)?;
     self.diagnostics.preview=None;
-    Ok(json!({"ok":true,"message":"兼容性报告已保存，可在诊断目录查看"}))
+    Ok(json!({"ok":true,"reportName":name}))
    }
    "compatibility" if d.get("captureToken").is_some()=>{
     let draft=self.diagnostics.capture.take().ok_or("预览已失效，请重新生成。")?;
@@ -162,5 +197,30 @@ impl State{
    }
    _=>Err("诊断命令无效".into()),
   }
+ }
+}
+
+#[cfg(test)]
+mod report_tests {
+ use super::*;
+
+ #[test]
+ fn saves_distinct_reports_without_overwriting_and_rejects_invalid_names() {
+  let dir=std::env::temp_dir().join(format!("pm-report-test-{}",key()));
+  fs::create_dir(&dir).unwrap();
+  let first=r#"{"generatedAt":"2026-11-27T19:38:42.000Z","model":"Keyboard"}"#;
+  let second=r#"{"generatedAt":"2026-11-27T19:38:42.000Z","model":"Mouse"}"#;
+  let a=save_report(&dir,first).unwrap();
+  let b=save_report(&dir,second).unwrap();
+  assert!(a.starts_with("compatibility-report-20261127-193842-"));
+  assert_ne!(a,b);
+  assert_eq!(fs::read_to_string(dir.join(&a)).unwrap(),first);
+  assert_eq!(fs::read_to_string(dir.join(&b)).unwrap(),second);
+  assert!(reveal_report(&dir,&format!("../{a}")).unwrap_err().contains("无效"));
+  assert!(save_report(&dir,"{}").is_err());
+  fs::remove_file(dir.join(&a)).unwrap();
+  assert!(reveal_report(&dir,&a).unwrap_err().contains("已移动或删除"));
+  fs::remove_file(dir.join(&b)).unwrap();
+  fs::remove_dir(dir).unwrap();
  }
 }

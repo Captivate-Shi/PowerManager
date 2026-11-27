@@ -1,4 +1,4 @@
-import { appendFileSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, constants, closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Collector } from './collector';
 import { randomUUID } from 'node:crypto';
@@ -476,16 +476,28 @@ export class Monitor {
   }
 
   exportCompatibility(token: string) {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+    const name = 'compatibility-report-' + stamp + '-' + randomUUID().slice(0, 8) + '.json';
+    const target = join(this.directory, name);
     this.compatibilityDraft.save(token, json => {
-      const target = join(this.directory, 'compatibility-report.json');
-      const temporary = join(this.directory, 'compatibility-report-' + token + '.tmp');
+      // Exclusive create: another export can never be overwritten.
+      const fd = openSync(target, 'wx', 0o600);
       try {
-        writeFileSync(temporary, json, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-        renameSync(temporary, target);
-      } finally {
-        try { rmSync(temporary, { force: true }); } catch { /* target is either unchanged or fully replaced */ }
+        try { writeFileSync(fd, json, 'utf8'); fsyncSync(fd); } finally { closeSync(fd); }
+      } catch (error) {
+        try { rmSync(target, { force: true }); } catch { /* preserve the original write error */ }
+        throw error;
       }
     });
+    return name;
+  }
+
+  compatibilityReportPath(name: unknown) {
+    if (typeof name !== 'string' || !/^compatibility-report-[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.json$/.test(name))
+      throw new Error('报告文件名无效。');
+    const target = join(this.directory, name);
+    if (!lstatSync(target, { throwIfNoEntry: false })?.isFile()) throw new Error('报告文件已移动或删除。');
+    return target;
   }
 
   async discover() {

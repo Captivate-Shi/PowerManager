@@ -85,13 +85,14 @@ export type Command =
   | { type: 'open'; id?: string; destination?: 'pendingCharge' }
   | { type: 'compatibility'; selection: CompatibilitySelection }
   | { type: 'compatibility'; reportToken: string }
+  | { type: 'revealCompatibility'; reportName: string }
   | { type: 'history'; id: string; range?: HistoryRange }
   | { type: 'add' | 'remove' | 'snooze' | 'ignore'; id: string }
   | { type: 'settings'; patch: Partial<Settings>; confirmHistoryShorten?: boolean }
   | { type: 'toggleAlertSetting'; key: AlertSwitch }
   | { type: 'deviceSettings'; id: string; patch: DeviceSettings }
   | { type: 'preview'; severity: Severity; id?: string };
-export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean; compatibility?: CompatibilityPreview; diagnosticDevices?: DiagnosticDevice[]; diagnosticFirmware?: { status: 'pending' | 'ready' | 'unavailable' | 'busy'; firmware?: string } } |
+export type CommandResult = { ok: true; history?: HistoryPoint[]; historyDays?: HistoryDay[]; found?: Found[]; message?: string; pinned?: boolean; compatibility?: CompatibilityPreview; reportName?: string; diagnosticDevices?: DiagnosticDevice[]; diagnosticFirmware?: { status: 'pending' | 'ready' | 'unavailable' | 'busy'; firmware?: string } } |
   { ok: false; error: string };
 export interface DesktopApi {
   snapshot(): Promise<Snapshot>;
