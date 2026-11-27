@@ -1,4 +1,5 @@
 #include "device_search.hpp"
+#include "device_transport.hpp"
 #include "hid.hpp"
 #include "windows_bt_peripherals.hpp"
 #include <cassert>
@@ -30,6 +31,37 @@ int main()
     assert(!defaultPeripheralMonitoring(candidate, reservesWindowsContainerBeforeProbe(Transport::logitech_receiver)));
     candidate.connected = false;
     assert(!defaultPeripheralMonitoring(candidate, false)); // stale/offline never enroll
+    // A Windows Keyboard-class HID-over-GATT devnode is useful evidence
+    // even when the display container's category, transport, or label is absent.
+    constexpr std::wstring_view hogp = L"hid\\{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&020000";
+    constexpr std::wstring_view classic = L"hid\\{00001124-0000-1000-8000-00805f9b34fb}_vid&020000";
+    constexpr std::wstring_view batteryService = L"hid\\{0000180f-0000-1000-8000-00805f9b34fb}";
+    static_assert(windowsKeyboardInstanceCandidate(hogp));
+    static_assert(windowsKeyboardInstanceCandidate(classic));
+    static_assert(windowsKeyboardInstanceCandidate(L"bthle\\dev_mock"));
+    static_assert(!windowsKeyboardInstanceCandidate(batteryService));
+    static_assert(!windowsKeyboardInstanceCandidate(L"rapoo 2.4g wireless device"));
+    static_assert(!windowsKeyboardInstanceCandidate(L"usb\\vid_24ae&pid_0000"));
+    const std::wstring_view hogpIds[] = {L"HID\\{00001812-0000-1000-8000-00805F9B34FB}_DEV_MOCK"};
+    const std::wstring_view genericHid[] = {L"HID\\VID_24AE&PID_0000"};
+    assert(windowsBus({}, hogpIds) == WindowsBus::bluetooth);
+    assert(windowsBus({}, genericHid) == WindowsBus::unknown);
+
+    FoundDevice orphan{L"{keyboard}", L"HID Keyboard Device", L"蓝牙", true, false, {}};
+    markKeyboardWithoutDisplayContainer(orphan, true);
+    assert(!orphan.connected && orphan.knownBluetooth && orphan.inputOrHeadset);
+    assert(!defaultPeripheralMonitoring(orphan, false)); // presence is not a radio connection
+    assert(!eligibleForBleConnectionVerification(orphan, false, false)); // not the same scoped service
+    assert(!eligibleForBleConnectionVerification(orphan, true, true)); // native source owns it
+    assert(eligibleForBleConnectionVerification(orphan, false, true));
+    assert(needsIndependentBleConnection(orphan.batteryDetail));
+    orphan.batteryDetail = WindowsBatteryDetail::disconnected;
+    assert(!eligibleForBleConnectionVerification(orphan, false, true));
+    FoundDevice usbKeyboard{L"{usb}", L"HID Keyboard Device", L"USB", true, false, {}};
+    markKeyboardWithoutDisplayContainer(usbKeyboard, false);
+    assert(usbKeyboard.connected && !usbKeyboard.knownBluetooth && usbKeyboard.inputOrHeadset);
+    assert(!eligibleForBleConnectionVerification(usbKeyboard, false, true));
+
     FoundDevice rapoo{L"{receiver}", L"Rapoo 2.4G Wireless Device", L"USB", true, false, {}};
     assert(defaultPeripheralMonitoring(rapoo, false));
     assert(!defaultPeripheralMonitoring(rapoo, true));

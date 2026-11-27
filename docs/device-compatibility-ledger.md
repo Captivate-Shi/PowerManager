@@ -1,7 +1,9 @@
 # 支持设备研发台账
 
-247 条型号 × 连接：开发完 125 条（其中 33 条只有系统／标准蓝牙读数路径），无法判断 122 条（含 3 条模拟音频排除项）。
+251 条型号 × 连接：开发完 129 条（其中 33 条只有系统／标准蓝牙读数路径），无法判断 122 条（含 3 条模拟音频排除项）。
 开发完只表示读取路径已写入代码，仍以真机能否取得有效数据为准。“无法判断”不阻止已经可用的系统兜底，不以假值填充。真实 0% 和无数据不同。上一批 122 条的逐行归类见[兜底审计](./peripheral-fallback-audit.md)。
+
+本表跟随源码更新。G502 X LIGHTSPEED（非 PLUS）与 SUPERLIGHT 2 的四条路径，以及蓝牙键盘发现兜底，均未包含在 0.2.1 安装包中。
 
 | ID | 设备 | 连接 | 结论 | 说明 |
 |---|---|---|---|---|
@@ -23,6 +25,10 @@
 | DEV-6B390A835D | Logitech G G502 X PLUS | 2.4G LIGHTSPEED | 开发完 | LIGHTSPEED 原装接收器；HID++ 4099 + 实时名称 + Unit ID；0x1004 原生百分比，不含有线或 G502 X 其他型号。待余电真机。 |
 | DEV-96EA82EB7A | Logitech G PRO X SUPERLIGHT（第一代） | 2.4G LIGHTSPEED | 开发完 | LIGHTSPEED 原装接收器；HID++ 4093 + PRO X Wireless + Unit ID；0x1004 原生百分比。SUPERLIGHT 2 另验。 |
 | DEV-F9C75225EE | Logitech G PRO X SUPERLIGHT（第一代） | USB | 开发完 | PR #8 有线 C094，不扩到二代。 |
+| DEV-FCD449883E | Logitech G502 X LIGHTSPEED（非 PLUS） | 2.4G LIGHTSPEED | 开发完 | 409F + G502 X LIGHTSPEED + Unit ID，优先读取 0x1004 原生百分比。Solaar 实机有 61%，余电 Windows 真机待验。 [来源](https://github.com/pwr-Solaar/Solaar/issues/2784) |
+| DEV-9C1967D5BB | Logitech G502 X LIGHTSPEED（非 PLUS） | USB | 开发完 | 046D:C098，需唯一 HID++ 接口与有效 Unit ID；C099 是无电池有线版，不纳入。余电 Windows 真机待验。 [来源](https://github.com/pwr-Solaar/Solaar/issues/2560) |
+| DEV-D940FA359D | Logitech PRO X SUPERLIGHT 2 | 2.4G LIGHTSPEED | 开发完 | 40A9 + PRO X 2 + Unit ID，优先读取 0x1004 原生百分比。Solaar 实机有 54%，余电 Windows 真机待验。 [来源](https://github.com/pwr-Solaar/Solaar/issues/2785) |
+| DEV-20F926EF20 | Logitech PRO X SUPERLIGHT 2 | USB | 开发完 | 046D:C09B，需唯一 HID++ 接口与有效 Unit ID；按能力读取，不沿用 GPW 初代电压换算。余电 Windows 真机待验。 [来源](https://github.com/pwr-Solaar/Solaar/issues/2785) |
 | DEV-5C803986E5 | MCHOSE 迈从 A7 V2 Pro（3837:4018） | USB 线缆 | 开发完 | 只限有线，要求物理 USB、唯一 MI02/FF01:0001 Feature 11 集合并校验回复自报型号；接收器模式不纳入。待余电真机。 |
 | DEV-61C89F4D0C | MCHOSE 迈从 G3 V2（3837:4245） | 2.4G 原装接收器 | 开发完 | 同次先验证在线再读，按 M HUB 档位表达，不报精确百分比。余电待真机。 |
 | DEV-8C5D89E280 | Rapoo 雷柏 VT0 Air MAX（24AE:14A1） | 2.4G 原装接收器 | 开发完 | PR #8 接入被动 19 字节状态帧。上游有测试记录，余电真机待验。 |
@@ -55,7 +61,7 @@
 | DEV-F61B7F554D | Logitech G G915 TKL LIGHTSPEED | 2.4G LIGHTSPEED | 无法判断 | 408E 的完整功能表只见 0x1001；实测同一台插拔跳变 68mV 且校准只覆盖一个电量点，不把电压当原生百分比。需跨放电区间及充电状态实机校验。 [来源](https://github.com/rodolfocamara/battery-widget/blob/main/docs/linux.md#keyboard-battery-why-the-number-is-an-estimate) |
 | DEV-E731C6987B | MCHOSE 迈从 G87（41E4:2001 候选） | 2.4G 原装接收器 | 无法判断 | G87 的共享接收器只按 MI01/FF02:0002、20B I/O、Report 13 标记诊断；上游见休眠缓存长期回旧电量及 M HUB 会话冲突，主动查询维持关闭。 [来源](https://github.com/evren-oct/vigil-watt/blob/main/docs/hardware/brands/mchose.md) |
 | DEV-2040D76407 | Rapoo 雷柏 反馈键盘（型号待确认） | 2.4G 原装接收器 | 无法判断 | 系统能按雷柏通用接收器自动试读。未确认具体键盘和私有协议；没有系统值就显示无数据。 [来源](https://www.rapoo.com/en/product/9510M) |
-| DEV-4B0FE97EAA | Rapoo 雷柏 反馈键盘（型号待确认） | 蓝牙 | 无法判断 | 已具备通用蓝牙兜底。该反馈缺少键盘底标及蓝牙与接收器独立诊断，无法确认具体型号。 [来源](https://www.bluetooth.com/specifications/specs/battery-service/) |
+| DEV-4B0FE97EAA | Rapoo 雷柏 反馈键盘（型号待确认） | 蓝牙 | 无法判断 | 通用路线先读 Windows 电量，再试同设备的标准 BLE 电量。新增按 Windows 键盘类别和 HID-over-GATT 服务发现的兜底；没有明确连接状态时，先核验同一设备唯一、配对且在线的 LE 端点。未知型号尚无真机读数，不计为专用支持。 [来源](https://www.bluetooth.com/specifications/specs/battery-service/) |
 | DEV-C876B8BD55 | Razer BlackWidow V3 Mini HyperSpeed | 2.4G HyperSpeed | 开发完 | 原装 HyperSpeed 接收器 1532:0271 MI03；唯一匹配 91 字节集合时试读，不以休眠 0 值报低电。 [来源](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md) |
 | DEV-79A51BE263 | Razer BlackWidow V4 Tenkeyless HyperSpeed | 2.4G HyperSpeed | 开发完 | 原装 HyperSpeed 接收器 1532:02D5 MI02；唯一匹配 91 字节集合时试读，不含有线和其他 V4。 [来源](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md) |
 | DEV-E3B2D31694 | Razer DeathStalker V2 Pro | 2.4G HyperSpeed | 开发完 | 全尺寸原装接收器 1532:0290 MI02；唯一匹配 91 字节集合时试读，不借用 TKL 真机结论。 [来源](https://github.com/wushuai0802/myfinder-device-battery/blob/7b4131b29709f79c833d5fb39db52656265ce9d1/engine/upstream-protocols.md) |

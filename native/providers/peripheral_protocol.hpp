@@ -21,6 +21,8 @@ constexpr const wchar_t* logitechUsbName(unsigned vid, unsigned pid)
     case 0xc08d: return L"G502 LIGHTSPEED Wireless Gaming Mouse";
     case 0xc094: return L"Logitech PRO X SUPERLIGHT";
     case 0xc095: return L"Logitech G502 X PLUS";
+    case 0xc098: return L"Logitech G502 X LIGHTSPEED";
+    case 0xc09b: return L"Logitech PRO X SUPERLIGHT 2";
     default: return nullptr;
     }
 }

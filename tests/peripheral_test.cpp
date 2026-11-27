@@ -17,12 +17,18 @@ int main()
     assert(peripheralTransport(0x258a, 0x024e) == Transport::vgn_v3_usb);
     assert(peripheralTransport(0x258a, 0x024f) == Transport::vgn_v3_receiver);
     assert(peripheralTransport(0x046d, 0xc547) == Transport::logitech_receiver);
-    for (const auto pid : {0xc088u, 0xc08du, 0xc094u, 0xc095u}) {
+    assert(peripheralTransport(0x046d, 0xc54d) == Transport::logitech_receiver);
+    for (const auto pid : {0xc088u, 0xc08du, 0xc094u, 0xc095u, 0xc098u, 0xc09bu}) {
         assert(peripheralTransport(0x046d, pid) == Transport::logitech_usb);
         assert(!logitechUsbName(0x1234, pid));
     }
     assert(!logitechUsbName(0x046d, 0xc539));
     assert(!logitechUsbName(0x046d, 0xc08b)); // Wired G502 HERO, not a battery device.
+    assert(!peripheralTransport(0x046d, 0xc099)); // Wired-only G502 X.
+    assert(std::wstring_view(logitechUsbName(0x046d, 0xc098)) == L"Logitech G502 X LIGHTSPEED");
+    assert(std::wstring_view(logitechUsbName(0x046d, 0xc09b)) == L"Logitech PRO X SUPERLIGHT 2");
+    assert(!logitechVoltageProfile(logitechUsbName(0x046d, 0xc098)));
+    assert(!logitechVoltageProfile(logitechUsbName(0x046d, 0xc09b)));
     assert(logitechVoltageProfile(logitechUsbName(0x046d, 0xc08d)));
     assert(!logitechVoltageProfile(logitechUsbName(0x046d, 0xc095)));
     assert(!peripheralTransport(0x1234, 0xc547));
@@ -181,6 +187,18 @@ int main()
     assert(logitechBattery(0x1004, true, parseLogitechReply(keysBattery, 1, 8, 0x1a)->params).reading->high == 40);
     const auto mouseReading = logitechBattery(0x1004, true, parseLogitechReply(mouseBattery, 2, 8, 0x1a)->params);
     assert(mouseReading.reading && mouseReading.reading->low == 76 && mouseReading.reading->power == Power::charging);
+    // Synthetic HID++ frames reproducing the 54% / 61% upstream observations.
+    const std::uint8_t superlight2Battery[20] = {0x11, 1, 6, 0x1a, 54, 0, 0};
+    const std::uint8_t g502XBattery[20] = {0x11, 2, 6, 0x1a, 61, 0, 0};
+    for (const auto* response : {&superlight2Battery, &g502XBattery}) {
+        const unsigned slot = (*response)[1], percent = (*response)[4];
+        assert(!parseLogitechReply(*response, 3 - slot, 6, 0x1a));
+        const auto reply = parseLogitechReply(*response, slot, 6, 0x1a);
+        assert(reply);
+        const auto current = logitechBattery(0x1004, true, reply->params);
+        assert(current.reading && current.reading->low == static_cast<int>(percent) &&
+               current.reading->high == static_cast<int>(percent) && current.reading->power == Power::discharging);
+    }
     const std::uint8_t legacyCharging[] = {0, 0, 1};
     assert(!logitechBattery(0x1000, true, legacyCharging).reading);
     const std::uint8_t legacyFull[] = {0, 0, 3};
