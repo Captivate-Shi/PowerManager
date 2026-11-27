@@ -51,7 +51,7 @@ export function HistorySummary({ rows, range = 'day' }: { rows: SummaryRow[]; ra
     <thead><tr><th scope="col">设备</th><th scope="col">最低记录</th><th scope="col">最近充电采样</th><th scope="col">有效采样</th></tr></thead>
     <tbody>{rows.map(({ device, name, lowest, charge, count, pending, slot }, index) => (
       <tr key={device.id} data-summary-device={device.id} data-pending={pending}>
-        <th scope="row"><div>{name}<i style={{ background: historyColors[slot ?? index] }} /><span>{device.name}</span></div></th>
+        <th scope="row"><div>{name}<i data-series-shape={slot ?? index} aria-hidden="true" style={{ background: historyColors[slot ?? index] }} /><span>{device.name}</span></div></th>
         <td>{pending ? '读取中' : lowest ?? '—'}</td><td>{charge ?? '—'}</td><td>{count ?? '—'}</td>
       </tr>
     ))}</tbody>

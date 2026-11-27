@@ -42,7 +42,7 @@ test('离线、未回应和过期读数不能用作提醒', () => {
     assert.equal(eligible(device(reading(7), status), defaults, undefined, {}, 0, 10), undefined);
   }
   assert.equal(delayFor(device(reading(0), 'unreachable'), defaults, undefined, 10000), 24_000);
-  assert.equal(delayFor(device(reading(100)), defaults, undefined, 0), 22_000);
+  assert.equal(delayFor(device(reading(100)), defaults, undefined, 0), 60_000);
 });
 
 test('同一时刻更新、系统时间回拨和窗口容量保持历史有序', () => {

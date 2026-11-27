@@ -63,7 +63,7 @@
 .navItem i { position: absolute; top: 10px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--amber); }
 .skipLink { position: fixed; z-index: 40; left: 12px; top: 8px; transform: translateY(-160%); padding: 8px 12px; background: var(--raised); color: var(--ink); }
 .skipLink:focus { transform: none; }
-.content { display: flex; flex-direction: column; gap: 24px; min-height: calc(100vh - max(52px, env(titlebar-area-height, 48px))); padding: clamp(18px, 2.8vw, 40px) clamp(16px, 3.7vw, 60px) 18px; max-width: 1760px; margin-inline: auto; }
+.content { --content-gutter: clamp(16px, 3.7vw, 60px); display: flex; flex-direction: column; gap: 24px; min-height: calc(100vh - max(52px, env(titlebar-area-height, 48px))); padding: clamp(18px, 2.8vw, 40px) var(--content-gutter) 18px; max-width: 1760px; margin-inline: auto; }
 .content:focus { outline: none; }
 .heading, .sectionTitle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .heading { margin-bottom: clamp(16px, 2.4vw, 34px); flex-wrap: wrap; }
@@ -437,7 +437,7 @@
   .navItem { padding-inline: 7px; }
   .headingActions { max-width: 100%; }
   .headingActions .searchBox { width: min(100%, 180px); }
-  .content { padding-inline: 12px; }
+  .content { --content-gutter: 12px; }
   .deviceTable :is(td, th) { padding: 6px 4px; }
   .deviceTable .rowReading strong { font-size: 13px; }
   .settingsNav { padding-right: 6px; }
@@ -887,3 +887,9 @@
 .captionControls button:last-child:hover { background:#c42b1c; color:#fff; }
 .captionControls svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1; }
 :global(body[data-surface="toast"]) { background:transparent; }
+
+/* Shape carries series identity independently of hue; line styles still encode readings. */
+:is(.historyChoice, .graphTooltip > div, .eventLaneLabel, .historySummary th > div) > i[data-series-shape] { display: inline-block; inline-size: 8px; block-size: 8px; flex: 0 0 8px; border-radius: var(--series-radius, 0); }
+i[data-series-shape="0"] { --series-radius: 50%; }
+i[data-series-shape="2"] { clip-path: polygon(50% 0,100% 100%,0 100%); }
+.seriesMarker { stroke: var(--panel, #181d25); stroke-width: 1.35; paint-order: stroke fill; }

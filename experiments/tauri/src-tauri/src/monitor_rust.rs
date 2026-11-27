@@ -1,4 +1,4 @@
-use super::{open, Reply};
+use super::Reply;
 use serde_json::{json,Value};
 use std::{collections::{BTreeMap,HashSet},fs,io::{BufRead,BufReader,Write},path::{Path,PathBuf},
  process::{Child,ChildStdin,Command,Stdio},sync::{mpsc,Arc,Mutex,atomic::{AtomicBool,Ordering}},thread,time::{Duration,Instant,SystemTime,UNIX_EPOCH}};
@@ -12,9 +12,10 @@ use device_admission::{good_reading as reading,valid_id};
 
 const DAY:u64=86400000;
 fn now()->u64{SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
+const DEFAULT_POLL_INTERVAL_SECONDS:u64=60;
 fn n(v:&Value)->u64{v.as_u64().unwrap_or(0)}
 fn defaults()->Value{json!({"low":20,"critical":10,"repeat":0,"snooze":30,"fullscreenSound":true,"desktopSound":false,
-"voltage":false,"startup":false,"zoom":100,"trayZoom":100,"desktopToasts":true,"muteMinutes":60,"historyRetention":"year"})}
+"voltage":false,"startup":false,"zoom":100,"trayZoom":100,"desktopToasts":true,"desktopToastSeconds":super::toast_lifecycle::DEFAULT_SECONDS,"muteMinutes":60,"historyRetention":"year","pollIntervalSeconds":DEFAULT_POLL_INTERVAL_SECONDS})}
 fn boolean(v:&Value)->bool{v==true}
 fn alert_channels(settings:&Value,scene:&Value)->(bool,bool){
  if scene["allowed"]==false{return (false,false)}
@@ -39,8 +40,38 @@ fn days(r:&str)->Option<u64>{match r{"day"=>Some(1),"week"=>Some(7),"month"=>Som
 fn allowed(key:&str,v:&Value)->bool{
  let bounded=|l,h| v.as_u64().is_some_and(|x|x>=l&&x<=h);
  match key{"low"=>bounded(2,95),"critical"=>bounded(1,94),"repeat"=>bounded(0,180),"snooze"=>bounded(5,180),"muteMinutes"=>[15,30,60,120].contains(&n(v)),
+ "desktopToastSeconds"=>v.as_u64().is_some_and(super::toast_lifecycle::valid_seconds),
+ "pollIntervalSeconds"=>v.as_u64().is_some_and(valid_poll_interval),
  "zoom"|"trayZoom"=>bounded(75,150),"historyRetention"=>v.as_str().and_then(days).is_some(),
  "fullscreenSound"|"desktopSound"|"voltage"|"startup"|"desktopToasts"=>v.is_boolean(),_=>false}
+}
+fn valid_poll_interval(seconds:u64)->bool{matches!(seconds,30|60|300|600)}
+fn battery_period(settings:&Value,reading:&Value,threshold:u64)->u64{
+ if reading["power"]=="charging" || n(&reading["low"])<=threshold+10{12000}
+ else{settings["pollIntervalSeconds"].as_u64().filter(|s|valid_poll_interval(*s)).unwrap_or(DEFAULT_POLL_INTERVAL_SECONDS)*1000}
+}
+fn stale_after(period:u64)->u64{60000.max(period+30000)}
+
+#[cfg(test)]
+#[test]
+fn battery_poll_interval_adapts_only_healthy_reads(){
+ let regular=json!({"power":"discharging","low":71});
+ let near_low=json!({"power":"discharging","low":27});
+ let charging=json!({"power":"charging","low":78});
+ assert_eq!(battery_period(&defaults(),&regular,20),60000);
+ assert_eq!(battery_period(&json!({}),&regular,20),60000);
+ assert_eq!(battery_period(&json!({"pollIntervalSeconds":"30"}),&regular,20),60000);
+ for (seconds,wait) in [(30,30000),(60,60000),(300,300000),(600,600000)]{
+  let settings=json!({"pollIntervalSeconds":seconds});
+  assert!(allowed("pollIntervalSeconds",&json!(seconds)));
+  assert_eq!(battery_period(&settings,&regular,20),wait);
+  assert_eq!(battery_period(&settings,&near_low,20),12000);
+  assert_eq!(battery_period(&settings,&charging,20),12000);
+  assert!(stale_after(wait)>wait);
+ }
+ for malformed in [json!(null),json!("60"),json!(0),json!(55),json!(30.5),json!(3600)]{
+  assert!(!allowed("pollIntervalSeconds",&malformed));
+ }
 }
 fn save(path:&Path,v:&Value)->Result<(),String>{write_bytes(path,&serde_json::to_vec(v).map_err(|e|e.to_string())?)}
 pub(crate) fn write_bytes(path:&Path,bytes:&[u8])->Result<(),String>{
@@ -132,7 +163,7 @@ impl Bridge{
 }
 struct State{
  app:AppHandle,dir:PathBuf,exe:PathBuf,pipe:Option<Pipe>,diagnostics:Diagnostics,snapshot:Value,hist:Value,rollup:Value,
- watched:Vec<Value>,found:Vec<Value>,toast:Value,view:Value,next:BTreeMap<String,u64>,
+ watched:Vec<Value>,found:Vec<Value>,toast:Value,toast_members:Vec<String>,view:Value,next:BTreeMap<String,u64>,
  edits:BTreeMap<String,u64>,generation:u64,seq:u64,last_save:u64,bench:bool,dirty:bool,blocked:bool,power_marker:u64
 }
 impl State{
@@ -163,7 +194,7 @@ impl State{
   for (_,r) in rules.as_object_mut().unwrap(){if !r.is_object(){*r=json!({})} if !r["low"].as_u64().is_some_and(|x|(1..=50).contains(&x)){r.as_object_mut().unwrap().remove("low");}}
   let snapshot=json!({"devices":devices,"settings":settings,"deviceSettings":rules,"collector":"starting","refreshing":false,"mutedUntil":0,"alerts":map("alerts"),"demo":false});
   State{app,dir,exe,pipe:None,diagnostics:Diagnostics::default(),snapshot,hist:map("history"),rollup:map("historyDays"),
-   watched:v["watched"].as_array().cloned().unwrap_or_default(),found:vec![],toast:Value::Null,view:Value::Null,
+   watched:v["watched"].as_array().cloned().unwrap_or_default(),found:vec![],toast:Value::Null,toast_members:vec![],view:Value::Null,
    next:BTreeMap::new(),edits:BTreeMap::new(),generation:1,seq:0,last_save:now(),bench,dirty:retire_pending,blocked,power_marker:super::power_events::marker()}
  }
  fn native(&mut self,action:&str,args:Value)->Reply{
@@ -191,13 +222,15 @@ impl State{
   self.rollup=buckets;self.last_save=now();self.dirty=false;Ok(())
  }
  fn threshold(&self,id:&str)->u64{n(&self.snapshot["deviceSettings"][id]["low"].as_u64().map(Value::from).unwrap_or_else(||self.snapshot["settings"]["low"].clone())).max(n(&self.snapshot["settings"]["critical"]))}
- fn record(&mut self,id:&str,stamp:u64,read:Value){
+ fn record(&mut self,id:&str,stamp:u64,read:Value,period:u64){
   if !self.hist[id].is_array(){self.hist[id]=json!([])}
   let h=self.hist[id].as_array_mut().unwrap();
   h.retain(|v|n(&v["time"])>=stamp.saturating_sub(DAY));
   let last=h.last().map(|t|n(&t["time"]));
   if last==Some(stamp){h.pop();}
-  h.push(json!({"time":stamp,"reading":read}));
+  let mut point=json!({"time":stamp,"reading":read});
+  if matches!(period,300000|600000){point["sampleIntervalMs"]=json!(period);}
+  h.push(point);
   if h.len()>10000{let d=h.len()-10000;h.drain(..d);}
   if !reading(&read){return}
   if !self.rollup[id].is_array(){self.rollup[id]=json!([])}
@@ -235,11 +268,12 @@ impl State{
   let marker=super::power_events::marker();
   if marker==self.power_marker{return false}
   self.power_marker=marker;
-  self.generation+=1;self.diagnostics=Diagnostics::default();self.pipe.take();self.next.clear();self.toast=Value::Null;
+  self.generation+=1;self.diagnostics=Diagnostics::default();self.pipe.take();self.next.clear();
+  let toast_ticket=self.toast["ticket"].as_u64();self.toast=Value::Null;self.toast_members.clear();
   for d in self.snapshot["devices"].as_array_mut().unwrap(){if d["status"]=="current"{d["status"]=json!("stale");d["reason"]=json!("等待新读数");}}
   self.snapshot["collector"]=json!("starting");
   let app=self.app.clone();let gui=app.clone();
-  let _=app.run_on_main_thread(move||{if let Some(w)=gui.get_webview_window("toast"){let _=w.destroy();}});
+  if let Some(ticket)=toast_ticket { let _=app.run_on_main_thread(move||super::close_toast(&gui,ticket,false)); }
   self.evidence(if marker&1==1{"suspend"}else{"resume"});self.event();
   true
  }
@@ -253,7 +287,7 @@ impl State{
   if super::power_events::marker()!=marker{self.apply_power();return 0}
   let packet=match packet{
    Ok(p) if !boolean(&p["restartRequired"])=>p,
-   _=>{self.pipe.take();self.diagnostics=Diagnostics::default();self.generation+=1;self.snapshot["collector"]=json!("retrying");
+   _=>{self.pipe.take();self.next.clear();self.diagnostics=Diagnostics::default();self.generation+=1;self.snapshot["collector"]=json!("retrying");
        for d in self.snapshot["devices"].as_array_mut().unwrap(){if d["status"]=="current" && now().saturating_sub(n(&d["lastRead"]))>60000{d["status"]=json!("stale");}}
        self.event();return 5000}
   };
@@ -287,14 +321,18 @@ impl State{
      previous["status"]=json!(if status=="current"&&!live{"unavailable"}else{status});
      previous["reason"]=sample["reason"].clone();
      if live{
+      // Starting a confirmed charging cycle rearms delivery without undoing snooze/ignore.
+      if sample["reading"]["power"]=="charging" && previous["reading"]["power"]!="charging" {
+       if let Some(entry)=self.snapshot["alerts"][id].as_object_mut(){entry.remove("lowAt");entry.remove("criticalAt");}
+      }
       previous["reading"]=sample["reading"].clone();previous["lastRead"]=json!(sampled);
       let seq=if let Some(v)=row.get("sampleSequence"){v.as_u64()}else if !force{Some(self.seq)}else{None};
       if self.edits.get(id).is_some_and(|edit|seq.is_some_and(|s|s>*edit)){self.edits.remove(id);}
      }
      let threshold=self.threshold(id);
-     let period=if live{if n(&sample["reading"]["low"])<=threshold+10||sample["reading"]["power"]=="charging"{12000}else{22000}}else{6000};
+     let period=if live{battery_period(&self.snapshot["settings"],&sample["reading"],threshold)}else{6000};
      self.next.insert(id.into(),sampled+period);
-     self.record(id,sampled,if live{sample["reading"].clone()}else{Value::Null});
+     self.record(id,sampled,if live{sample["reading"].clone()}else{Value::Null},period);
      previous["historyUpdatedAt"]=json!(sampled);
      if !self.edits.contains_key(id){
       if !self.snapshot["alerts"][id].is_object(){self.snapshot["alerts"][id]=json!({});}
@@ -304,7 +342,7 @@ impl State{
      }
      self.dirty=true;
     }
-   }else if previous["status"]=="current"&&sampled.saturating_sub(n(&previous["lastRead"]))>60000{
+   }else if self.reading_expired(&previous,sampled){
     previous["status"]=json!("stale");previous["reason"]=json!("等待读数");
    }
    changes.push(previous);
@@ -313,8 +351,9 @@ impl State{
    let id=d["id"].as_str().unwrap_or_default().to_owned();
    if id.is_empty()||seen.contains(&id){continue}
    if (!pending||packet["discoveryAbsent"].as_array().is_some_and(|a|a.contains(&json!(id))))&&d["status"]!="offline"{
-    d["status"]=json!("offline");d["reason"]=json!("设备未连接");self.record(&id,sampled,Value::Null);self.dirty=true;
-   }else if d["status"]=="current"&&sampled.saturating_sub(n(&d["lastRead"]))>60000{d["status"]=json!("stale");}
+    self.next.remove(&id);
+    d["status"]=json!("offline");d["reason"]=json!("设备未连接");self.record(&id,sampled,Value::Null,0);self.dirty=true;
+   }else if self.reading_expired(&d,sampled){d["status"]=json!("stale");d["reason"]=json!("等待读数");}
    changes.push(d);
   }
   self.snapshot["devices"]=json!(changes);
@@ -323,6 +362,23 @@ impl State{
   self.evidence("poll");self.event();
   if boolean(&packet["workPending"]){350}else{1500}
  }
+ fn reading_expired(&self,device:&Value,stamp:u64)->bool{
+  let Some(id)=device["id"].as_str() else{return false};
+  let period=battery_period(&self.snapshot["settings"],&device["reading"],self.threshold(id));
+  device["status"]=="current"&&stamp.saturating_sub(n(&device["lastRead"]))>stale_after(period)
+ }
+ fn apply_poll_interval(&mut self){
+  let Some(devices)=self.snapshot["devices"].as_array() else{return};
+  for d in devices{
+   if d["status"]!="current"||!reading(&d["reading"]){continue}
+   let Some(id)=d["id"].as_str() else{continue};
+   let period=battery_period(&self.snapshot["settings"],&d["reading"],self.threshold(id));
+   let deadline=n(&d["lastRead"]).saturating_add(period);
+   // Honor an existing, sooner slot. The just-completed reading still
+   // describes the next historical interval until the new reading arrives.
+   self.next.entry(id.to_owned()).and_modify(|due|*due=(*due).min(deadline)).or_insert(deadline);
+  }
+ }
  fn level(&self,d:&Value)->Option<&'static str>{
   let r=&d["reading"];
   let id=d["id"].as_str()?;
@@ -330,51 +386,132 @@ impl State{
   if n(&r["high"])<=n(&self.snapshot["settings"]["critical"]){Some("critical")}
   else if n(&r["high"])<=self.threshold(id){Some("low")}else{None}
  }
- fn show(&mut self,d:Value,level:&str,preview:bool){
-  self.toast=json!({"device":d,"severity":level,"preview":preview,"detailId":d["id"]});
-  let gui=self.app.clone();let app=gui.clone();
-  let _=gui.run_on_main_thread(move||{let _=open(&app,"toast");});
+ fn toast_seconds(&self,level:&str)->u64{
+  let default=super::toast_lifecycle::DEFAULT_SECONDS;
+  if level=="critical"{self.snapshot["settings"]["desktopToastSeconds"].as_u64().unwrap_or(default)}else{default}
  }
- fn evaluate(&mut self){
-  let stamp=now();
-  if super::power_events::marker()!=self.power_marker || self.power_marker&1==1 || self.snapshot["collector"]!="ready" || !self.toast.is_null() || n(&self.snapshot["mutedUntil"])>stamp{return}
-  for level in ["critical","low"]{
-   let chosen=self.snapshot["devices"].as_array().unwrap().iter().find(|d|{
+ fn show(&mut self,d:Value,level:&str,preview:bool){
+  let ticket=super::new_toast_ticket();
+  let seconds=self.toast_seconds(level);
+  self.toast=json!({"device":d,"severity":level,"preview":preview,"detailId":d["id"],"ticket":ticket});
+  let gui=self.app.clone();let app=gui.clone();
+  if gui.run_on_main_thread(move||super::open_toast(&app,ticket,seconds)).is_err(){self.toast=Value::Null;}
+ }
+ fn clear_closed_toast(&mut self){
+  if self.toast["ticket"].as_u64().is_some_and(super::toast_closed){self.toast=Value::Null;self.toast_members.clear();}
+ }
+ fn retire_alert(&mut self){
+  if let Some(ticket)=self.toast["ticket"].as_u64() {
+   let gui=self.app.clone();let app=gui.clone();
+   let _=gui.run_on_main_thread(move||super::retire_toast(&app,ticket));
+  }
+  self.toast=Value::Null;self.toast_members.clear();
+ }
+ fn alert_allowed(&self,id:&str,level:&str,stamp:u64)->bool{
+  let state=&self.snapshot["alerts"][id];
+  !boolean(&self.snapshot["deviceSettings"][id]["muted"])&&n(&state["snoozeUntil"])<=stamp
+    &&state["ignored"]!="critical"&&state["ignored"]!=level
+ }
+ fn toast_member_valid(&self,id:&str,level:&str,stamp:u64)->bool{
+  if !self.alert_allowed(id,level,stamp){return false}
+  let Some(device)=self.snapshot["devices"].as_array().unwrap().iter().find(|d|d["id"]==id) else{return false};
+  // A temporary read failure is not recovery; confirmed disconnect is.
+  super::toast_lifecycle::keep_member(device["status"].as_str().unwrap_or_default(),self.level(device),level)
+ }
+ fn alert_candidates(&self,level:&str,stamp:u64)->Vec<Value>{
+  self.snapshot["devices"].as_array().unwrap().iter().filter(|d|{
     let id=d["id"].as_str().unwrap_or_default();let state=&self.snapshot["alerts"][id];
     let last=n(&d["lastRead"]);
     let delivered=n(&state[if level=="critical"{"criticalAt"}else{"lowAt"}]);
     let repeat=n(&self.snapshot["settings"]["repeat"]);
-    self.level(d)==Some(level)&&last<=stamp&&stamp.saturating_sub(last)<=60000&&!self.edits.contains_key(id)&&
-    !boolean(&self.snapshot["deviceSettings"][id]["muted"])&&n(&state["snoozeUntil"])<=stamp&&state["ignored"]!="critical"&&state["ignored"]!=level&&
-    (delivered==0||n(&state["snoozeUntil"])>delivered||(repeat>0&&stamp.saturating_sub(delivered)>=repeat*60000))
-   }).cloned();
-   let Some(d)=chosen else{continue};
-   let id=d["id"].as_str().unwrap_or_default();
-   let settings=&self.snapshot["settings"];
-   let choices=settings.clone();
-   let Ok(scene)=self.native("scene",json!({})) else{return};
-   if super::power_events::marker()!=self.power_marker{return}
-   let (show_popup,play_sound)=alert_channels(&choices,&scene);
-   if show_popup{
-    self.show(d.clone(),level,false);self.evidence("toast");
-   }
-   let sounded=play_sound && self.native("tone",json!({})).is_ok_and(|r|r["played"]==true);
-   if sounded{self.evidence("tone");}
-   if !show_popup&&!sounded{return}
-   if !self.snapshot["alerts"][id].is_object(){self.snapshot["alerts"][id]=json!({});}
-   self.snapshot["alerts"][id][if level=="critical"{"criticalAt"}else{"lowAt"}]=json!(stamp);
-   self.snapshot["alerts"][id]["lowAt"]=json!(stamp);self.snapshot["alerts"][id]["lastNoticeAt"]=json!(stamp);self.dirty=true;self.evidence(level);let _=self.persist();return
+    self.level(d)==Some(level)&&last<=stamp&&stamp.saturating_sub(last)<=60000&&!self.edits.contains_key(id)
+     &&!(self.toast["severity"]==level&&self.toast_members.iter().any(|member|member==id))
+     &&self.alert_allowed(id,level,stamp)
+     &&(delivered==0||n(&state["snoozeUntil"])>delivered||(repeat>0&&stamp.saturating_sub(delivered)>=repeat*60000))
+   }).cloned().collect()
+ }
+ fn toast_summary(d:&Value)->Value{
+  json!({"id":d["id"],"name":d["name"],"art":d["art"],"reading":d["reading"]})
+ }
+ fn present_members(&mut self,ids:Vec<String>,level:&str,restart:bool)->bool{
+  let devices=self.snapshot["devices"].as_array().unwrap();
+  let members:Vec<_>=ids.iter().filter_map(|id|devices.iter().find(|d|d["id"]==id.as_str())).collect();
+  let Some(lowest)=members.iter().copied().min_by(|a,b|
+   (n(&a["reading"]["high"]),n(&a["reading"]["low"]),a["id"].as_str()).cmp(&(n(&b["reading"]["high"]),n(&b["reading"]["low"]),b["id"].as_str()))) else{
+    if self.toast["preview"]!=true&&!self.toast.is_null(){self.retire_alert();}return false
+  };
+  let existing=self.toast["ticket"].as_u64();
+  let ticket=existing.unwrap_or_else(super::new_toast_ticket);
+  let payload=json!({"device":Self::toast_summary(lowest),"devices":members.iter().take(3).map(|d|Self::toast_summary(d)).collect::<Vec<_>>(),
+   "count":members.len(),"severity":level,"preview":false,"detailId":lowest["id"],"ticket":ticket});
+  if payload==self.toast&&!restart{self.toast_members=ids;return true}
+  let seconds=self.toast_seconds(level);
+  let gui=self.app.clone();let app=gui.clone();let dispatch=payload.clone();
+  if gui.run_on_main_thread(move||{
+   if existing.is_some(){super::update_toast(&app,ticket,dispatch,restart.then_some(seconds));}
+   else{super::open_toast(&app,ticket,seconds);}
+  }).is_err(){return false}
+  self.toast=payload;self.toast_members=ids;true
+ }
+ fn record_notice(&mut self,id:&str,level:&str,stamp:u64){
+  if !self.snapshot["alerts"][id].is_object(){self.snapshot["alerts"][id]=json!({});}
+  if level=="critical"{self.snapshot["alerts"][id]["criticalAt"]=json!(stamp);}
+  self.snapshot["alerts"][id]["lowAt"]=json!(stamp);
+  self.snapshot["alerts"][id]["lastNoticeAt"]=json!(stamp);self.dirty=true;
+ }
+ fn evaluate(&mut self){
+  self.clear_closed_toast();
+  let stamp=now();
+  if super::power_events::marker()!=self.power_marker || self.power_marker&1==1 || self.snapshot["collector"]!="ready"{return}
+  let choices=self.snapshot["settings"].clone();
+  let muted=n(&self.snapshot["mutedUntil"])>stamp;
+  let mut active_level=if self.toast["severity"]=="critical"{"critical"}else{"low"};
+  let mut members:Vec<_>=if muted||!boolean(&choices["desktopToasts"]){vec![]}else{
+   self.toast_members.iter().filter(|id|self.toast_member_valid(id,active_level,stamp)).cloned().collect()
+  };
+  let (mut level,mut candidates)=("critical",if muted{vec![]}else{self.alert_candidates("critical",stamp)});
+  if candidates.is_empty()&&!muted{
+   level="low";candidates=self.alert_candidates("low",stamp);
   }
+  let mut delivered=false;
+  if !candidates.is_empty(){
+   let scene=self.native("scene",json!({}));
+   if super::power_events::marker()!=self.power_marker{return}
+   if let Ok(scene)=scene{
+    let (popup,play_sound)=alert_channels(&choices,&scene);
+    let audible=play_sound&&self.native("tone",json!({})).is_ok_and(|r|r["played"]==true);
+    if audible{self.evidence("tone");}
+    if super::power_events::marker()!=self.power_marker{return}
+    let mut visual_ids=vec![];
+    if popup&&super::toast_lifecycle::admits_popup(level,members.len(),self.toast["preview"]==true){
+     if level!=active_level{members.clear();active_level=level;}
+     let mut joined=false;
+     for d in candidates.iter().take(if level=="critical"{usize::MAX}else{1}){
+      let Some(id)=d["id"].as_str() else{continue};
+      if super::toast_lifecycle::join_member(&mut members,id){joined=true;visual_ids.push(id.to_owned());}
+     }
+     if self.present_members(members.clone(),active_level,joined){
+      if joined{self.evidence("toast");}
+     }else{visual_ids.clear();}
+    }
+    for d in candidates.iter().take(if level=="critical"{usize::MAX}else{1}){
+     let Some(id)=d["id"].as_str() else{continue};
+     if audible||visual_ids.iter().any(|v|v==id){self.record_notice(id,level,stamp);delivered=true;}
+    }
+   }
+  }
+  if self.toast["preview"]!=true&&!self.toast.is_null(){self.present_members(members,active_level,false);}
+  if delivered{self.evidence(level);let _=self.persist();}
  }
  fn handle(&mut self,m:&str,d:Value)->Reply{
+  self.clear_closed_toast();
   let okay=json!({"ok":true});
   match m {
    "test-power" if self.bench&&d.is_boolean()=>{super::power_events::set(d==true);return Ok(json!({"ok":true}))},
    "snapshot"=>return Ok(self.snapshot.clone()),
    "view"=>return Ok(self.view.clone()),
    "remember"=>{if matches!(d["page"].as_str(),Some("overview"|"devices"|"alerts"|"history"|"settings")){self.view=d}return Ok(Value::Null)}
-   "toast"=>return Ok(self.toast.clone()),
-   "dismiss"=>{self.toast=Value::Null;return Ok(Value::Null)}
+   "toast"=>return Ok(if d.as_u64().is_some()&&self.toast["ticket"]==d {self.toast.clone()}else{Value::Null}),
    "evidence"=>{self.evidence("renderer-ready");return Ok(Value::Null)}
    "command"=>{},
    _=>return Err("操作不受支持".into())
@@ -417,7 +554,9 @@ impl State{
     let boot_changed=next["startup"]!=previous["startup"];
     if boot_changed&&!self.bench{startup::set(next["startup"]==true)?;}
     self.snapshot["settings"]=next;
-    if let Err(e)=self.persist(){if boot_changed&&!self.bench{let _=startup::set(previous["startup"]==true);}self.snapshot["settings"]=previous;return Err(e)}super::apply_settings(&self.app,&self.snapshot["settings"]);self.event();
+    if let Err(e)=self.persist(){if boot_changed&&!self.bench{let _=startup::set(previous["startup"]==true);}self.snapshot["settings"]=previous;return Err(e)}
+    if self.snapshot["settings"]["pollIntervalSeconds"]!=previous["pollIntervalSeconds"]{self.apply_poll_interval();}
+    super::apply_settings(&self.app,&self.snapshot["settings"]);self.event();
    }
    "toggleAlertSetting"=>{
     let k=d["key"].as_str().unwrap_or_default();if !matches!(k,"fullscreenSound"|"desktopSound"|"desktopToasts"){return Err("不支持的开关".into())}

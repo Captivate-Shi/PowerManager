@@ -9,12 +9,12 @@ import { promisify } from 'node:util';
 import { release } from 'node:os';
 
 import { isDualSenseBluetooth, classify, defaults, historyPointEnd, limitHistoryRange, type AlertState, type Device, type DeviceSettings, type CompatibilitySelection, type CommandResult, type DiagnosticDevice, type Found, type HistoryDay, type HistoryPoint, type HistoryRange, type Reading, type Sample, type Severity, type Settings, type Snapshot } from './model';
-import { day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
+import { currentReadingAge, day, delayFor, eligible, observeRecovery, recordHistory } from './monitor-rules';
 import { accumulateHistoryDay, historyStart } from './history-plot';
 import { loadDeviceSettings, loadSettings } from './settings-validation';
 
 const executeFile = promisify(execFile);
-const maxCurrentReadingAge = 60_000;
+const collectorFailureReadingAge = 60_000;
 const manualRefreshWait = 5000;
 const collectorStartupError = '采集程序启动失败，详情见诊断日志。';
 
@@ -644,7 +644,7 @@ export class Monitor {
         this.log('采集请求超过 5 分钟，正在重新启动采集程序。');
         this.invalidateDiagnosticSession();
         this.state.collector = 'retrying';
-        const deadline = Date.now() - maxCurrentReadingAge;
+        const deadline = Date.now() - collectorFailureReadingAge;
         for (const row of this.rows.values()) {
           if (row.device.status === 'current' && row.device.lastRead !== null && row.device.lastRead < deadline) {
             this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, Date.now());
@@ -742,7 +742,7 @@ export class Monitor {
   }
   private expire(row: Row, now: number) {
     if (row.device.status !== 'current' || row.device.lastRead === null ||
-        now - row.device.lastRead <= maxCurrentReadingAge) return false;
+        now - row.device.lastRead <= currentReadingAge(row.device, this.state.settings, this.state.deviceSettings[row.device.id])) return false;
     this.setSample(row, { status: 'stale', reading: null, reason: '等待新读数' }, now);
     return true;
   }
@@ -815,7 +815,11 @@ export class Monitor {
     }
     const rules = this.state.deviceSettings[device.id];
     row.due = time + delayFor(device, this.state.settings, rules, row.failures);
-    const point = { time, reading: sample.status === 'current' ? sample.reading : null };
+    const interval = row.due - time;
+    const point: HistoryPoint = {
+      time, reading: sample.status === 'current' ? sample.reading : null,
+      ...((interval === 300_000 || interval === 600_000) && { sampleIntervalMs: interval }),
+    };
     const points = this.data.history[device.id] ?? [];
     this.data.history[device.id] = recordHistory(points, point);
     device.historyUpdatedAt = time;
@@ -858,10 +862,18 @@ export class Monitor {
     return true;
   }
   thresholdAlertRevision(id: string) { return this.thresholdAlertRevisions.get(id) ?? 0; }
+  applyPollInterval() {
+    for (const row of this.rows.values()) {
+      const { device } = row;
+      if (device.status !== 'current' || !device.reading || device.lastRead === null) continue;
+      // An already promised sample remains due; shorter settings can advance it.
+      row.due = Math.min(row.due, device.lastRead + delayFor(device, this.state.settings, this.state.deviceSettings[device.id], 0));
+    }
+  }
   eligible(device: Device): Severity | undefined {
     const now = Date.now();
     if (this.thresholdEdits.has(device.id) || device.lastRead === null ||
-        device.lastRead > now || now - device.lastRead > maxCurrentReadingAge) return;
+        device.lastRead > now || now - device.lastRead > currentReadingAge(device, this.state.settings, this.state.deviceSettings[device.id])) return;
     return eligible(device, this.state.settings, this.state.deviceSettings[device.id],
       this.state.alerts[device.id] ?? {}, this.state.mutedUntil, now);
   }

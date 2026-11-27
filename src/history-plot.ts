@@ -53,9 +53,13 @@ export function accumulateHistoryDay(days: HistoryDay[], { time, reading }: Hist
   if (reading.low < current.low || (reading.low === current.low && reading.high < current.high)) bucket.lowest = { time, reading };
   if (reading.power === 'charging') bucket.lastCharge = Math.max(time, bucket.lastCharge ?? 0);
 }
-// Sampling normally takes 12–22s. A long hole (e.g. app asleep) is not
-// evidence of disconnection and must not be interpolated as a reading.
+// Missing legacy cadence keeps the old limit. A newer reading can explicitly
+// allow a longer interval; it does not change historical evidence elsewhere.
 export const unsampledAfter = 120_000;
+function expectedGap(point: HistoryPoint) {
+  return point.reading && (point.sampleIntervalMs === 300_000 || point.sampleIntervalMs === 600_000)
+    ? point.sampleIntervalMs + 30_000 : unsampledAfter;
+}
 export const compareLimit = 3;
 type Observation = { time: number; reading: Reading };
 export type PlotRun = { kind: 'exact' | 'range'; points: Observation[] };
@@ -72,7 +76,7 @@ export function plotHistory(input: HistoryPoint[], start: number, end: number): 
   let run: PlotRun | undefined;
   for (const [index, point] of points.entries()) {
     const { time, reading } = point;
-    if (previous && time - historyPointEnd(previous) > unsampledAfter) {
+    if (previous && time - historyPointEnd(previous) > expectedGap(previous)) {
       gaps.push({ start: historyPointEnd(previous), end: time, kind: 'unrecorded' });
       run = undefined;
     }
@@ -90,7 +94,7 @@ export function plotHistory(input: HistoryPoint[], start: number, end: number): 
     }
     previous = point;
   }
-  if (previous && end - historyPointEnd(previous) > unsampledAfter) {
+  if (previous && end - historyPointEnd(previous) > expectedGap(previous)) {
     gaps.push({ start: historyPointEnd(previous), end, kind: 'unrecorded' });
   }
   return { points, runs, gaps, charging };
@@ -111,7 +115,7 @@ export function sampleAt(series: PlotSeries, time: number, end = time): HistoryP
     const confirmedUntil = historyPointEnd(floor);
     return time <= confirmedUntil || (next && !next.reading && next.time - confirmedUntil <= unsampledAfter) ? floor : undefined;
   }
-  return (next?.time ?? end) - floor.time <= unsampledAfter ? floor : undefined;
+  return (next?.time ?? end) - floor.time <= expectedGap(floor) ? floor : undefined;
 }
 
 export function toggleHistorySelection(ids: string[], id: string): string[] {

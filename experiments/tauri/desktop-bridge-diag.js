@@ -1,11 +1,11 @@
 import { compatibilityJson } from '../../src/compatibility-report';
 const { core, event } = window.__TAURI__;
 const invoke = (method, data) => core.invoke('desktop', { method, data: data ?? null });
-function listen(name, callback) {
+function listen(name, callback, ready) {
   let active = true;
   let unlisten;
   void event.listen(name, ({ payload }) => { if (active) callback(payload ?? undefined); })
-    .then(stop => { if (active) unlisten = stop; else stop(); })
+    .then(stop => { if (active) { unlisten = stop; ready?.(); } else stop(); })
     .catch(console.error);
   return () => { active = false; unlisten?.(); };
 }
@@ -16,6 +16,13 @@ window.powerManager = {
     return value;
   }),
   toast: () => invoke('toast'),
+  onToast: callback => {
+    let active = true, received = false;
+    // Register before the snapshot so an update during startup cannot be missed.
+    const stop = listen('pm-toast', value => { received = true; callback(value ?? null); },
+      () => { void invoke('toast').then(value => { if (active && !received) callback(value); }).catch(() => {}); });
+    return () => { active = false; stop(); };
+  },
   toastPresent: () => invoke('toast-present'),
   trayPresent: () => invoke('tray-present'),
   mainPresent: () => invoke('main-present'),

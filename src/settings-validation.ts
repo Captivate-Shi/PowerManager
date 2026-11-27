@@ -1,4 +1,4 @@
-import { defaults, isHistoryRange, isHistoryRangeWithin, isMuteDuration, type DeviceSettings, type Settings } from './model';
+import { defaults, isDesktopToastSeconds, isHistoryRange, isHistoryRangeWithin, isMuteDuration, isPollIntervalSeconds, type DeviceSettings, type Settings } from './model';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -22,9 +22,17 @@ function setSetting(settings: Settings, key: string, value: unknown): string | u
       if (!isMuteDuration(value)) return '全局静音时长无效';
       settings.muteMinutes = value;
       return;
+    case 'desktopToastSeconds':
+      if (!isDesktopToastSeconds(value)) return '弹窗显示时长无效';
+      settings.desktopToastSeconds = value;
+      return;
     case 'historyRetention':
       if (!isHistoryRange(value)) return '记录范围无效';
       settings.historyRetention = value;
+      return;
+    case 'pollIntervalSeconds':
+      if (!isPollIntervalSeconds(value)) return '电量轮询间隔无效';
+      settings.pollIntervalSeconds = value;
       return;
     case 'zoom': case 'trayZoom':
       if (!integer(value, 75, 150)) return '缩放比例需在 75%–150% 之间';

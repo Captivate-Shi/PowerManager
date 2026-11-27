@@ -220,6 +220,25 @@ function Graph({ series, start, end, threshold, range, view, lanes }: {
     return { index, color, line: line.join(''), dots, midline: midlines.join(''), brackets: brackets.join(''),
       endpoint: plot.runs.at(-1)?.points.at(-1) };
   }), [series, start, end, width, height, view, range]);
+  const seriesMarkers: { index: number; color: string; x: number; y: number }[] = [];
+  if (series.length > 1) for (const { plot, index, color } of series) {
+    // Anchor the symbol to a real sample. Search back just enough to avoid covering another symbol.
+    const last = plot.runs.at(-1);
+    if (!last) continue;
+    const placed = (point: (typeof last.points)[number]) => ({
+      index, color, x: x(point.time), y: y((point.reading.low + point.reading.high) / 2),
+    });
+    const endpoint = last.points.at(-1);
+    if (!endpoint) continue;
+    const endPos = placed(endpoint);
+    let position = endPos;
+    for (let offset = last.points.length - 1; offset >= 0; offset--) {
+      position = placed(last.points[offset]);
+      if (endPos.x - position.x > 44) { position = endPos; break; }
+      if (seriesMarkers.every(other => Math.hypot(other.x - position.x, other.y - position.y) >= 11)) break;
+    }
+    seriesMarkers.push(position);
+  }
   const plotLanes = useMemo(() => range === 'day' ? lanes.map(lane => {
     const events: HoverEvent[] = [];
     const base = { device: lane.device.id, name: lane.device.name };
@@ -322,6 +341,11 @@ function Graph({ series, start, end, threshold, range, view, lanes }: {
           r={range === 'day' ? 2 : range === 'year' && item.dots.length > (right - left) / 6 ?
             Math.min(2, bucketSlot * .46) : 3.2} />; })}
       </g>)}
+      {seriesMarkers.map(marker => <g className={s.seriesMarker} key={marker.index} data-plot-series-shape={marker.index}
+        transform={`translate(${marker.x},${marker.y})`} fill={marker.color}>
+        {marker.index === 0 ? <circle r="4" /> : marker.index === 1
+          ? <rect x="-3.8" y="-3.8" width="7.6" height="7.6" /> : <path d="M0 -4.7 L4.4 3.7 H-4.4 Z" />}
+      </g>)}
       {range === 'day' && !compact && paths.map(item => {
         const p = item.endpoint;
         if (!p) return null;
@@ -347,7 +371,7 @@ function Graph({ series, start, end, threshold, range, view, lanes }: {
     {plotLanes.length > 0 && <div className={s.eventLanes} data-event-lanes="" role="group" aria-label="设备事件">
       {plotLanes.map(({ device, index, color, events, stagger }) => <div className={s.eventLane} key={device.id}
         data-event-series={index} style={{ '--series': color } as CSSProperties}>
-        <span className={s.eventLaneLabel} title={device.name}><i />{device.name}</span>
+        <span className={s.eventLaneLabel} title={device.name}><i data-series-shape={index} aria-hidden="true" />{device.name}</span>
         <div className={s.eventLaneTrack} data-event-track="">
           {events.map(event => {
             const label = eventLabel(event.kind);
@@ -380,7 +404,7 @@ function Graph({ series, start, end, threshold, range, view, lanes }: {
     </div> : time !== null && <div className={s.graphTooltip} data-compare-tooltip="" role="tooltip">
       <span>{stamp.format(time)}</span>
       {cursorValues.map(({ device, color, read, value }) => <div key={device.id} style={{ '--series': color } as CSSProperties}>
-        <i /><b>{device.name}</b><span data-no-reading={!read || undefined}>{value}</span>
+        <i data-series-shape={series.find(item => item.device.id === device.id)?.index} aria-hidden="true" /><b>{device.name}</b><span data-no-reading={!read || undefined}>{value}</span>
         {read?.power === 'charging' && <Zap size={12} aria-label="充电中" />}
       </div>)}
     </div>}

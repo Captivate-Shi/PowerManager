@@ -13,15 +13,15 @@ declare global { interface Window { powerManager: DesktopApi } }
 export const api = window.powerManager;
 const artUrl = (name: string) => './assets/' + name + '.png';
 export function Brand() {
-  return <div className={s.brand}><img src={artUrl("yudian-mark")} width="28" height="28" alt="" /><b>余电</b></div>;
+  return <div className={s.brand}><img src={artUrl("yudian-mark")} width="28" height="28" alt="" draggable={false} /><b>余电</b></div>;
 }
 const renderedArt = new Set<Device['art']>(['dualsense', 'mouse', 'keyboard']);
 type ArtVariant = 'thumb' | 'card' | 'hero' | 'stage' | 'detail';
 export const studioPath = (name: string) => new URL('./assets/studio-v2/' + name, document.baseURI).href;
 const studioAsset = (art: Device['art'], variant: string) => studioPath(art + '-' + variant + '.webp');
-const deviceArtUrl = (device: Device, variant: ArtVariant, loading: boolean) => studioAsset(device.art,
+const deviceArtUrl = (device: Pick<Device, 'art'>, variant: ArtVariant, loading: boolean) => studioAsset(device.art,
   loading ? 'loading' : variant === 'thumb' || variant === 'card' ? 'thumb' : 'hero');
-const fallbackArtUrl = (device: Device, variant: ArtVariant) => renderedArt.has(device.art)
+const fallbackArtUrl = (device: Pick<Device, 'art'>, variant: ArtVariant) => renderedArt.has(device.art)
   ? './assets/' + device.art + '-' + (variant === 'stage' ? 'card' : variant === 'detail' ? 'hero' : variant) + '.webp' : artUrl(device.art);
 const warmedArtwork = new Map<string, { ready: boolean; request: Promise<boolean> }>();
 export function heroPrepared(device: Device) {
@@ -46,7 +46,7 @@ export function prepareHero(device: Device): Promise<boolean> {
 }
 
 export function Art({ device, variant = 'thumb', loading = false, revealPhoto = false, onReady }: {
-  device: Device; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean; onReady?: () => void;
+  device: Pick<Device, 'art'>; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean; onReady?: () => void;
 }) {
   const [failed, setFailed] = useState<string>();
   const url = deviceArtUrl(device, variant, loading);
@@ -144,8 +144,8 @@ export function SelectControl({ label, value, choices, onChange, disabled }: {
     </Select.Content></Select.Portal>
   </Select.Root>;
 }
-export function Modal({ title, description, hint, onClose, children }: {
-  title: string; description?: string; hint?: string; onClose: () => void; children: ReactNode;
+export function Modal({ title, description, hint, onClose, restoreFocus, children }: {
+  title: string; description?: string; hint?: string; onClose: () => void; restoreFocus?: () => HTMLElement | null; children: ReactNode;
 }) {
   const opener = useRef(document.activeElement);
   return <Dialog.Root open onOpenChange={value => { if (!value) onClose(); }}><Dialog.Portal>
@@ -158,19 +158,20 @@ export function Modal({ title, description, hint, onClose, children }: {
     }} />
     <Dialog.Content className={s.modal} {...(!description ? { 'aria-describedby': undefined } : {})}
       onOpenAutoFocus={event => {
-        if (!hint) return;
         const content = event.currentTarget;
         if (!(content instanceof HTMLElement)) return;
-        const focus = content.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled]):not([data-copy-tip]):not(.' + s.modalClose + ')') ??
-          content.querySelector<HTMLElement>('.' + s.modalClose);
+        const focus = content.querySelector<HTMLElement>('[data-dialog-initial]:not([disabled])') ??
+          (hint ? content.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled]):not([data-copy-tip]):not(.' + s.modalClose + ')') ??
+            content.querySelector<HTMLElement>('.' + s.modalClose) : null);
         if (focus) { event.preventDefault(); focus.focus(); }
       }}
       onCloseAutoFocus={event => {
-      if (opener.current instanceof HTMLElement && opener.current.isConnected) {
-        event.preventDefault();
-        opener.current.focus({ preventScroll: true });
-      }
-    }}>
+        const target = restoreFocus?.() ?? opener.current;
+        if (target instanceof HTMLElement && target.isConnected) {
+          event.preventDefault();
+          target.focus({ preventScroll: true });
+        }
+      }}>
       <div className={s.modalHeading}><Dialog.Title>{title}</Dialog.Title>{hint && <HelpTip label={title} text={hint} />}</div>
       {description && <Dialog.Description>{description}</Dialog.Description>}
       <Dialog.Close asChild><button className={s.iconButton + ' ' + s.modalClose} aria-label="关闭对话框"><X size={20} /></button></Dialog.Close>
