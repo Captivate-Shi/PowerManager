@@ -5,7 +5,7 @@ import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, C
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
-import { defaultPollIntervalSeconds, defaults, historyRanges, inventoryState, isConnected, isDesktopToastSeconds, isPollIntervalSeconds, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
+import { pendingChargeRoute, defaultPollIntervalSeconds, defaults, historyRanges, inventoryState, isConnected, isDesktopToastSeconds, isPollIntervalSeconds, isLiveDualSenseFull, isHistoryRange, isHistoryRangeWithin, isMuteDuration, limitHistoryRange, muteDurationLabel, muteDurations, severity, type Command, type CommandResult, type CompatibilitySelection, type Device, type DiagnosticDevice, type Found, type HistoryRange, type MainView, type Snapshot } from './model';
 import { api, Art, BatteryMeter, Brand, Chart, CompareChart, Connection, dateLabel, heroPrepared, Modal, prepareHero, readingLabel, readingTimeLabel, readingUpdated, SectionTitle, SelectControl, SettingRow, StatusTag, studioPath, SwitchControl, tone } from './ui';
 import s from './panel.module.css';
 import look from './scene.module.css';
@@ -109,6 +109,17 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
       setFinding(false);
       setFilter('all');
       search('');
+      if (id === pendingChargeRoute) {
+        setDetailId(undefined);
+        setPage('alerts');
+        window.scrollTo(0, 0);
+        requestAnimationFrame(() => {
+          const heading = document.querySelector<HTMLElement>('#charge-heading');
+          heading?.scrollIntoView({ block: 'nearest' });
+          heading?.focus({ preventScroll: true });
+        });
+        return;
+      }
       select(id);
       setPage('devices');
       setDetailId(id);
@@ -970,7 +981,7 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
   const patch = (value: Partial<Snapshot['settings']>) => { void run({ type: 'settings', patch: value }); };
   return <div className={preferences.reminders} data-page="reminders">
     <section className={preferences.queue} aria-labelledby="charge-heading" data-scroll-pane="">
-      <h2 id="charge-heading">待充电 <span>{devices.length ? devices.length + ' 台设备' : ''}</span></h2>
+      <h2 id="charge-heading" tabIndex={-1}>待充电 <span>{devices.length ? devices.length + ' 台设备' : ''}</span></h2>
       {!devices.length && <div className={preferences.empty}><ShieldCheck size={40} strokeWidth={1.25} /><h3>暂无待充电设备</h3></div>}
       {devices.map(device => {
         const severityValue = level(device, state);
@@ -1021,7 +1032,7 @@ function Alerts({ state, run, open }: { state: Snapshot; run: Run; open: (id: st
       </div>
       <details className={preferences.morePreferences}><summary>通知与静音 <ChevronDown size={16} /></summary>
         <SettingRow title="桌面弹窗"><SwitchControl label="桌面弹窗" checked={state.settings.desktopToasts} onChange={() => { void run({ type: 'toggleAlertSetting', key: 'desktopToasts' }); }} /></SettingRow>
-        <SettingRow title="弹窗停留" hint="适用于低电量和电量告急。选择一直显示时，点击关闭或查看详情即可收起。">
+        <SettingRow title="告急弹窗停留" hint="只调整电量告急。普通低电量提醒停留 12 秒。设备开始充电后会从提醒里移除。">
           <SelectControl label="弹窗停留时间" value={String(state.settings.desktopToastSeconds ?? 12)} choices={toastDurationChoices}
             disabled={!state.settings.desktopToasts} onChange={value => { const seconds = Number(value); if (isDesktopToastSeconds(seconds)) patch({ desktopToastSeconds: seconds }); }} />
         </SettingRow>

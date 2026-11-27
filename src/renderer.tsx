@@ -35,12 +35,17 @@ function MainFirstFrame() {
 function App() {
   const [state, setState] = useState<Snapshot>();
   const [toast, setToast] = useState<Toast | null>();
+  const [toastExiting, setToastExiting] = useState(false);
   const [error, setError] = useState('');
   const [remembered, setRemembered] = useState<MainView>();
   const [viewReady, setViewReady] = useState(surface !== 'main' || !api.mainView);
   useEffect(() => {
     let active = true;
     if (surface === "toast") {
+      if (api.onToast) return api.onToast(value => {
+        setToastExiting(value === null);
+        if (value) setToast(value);
+      });
       void api.toast().then(value => { if (active) setToast(value); }).catch(() => {});
       return () => { active = false; };
     }
@@ -74,7 +79,7 @@ function App() {
     // Hidden WebViews may suspend animation frames. React has already committed the card.
     const deadline = window.setTimeout(reveal, 110);
     return () => { active = false; cancelAnimationFrame(frame); window.clearTimeout(deadline); };
-  }, [toast]);
+  }, [!!toast]);
   const trayReady = surface === 'tray' && (!!state || !!error);
   useEffect(() => {
     if (!trayReady || !api.trayPresent) return;
@@ -82,7 +87,7 @@ function App() {
     const timer = window.setTimeout(() => { void api.trayPresent?.().catch(() => {}); }, 35);
     return () => window.clearTimeout(timer);
   }, [trayReady]);
-  if (surface === 'toast') return toast ? <ToastPanel toast={toast} /> : null;
+  if (surface === 'toast') return toast ? <ToastPanel toast={toast} exiting={toastExiting} /> : null;
   if (!state || !viewReady) return <main className={startup.shell}>
     {error && <MainFirstFrame />}
     <div className={startup.brand}><Brand /></div>

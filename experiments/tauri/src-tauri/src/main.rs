@@ -177,6 +177,8 @@ fn mark_toast_closed(ticket: u64) { CLOSED_TOAST_TICKET.fetch_max(ticket, Orderi
 // delayed callbacks and renderer IPC to the specific toast that created them.
 fn open_toast(app: &AppHandle, ticket: u64, seconds: u64) {
     if toast_closed(ticket) { return; }
+    let retiring = TOAST_SLOT.lock().unwrap().filter(|slot| slot.closing).map(|slot| slot.ticket);
+    if let Some(retiring) = retiring { close_toast(app, retiring, false); }
     if app.get_webview_window("toast").is_some() {
         mark_toast_closed(ticket);
         return;
@@ -213,11 +215,46 @@ fn present_toast(app: &AppHandle, ticket: u64) {
         close_toast(app, ticket, false);
         return;
     }
-    let duration = TOAST_SLOT.lock().unwrap().as_mut().and_then(ToastSlot::present);
-    let Some(duration) = duration else { return; };
+    let timer = TOAST_SLOT.lock().unwrap().as_mut()
+        .and_then(|slot| slot.present().map(|duration| (slot.epoch, duration)));
+    if let Some((epoch, duration)) = timer { arm_toast_timeout(app, ticket, epoch, duration); }
+}
+
+fn arm_toast_timeout(app: &AppHandle, ticket: u64, epoch: u64, duration: Duration) {
     let gui = app.clone();
     thread::spawn(move || {
         thread::sleep(duration);
+        let handle = gui.clone();
+        let _ = gui.run_on_main_thread(move || {
+            if TOAST_SLOT.lock().unwrap().is_some_and(|slot| slot.timeout_matches(ticket, epoch)) {
+                close_toast(&handle, ticket, false);
+            }
+        });
+    });
+}
+
+fn update_toast(app: &AppHandle, ticket: u64, payload: Value, seconds: Option<u64>) {
+    let timer = {
+        let mut lock = TOAST_SLOT.lock().unwrap();
+        let Some(slot) = lock.as_mut().filter(|slot| slot.ticket == ticket && !slot.closing) else { return; };
+        seconds.and_then(|seconds| slot.restart(seconds).map(|duration| (slot.epoch, duration)))
+    };
+    if let Some(window) = app.get_webview_window("toast") { let _ = window.emit("pm-toast", payload); }
+    if let Some((epoch, duration)) = timer { arm_toast_timeout(app, ticket, epoch, duration); }
+}
+
+fn retire_toast(app: &AppHandle, ticket: u64) {
+    let presented = {
+        let mut lock = TOAST_SLOT.lock().unwrap();
+        let Some(slot) = lock.as_mut().filter(|slot| slot.ticket == ticket && !slot.closing) else { return; };
+        slot.closing = true;
+        slot.presented
+    };
+    if !presented { close_toast(app, ticket, false); return; }
+    if let Some(window) = app.get_webview_window("toast") { let _ = window.emit("pm-toast", Value::Null); }
+    let gui = app.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(175));
         let handle = gui.clone();
         let _ = gui.run_on_main_thread(move || close_toast(&handle, ticket, false));
     });
@@ -432,7 +469,8 @@ async fn desktop(window: tauri::WebviewWindow, method: String, data: Value) -> R
         }
         (_, "command", "open") => {
             let gui = app.clone();
-            let id = data["id"].as_str().map(|s| s.to_owned());
+            let id = if data["destination"] == "pendingCharge" { Some(":pending-charge".to_owned()) }
+                else { data["id"].as_str().map(|s| s.to_owned()) };
             app.run_on_main_thread(move || {
                 if let Some(ticket) = toast_ticket {
                     if !TOAST_SLOT.lock().unwrap().is_some_and(|slot| slot.matches(ticket, false)) { return; }

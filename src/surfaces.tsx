@@ -1,10 +1,11 @@
 import { Bell, BellOff, ChevronDown, ChevronRight, ExternalLink, Grip, Pin, PinOff, RefreshCw, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { inventoryState, isConnected, isLiveDualSenseFull, muteDurationLabel, severity, type Device, type Snapshot, type Toast } from './model';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { inventoryState, isConnected, isLiveDualSenseFull, muteDurationLabel, severity, type Device, type Snapshot, type Toast, type ToastDevice } from './model';
 import { api, Art, BatteryTrack, Brand, readingLabel, readingUpdated } from './ui';
 import s from './panel.module.css';
 import preferences from './preferences.module.css';
 import tray from './tray.module.css';
+import { toastComposition, toastPhotoPosition } from './toast-composition';
 
 function TrayDevice({ device, state, kind }: { device: Device; state: Snapshot; kind: 'live' | 'cached' | 'offline' }) {
   const { reading } = device;
@@ -127,30 +128,66 @@ export function QuickPanel({ state }: { state: Snapshot }) {
   </main>;
 }
 
-export function ToastPanel({ toast }: { toast: Toast }) {
+type Photo = { device: ToastDevice; index: number; size: number };
+function ToastPhotos({ pictures, overflow }: { pictures: ToastDevice[]; overflow: number }) {
+  const previous = useRef<Photo[]>([]);
+  const [leaving, setLeaving] = useState<Photo[]>([]);
+  const idSet = JSON.stringify(pictures.map(device => device.id));
+  useLayoutEffect(() => {
+    const former = previous.current;
+    previous.current = pictures.map((device, index) => ({ device, index, size: pictures.length }));
+    setLeaving(former.filter(photo => !pictures.some(device => device.id === photo.device.id)));
+    const timer = window.setTimeout(() => setLeaving([]), 200);
+    return () => window.clearTimeout(timer);
+  }, [idSet]);
+  const current = pictures.map((device, index) => ({ device, index, size: pictures.length }));
+  return <span className={preferences.toastArt} aria-hidden="true">
+    {[...current, ...leaving.filter(old => !pictures.some(device => device.id === old.device.id))].map(photo => {
+      const { device, index, size } = photo;
+      const { x, y, scale } = toastPhotoPosition(index, size, device.art);
+      const gone = !pictures.some(item => item.id === device.id);
+      return <span key={device.id} className={preferences.toastPhoto} data-toast-photo={device.id} data-leaving={gone}
+        style={{ '--photo-x': x + 'px', '--photo-y': y + 'px', '--photo-scale': scale } as CSSProperties}>
+        <Art device={device} />
+      </span>;
+    })}
+    {!!overflow && <span className={preferences.toastMore} data-toast-more=""><span key={overflow}>+{overflow}</span></span>}
+  </span>;
+}
+
+export function ToastPanel({ toast, exiting = false }: { toast: Toast; exiting?: boolean }) {
   const { device, severity, preview, detailId } = toast;
+  const { pictures, count, overflow } = toastComposition(toast);
+  const grouped = count > 1;
   const [showName, setShowName] = useState(false);
   const name = useRef<HTMLElement>(null);
+  useEffect(() => setShowName(false), [device.id, grouped]);
   const revealName = () => {
     const element = name.current;
     setShowName(!!element && element.scrollWidth > element.clientWidth);
   };
   const dismiss = () => { void api.command({ type: 'closeSurface' }); };
-  return <main className={s.toast + ' ' + preferences.toastSurface} aria-live="polite" data-critical={severity === 'critical'} data-has-detail={!!detailId} aria-label="桌面电量提醒">
+  return <main className={s.toast + ' ' + preferences.toastSurface} aria-live="polite" data-critical={severity === 'critical'} data-has-detail={!!detailId}
+    data-toast-exiting={exiting} aria-label="桌面电量提醒" inert={exiting}>
     <div className={s.toastBody} tabIndex={0} data-toast-body=""
       onFocus={event => { if (event.currentTarget.matches(':focus-visible')) revealName(); }}
       onBlur={() => setShowName(false)} onKeyDown={event => { if (event.key === 'Escape') setShowName(false); }}>
-      <span className={preferences.toastArt} aria-hidden="true"><Art device={device} /></span>
-      <span className={s.toastCopy}>
-        <strong className={s.toastName} ref={name} onPointerEnter={revealName} onPointerLeave={() => setShowName(false)}>{device.name}</strong>
-        <span className={preferences.toastReading}>{readingLabel(device.reading)}</span>
-        <small className={s.toastHint}>{severity === 'critical' ? '电量告急' : '低电量'}{preview && ' · 测试提醒'}</small>
+      <ToastPhotos pictures={pictures} overflow={overflow} />
+      <span className={s.toastCopy + ' ' + preferences.toastCopy}>
+        <strong className={s.toastName} ref={name} onPointerEnter={revealName} onPointerLeave={() => setShowName(false)}>
+          {grouped ? <><span key={count} className={preferences.toastCount}>{count}</span>{' 台设备电量告急'}</> : device.name}
+        </strong>
+        <span className={preferences.toastReading} key={device.id + ':reading'}>{readingLabel(device.reading)}</span>
+        <small className={s.toastHint + ' ' + preferences.toastLowest} key={device.id + ':label'} title={grouped ? device.name : undefined}>{grouped
+          ? '最低：' + device.name : severity === 'critical' ? '电量告急' : '低电量'}{preview && ' · 测试提醒'}</small>
       </span>
     </div>
-    {detailId && <button className={s.toastDetail} onClick={() => { void api.command({ type: 'open', id: detailId }); }}>
-      查看详情 <ChevronRight size={15} aria-hidden="true" />
+    {(grouped || detailId) && <button className={s.toastDetail} onClick={() => {
+      void api.command(grouped ? { type: 'open', destination: 'pendingCharge' } : { type: 'open', id: detailId });
+    }}>
+      {grouped ? '待充电列表' : '设备详情'} <ChevronRight size={15} aria-hidden="true" />
     </button>}
     <button className={s.toastClose} aria-label="关闭通知" onClick={dismiss}><X size={19} aria-hidden="true" /></button>
-    {showName && <span className={s.toastFullName} aria-hidden="true">{device.name}</span>}
+    {showName && !grouped && <span className={s.toastFullName} aria-hidden="true">{device.name}</span>}
   </main>;
 }

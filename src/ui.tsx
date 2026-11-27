@@ -19,9 +19,9 @@ const renderedArt = new Set<Device['art']>(['dualsense', 'mouse', 'keyboard']);
 type ArtVariant = 'thumb' | 'card' | 'hero' | 'stage' | 'detail';
 export const studioPath = (name: string) => new URL('./assets/studio-v2/' + name, document.baseURI).href;
 const studioAsset = (art: Device['art'], variant: string) => studioPath(art + '-' + variant + '.webp');
-const deviceArtUrl = (device: Device, variant: ArtVariant, loading: boolean) => studioAsset(device.art,
+const deviceArtUrl = (device: Pick<Device, 'art'>, variant: ArtVariant, loading: boolean) => studioAsset(device.art,
   loading ? 'loading' : variant === 'thumb' || variant === 'card' ? 'thumb' : 'hero');
-const fallbackArtUrl = (device: Device, variant: ArtVariant) => renderedArt.has(device.art)
+const fallbackArtUrl = (device: Pick<Device, 'art'>, variant: ArtVariant) => renderedArt.has(device.art)
   ? './assets/' + device.art + '-' + (variant === 'stage' ? 'card' : variant === 'detail' ? 'hero' : variant) + '.webp' : artUrl(device.art);
 const warmedArtwork = new Map<string, { ready: boolean; request: Promise<boolean> }>();
 export function heroPrepared(device: Device) {
@@ -46,7 +46,7 @@ export function prepareHero(device: Device): Promise<boolean> {
 }
 
 export function Art({ device, variant = 'thumb', loading = false, revealPhoto = false, onReady }: {
-  device: Device; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean; onReady?: () => void;
+  device: Pick<Device, 'art'>; variant?: ArtVariant; loading?: boolean; revealPhoto?: boolean; onReady?: () => void;
 }) {
   const [failed, setFailed] = useState<string>();
   const url = deviceArtUrl(device, variant, loading);

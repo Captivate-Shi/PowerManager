@@ -163,7 +163,7 @@ impl Bridge{
 }
 struct State{
  app:AppHandle,dir:PathBuf,exe:PathBuf,pipe:Option<Pipe>,diagnostics:Diagnostics,snapshot:Value,hist:Value,rollup:Value,
- watched:Vec<Value>,found:Vec<Value>,toast:Value,view:Value,next:BTreeMap<String,u64>,
+ watched:Vec<Value>,found:Vec<Value>,toast:Value,toast_members:Vec<String>,view:Value,next:BTreeMap<String,u64>,
  edits:BTreeMap<String,u64>,generation:u64,seq:u64,last_save:u64,bench:bool,dirty:bool,blocked:bool,power_marker:u64
 }
 impl State{
@@ -194,7 +194,7 @@ impl State{
   for (_,r) in rules.as_object_mut().unwrap(){if !r.is_object(){*r=json!({})} if !r["low"].as_u64().is_some_and(|x|(1..=50).contains(&x)){r.as_object_mut().unwrap().remove("low");}}
   let snapshot=json!({"devices":devices,"settings":settings,"deviceSettings":rules,"collector":"starting","refreshing":false,"mutedUntil":0,"alerts":map("alerts"),"demo":false});
   State{app,dir,exe,pipe:None,diagnostics:Diagnostics::default(),snapshot,hist:map("history"),rollup:map("historyDays"),
-   watched:v["watched"].as_array().cloned().unwrap_or_default(),found:vec![],toast:Value::Null,view:Value::Null,
+   watched:v["watched"].as_array().cloned().unwrap_or_default(),found:vec![],toast:Value::Null,toast_members:vec![],view:Value::Null,
    next:BTreeMap::new(),edits:BTreeMap::new(),generation:1,seq:0,last_save:now(),bench,dirty:retire_pending,blocked,power_marker:super::power_events::marker()}
  }
  fn native(&mut self,action:&str,args:Value)->Reply{
@@ -269,7 +269,7 @@ impl State{
   if marker==self.power_marker{return false}
   self.power_marker=marker;
   self.generation+=1;self.diagnostics=Diagnostics::default();self.pipe.take();self.next.clear();
-  let toast_ticket=self.toast["ticket"].as_u64();self.toast=Value::Null;
+  let toast_ticket=self.toast["ticket"].as_u64();self.toast=Value::Null;self.toast_members.clear();
   for d in self.snapshot["devices"].as_array_mut().unwrap(){if d["status"]=="current"{d["status"]=json!("stale");d["reason"]=json!("等待新读数");}}
   self.snapshot["collector"]=json!("starting");
   let app=self.app.clone();let gui=app.clone();
@@ -321,6 +321,10 @@ impl State{
      previous["status"]=json!(if status=="current"&&!live{"unavailable"}else{status});
      previous["reason"]=sample["reason"].clone();
      if live{
+      // Starting a confirmed charging cycle rearms delivery without undoing snooze/ignore.
+      if sample["reading"]["power"]=="charging" && previous["reading"]["power"]!="charging" {
+       if let Some(entry)=self.snapshot["alerts"][id].as_object_mut(){entry.remove("lowAt");entry.remove("criticalAt");}
+      }
       previous["reading"]=sample["reading"].clone();previous["lastRead"]=json!(sampled);
       let seq=if let Some(v)=row.get("sampleSequence"){v.as_u64()}else if !force{Some(self.seq)}else{None};
       if self.edits.get(id).is_some_and(|edit|seq.is_some_and(|s|s>*edit)){self.edits.remove(id);}
@@ -382,49 +386,122 @@ impl State{
   if n(&r["high"])<=n(&self.snapshot["settings"]["critical"]){Some("critical")}
   else if n(&r["high"])<=self.threshold(id){Some("low")}else{None}
  }
+ fn toast_seconds(&self,level:&str)->u64{
+  let default=super::toast_lifecycle::DEFAULT_SECONDS;
+  if level=="critical"{self.snapshot["settings"]["desktopToastSeconds"].as_u64().unwrap_or(default)}else{default}
+ }
  fn show(&mut self,d:Value,level:&str,preview:bool){
   let ticket=super::new_toast_ticket();
-  let seconds=self.snapshot["settings"]["desktopToastSeconds"].as_u64().unwrap_or(super::toast_lifecycle::DEFAULT_SECONDS);
+  let seconds=self.toast_seconds(level);
   self.toast=json!({"device":d,"severity":level,"preview":preview,"detailId":d["id"],"ticket":ticket});
   let gui=self.app.clone();let app=gui.clone();
   if gui.run_on_main_thread(move||super::open_toast(&app,ticket,seconds)).is_err(){self.toast=Value::Null;}
  }
  fn clear_closed_toast(&mut self){
-  if self.toast["ticket"].as_u64().is_some_and(super::toast_closed){self.toast=Value::Null;}
+  if self.toast["ticket"].as_u64().is_some_and(super::toast_closed){self.toast=Value::Null;self.toast_members.clear();}
  }
- fn evaluate(&mut self){
-  self.clear_closed_toast();
-  let stamp=now();
-  if super::power_events::marker()!=self.power_marker || self.power_marker&1==1 || self.snapshot["collector"]!="ready" || n(&self.snapshot["mutedUntil"])>stamp{return}
-  for level in ["critical","low"]{
-   let chosen=self.snapshot["devices"].as_array().unwrap().iter().find(|d|{
+ fn retire_alert(&mut self){
+  if let Some(ticket)=self.toast["ticket"].as_u64() {
+   let gui=self.app.clone();let app=gui.clone();
+   let _=gui.run_on_main_thread(move||super::retire_toast(&app,ticket));
+  }
+  self.toast=Value::Null;self.toast_members.clear();
+ }
+ fn alert_allowed(&self,id:&str,level:&str,stamp:u64)->bool{
+  let state=&self.snapshot["alerts"][id];
+  !boolean(&self.snapshot["deviceSettings"][id]["muted"])&&n(&state["snoozeUntil"])<=stamp
+    &&state["ignored"]!="critical"&&state["ignored"]!=level
+ }
+ fn toast_member_valid(&self,id:&str,level:&str,stamp:u64)->bool{
+  if !self.alert_allowed(id,level,stamp){return false}
+  let Some(device)=self.snapshot["devices"].as_array().unwrap().iter().find(|d|d["id"]==id) else{return false};
+  // A temporary read failure is not recovery; confirmed disconnect is.
+  super::toast_lifecycle::keep_member(device["status"].as_str().unwrap_or_default(),self.level(device),level)
+ }
+ fn alert_candidates(&self,level:&str,stamp:u64)->Vec<Value>{
+  self.snapshot["devices"].as_array().unwrap().iter().filter(|d|{
     let id=d["id"].as_str().unwrap_or_default();let state=&self.snapshot["alerts"][id];
     let last=n(&d["lastRead"]);
     let delivered=n(&state[if level=="critical"{"criticalAt"}else{"lowAt"}]);
     let repeat=n(&self.snapshot["settings"]["repeat"]);
-    self.level(d)==Some(level)&&last<=stamp&&stamp.saturating_sub(last)<=60000&&!self.edits.contains_key(id)&&
-    !boolean(&self.snapshot["deviceSettings"][id]["muted"])&&n(&state["snoozeUntil"])<=stamp&&state["ignored"]!="critical"&&state["ignored"]!=level&&
-    (delivered==0||n(&state["snoozeUntil"])>delivered||(repeat>0&&stamp.saturating_sub(delivered)>=repeat*60000))
-   }).cloned();
-   let Some(d)=chosen else{continue};
-   let id=d["id"].as_str().unwrap_or_default();
-   let settings=&self.snapshot["settings"];
-   let choices=settings.clone();
-   let Ok(scene)=self.native("scene",json!({})) else{return};
-   if super::power_events::marker()!=self.power_marker{return}
-   let (show_popup,play_sound)=alert_channels(&choices,&scene);
-   // A persistent popup occupies the single visual slot, not the sound channel.
-   let show_popup=show_popup&&self.toast.is_null();
-   if show_popup{
-    self.show(d.clone(),level,false);self.evidence("toast");
-   }
-   let sounded=play_sound && self.native("tone",json!({})).is_ok_and(|r|r["played"]==true);
-   if sounded{self.evidence("tone");}
-   if !show_popup&&!sounded{return}
-   if !self.snapshot["alerts"][id].is_object(){self.snapshot["alerts"][id]=json!({});}
-   self.snapshot["alerts"][id][if level=="critical"{"criticalAt"}else{"lowAt"}]=json!(stamp);
-   self.snapshot["alerts"][id]["lowAt"]=json!(stamp);self.snapshot["alerts"][id]["lastNoticeAt"]=json!(stamp);self.dirty=true;self.evidence(level);let _=self.persist();return
+    self.level(d)==Some(level)&&last<=stamp&&stamp.saturating_sub(last)<=60000&&!self.edits.contains_key(id)
+     &&!(self.toast["severity"]==level&&self.toast_members.iter().any(|member|member==id))
+     &&self.alert_allowed(id,level,stamp)
+     &&(delivered==0||n(&state["snoozeUntil"])>delivered||(repeat>0&&stamp.saturating_sub(delivered)>=repeat*60000))
+   }).cloned().collect()
+ }
+ fn toast_summary(d:&Value)->Value{
+  json!({"id":d["id"],"name":d["name"],"art":d["art"],"reading":d["reading"]})
+ }
+ fn present_members(&mut self,ids:Vec<String>,level:&str,restart:bool)->bool{
+  let devices=self.snapshot["devices"].as_array().unwrap();
+  let members:Vec<_>=ids.iter().filter_map(|id|devices.iter().find(|d|d["id"]==id.as_str())).collect();
+  let Some(lowest)=members.iter().copied().min_by(|a,b|
+   (n(&a["reading"]["high"]),n(&a["reading"]["low"]),a["id"].as_str()).cmp(&(n(&b["reading"]["high"]),n(&b["reading"]["low"]),b["id"].as_str()))) else{
+    if self.toast["preview"]!=true&&!self.toast.is_null(){self.retire_alert();}return false
+  };
+  let existing=self.toast["ticket"].as_u64();
+  let ticket=existing.unwrap_or_else(super::new_toast_ticket);
+  let payload=json!({"device":Self::toast_summary(lowest),"devices":members.iter().take(3).map(|d|Self::toast_summary(d)).collect::<Vec<_>>(),
+   "count":members.len(),"severity":level,"preview":false,"detailId":lowest["id"],"ticket":ticket});
+  if payload==self.toast&&!restart{self.toast_members=ids;return true}
+  let seconds=self.toast_seconds(level);
+  let gui=self.app.clone();let app=gui.clone();let dispatch=payload.clone();
+  if gui.run_on_main_thread(move||{
+   if existing.is_some(){super::update_toast(&app,ticket,dispatch,restart.then_some(seconds));}
+   else{super::open_toast(&app,ticket,seconds);}
+  }).is_err(){return false}
+  self.toast=payload;self.toast_members=ids;true
+ }
+ fn record_notice(&mut self,id:&str,level:&str,stamp:u64){
+  if !self.snapshot["alerts"][id].is_object(){self.snapshot["alerts"][id]=json!({});}
+  if level=="critical"{self.snapshot["alerts"][id]["criticalAt"]=json!(stamp);}
+  self.snapshot["alerts"][id]["lowAt"]=json!(stamp);
+  self.snapshot["alerts"][id]["lastNoticeAt"]=json!(stamp);self.dirty=true;
+ }
+ fn evaluate(&mut self){
+  self.clear_closed_toast();
+  let stamp=now();
+  if super::power_events::marker()!=self.power_marker || self.power_marker&1==1 || self.snapshot["collector"]!="ready"{return}
+  let choices=self.snapshot["settings"].clone();
+  let muted=n(&self.snapshot["mutedUntil"])>stamp;
+  let mut active_level=if self.toast["severity"]=="critical"{"critical"}else{"low"};
+  let mut members:Vec<_>=if muted||!boolean(&choices["desktopToasts"]){vec![]}else{
+   self.toast_members.iter().filter(|id|self.toast_member_valid(id,active_level,stamp)).cloned().collect()
+  };
+  let (mut level,mut candidates)=("critical",if muted{vec![]}else{self.alert_candidates("critical",stamp)});
+  if candidates.is_empty()&&!muted{
+   level="low";candidates=self.alert_candidates("low",stamp);
   }
+  let mut delivered=false;
+  if !candidates.is_empty(){
+   let scene=self.native("scene",json!({}));
+   if super::power_events::marker()!=self.power_marker{return}
+   if let Ok(scene)=scene{
+    let (popup,play_sound)=alert_channels(&choices,&scene);
+    let audible=play_sound&&self.native("tone",json!({})).is_ok_and(|r|r["played"]==true);
+    if audible{self.evidence("tone");}
+    if super::power_events::marker()!=self.power_marker{return}
+    let mut visual_ids=vec![];
+    if popup&&super::toast_lifecycle::admits_popup(level,members.len(),self.toast["preview"]==true){
+     if level!=active_level{members.clear();active_level=level;}
+     let mut joined=false;
+     for d in candidates.iter().take(if level=="critical"{usize::MAX}else{1}){
+      let Some(id)=d["id"].as_str() else{continue};
+      if super::toast_lifecycle::join_member(&mut members,id){joined=true;visual_ids.push(id.to_owned());}
+     }
+     if self.present_members(members.clone(),active_level,joined){
+      if joined{self.evidence("toast");}
+     }else{visual_ids.clear();}
+    }
+    for d in candidates.iter().take(if level=="critical"{usize::MAX}else{1}){
+     let Some(id)=d["id"].as_str() else{continue};
+     if audible||visual_ids.iter().any(|v|v==id){self.record_notice(id,level,stamp);delivered=true;}
+    }
+   }
+  }
+  if self.toast["preview"]!=true&&!self.toast.is_null(){self.present_members(members,active_level,false);}
+  if delivered{self.evidence(level);let _=self.persist();}
  }
  fn handle(&mut self,m:&str,d:Value)->Reply{
   self.clear_closed_toast();

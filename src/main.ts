@@ -333,7 +333,7 @@ function showPreview(severity: Severity, device = snapshot.devices.find(item => 
   return showToast({ severity, device: previewDevice(severity, device), preview: true, detailId: device?.id });
 }
 async function showToast(value: Toast, point?: { x: number; y: number } | null, canShow?: () => boolean): Promise<boolean> {
-  const seconds = snapshot.settings.desktopToastSeconds ?? defaultDesktopToastSeconds;
+  const seconds = (value.severity === 'critical' ? snapshot.settings.desktopToastSeconds : undefined) ?? defaultDesktopToastSeconds;
   if (windows.toast) closeToast();
   toast = value;
   const origin = BrowserWindow.getFocusedWindow() ?? windows.main;

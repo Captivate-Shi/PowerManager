@@ -57,7 +57,9 @@ export type Severity = 'low' | 'critical';
 export type AlertState = {
   lowAt?: number; criticalAt?: number; snoozeUntil?: number; ignored?: Severity; recovery?: number; lastNoticeAt?: number;
 };
-export type Toast = { device: Device; severity: Severity; preview: boolean; detailId?: string };
+export type ToastDevice = Pick<Device, 'id' | 'name' | 'art' | 'reading'>;
+export type Toast = { device: ToastDevice; severity: Severity; preview: boolean; detailId?: string; devices?: ToastDevice[]; count?: number };
+export const pendingChargeRoute = ':pending-charge';
 export type AlertSwitch = 'fullscreenSound' | 'desktopSound' | 'desktopToasts';
 export type Snapshot = {
   devices: Device[]; settings: Settings; deviceSettings: Record<string, DeviceSettings>;
@@ -80,7 +82,7 @@ export type MainView = {
 export type Command =
   | { type: 'refresh' | 'discover' | 'diagnostics' | 'diagnosticDevices' | 'mute' | 'pin' | 'closeSurface' }
   | { type: 'diagnosticFirmware'; deviceKey: string }
-  | { type: 'open'; id?: string }
+  | { type: 'open'; id?: string; destination?: 'pendingCharge' }
   | { type: 'compatibility'; selection: CompatibilitySelection }
   | { type: 'compatibility'; reportToken: string }
   | { type: 'history'; id: string; range?: HistoryRange }
@@ -95,6 +97,7 @@ export interface DesktopApi {
   snapshot(): Promise<Snapshot>;
   toast(): Promise<Toast | null>;
   toastPresent?(): Promise<void>;
+  onToast?(fn: (value: Toast | null) => void): () => void;
   trayPresent?(): Promise<void>;
   mainPresent?(): Promise<void>;
   windowAction?(action: 'drag' | 'minimize' | 'maximize' | 'close'): Promise<void>;
