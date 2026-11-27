@@ -200,9 +200,11 @@ export function Chart(props: ComponentProps<typeof HistoryView>) {
   return <Suspense fallback={<ChartLoadingFrame devices={[props.device]} large={props.large ?? false}
     threshold={props.threshold} reserveRows={1} renderArt={chartArt} />}><HistoryView {...props} /></Suspense>;
 }
-export function CompareChart({ starting, ...props }: ComponentProps<typeof ComparisonView> & { starting: boolean }) {
-  const fallback = <ChartLoadingFrame devices={props.devices} large={props.large} threshold={props.threshold}
-    reserveRows={3} renderArt={chartArt} range={props.range} seriesSlots={props.seriesSlots} />;
+export function CompareChart({ starting, layout, ...props }: Omit<ComponentProps<typeof ComparisonView>, 'layout'> & {
+  starting: boolean; layout: NonNullable<ComponentProps<typeof ComparisonView>['layout']>;
+}) {
+  const fallback = layout(<ChartLoadingFrame devices={props.devices} large={props.large} threshold={props.threshold}
+    reserveRows={3} renderArt={chartArt} range={props.range} seriesSlots={props.seriesSlots} />, true);
   if (starting && !props.devices.length) return fallback;
-  return <Suspense fallback={fallback}><ComparisonView {...props} /></Suspense>;
+  return <Suspense fallback={fallback}><ComparisonView {...props} layout={layout} /></Suspense>;
 }

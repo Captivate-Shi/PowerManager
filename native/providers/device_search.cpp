@@ -65,6 +65,9 @@ constexpr QueryKey systemKey(const PROPERTYKEY& key) { return {key, 0, nullptr};
 const std::array batteryKeys{systemKey(PKEY_Devices_Connected), systemKey(PKEY_Devices_BatteryLife),
                              systemKey(PKEY_Devices_ChargingState)};
 
+constexpr DEVPROPKEY bluetoothBatteryLevelKey{{0x104ea319, 0x6ee2, 0x4701,
+    {0xbd, 0x47, 0x8d, 0xdb, 0xf4, 0x25, 0xbb, 0xe5}}, 2};
+
 class Properties {
 public:
     explicit Properties(std::span<const QueryProperty> values) : values_(values) {}
@@ -152,6 +155,21 @@ WindowsBus keyboardBus(DEVINST node)
     return bus;
 }
 
+std::wstring nodeContainerId(DEVINST node)
+{
+    DEVPROPTYPE type{};
+    GUID container{};
+    ULONG size = sizeof(container);
+    if (CM_Get_DevNode_PropertyW(node, &DEVPKEY_Device_ContainerId, &type,
+            reinterpret_cast<BYTE*>(&container), &size, 0) != CR_SUCCESS ||
+        type != DEVPROP_TYPE_GUID || size != sizeof(container) ||
+        container.Data1 == 0 || container.Data1 == 0xffffffff) {
+        return {};
+    }
+    wchar_t id[40]{};
+    return StringFromGUID2(container, id, 40) ? lower(id) : std::wstring{};
+}
+
 std::map<std::wstring, FoundDevice> presentKeyboards()
 {
     std::map<std::wstring, FoundDevice> keyboards;
@@ -173,28 +191,46 @@ std::map<std::wstring, FoundDevice> presentKeyboards()
         if (!windowsKeyboardInstanceCandidate(hardware)) {
             continue;
         }
-        DEVPROPTYPE type{};
-        GUID container{};
-        ULONG size = sizeof(container);
-        if (CM_Get_DevNode_PropertyW(device.DevInst, &DEVPKEY_Device_ContainerId, &type,
-                reinterpret_cast<BYTE*>(&container), &size, 0) != CR_SUCCESS ||
-            type != DEVPROP_TYPE_GUID || container.Data1 == 0 || container.Data1 == 0xffffffff) {
-            continue;
-        }
-        wchar_t id[40]{};
-        if (!StringFromGUID2(container, id, 40)) {
-            continue;
-        }
+        const auto key = nodeContainerId(device.DevInst);
+        if (key.empty()) continue;
         wchar_t label[141]{};
         SetupDiGetDeviceRegistryPropertyW(set, &device, SPDRP_DEVICEDESC, nullptr,
                                   reinterpret_cast<BYTE*>(label), sizeof(label), nullptr);
         const bool razer = hardware.find(L"vid_1532&pid_00b8") != std::wstring::npos;
-        const auto key = lower(id);
         keyboards.try_emplace(key, FoundDevice{key, label[0] ? label : L"HID 键盘",
                                                windowsConnection(keyboardBus(device.DevInst)), true, razer, {}});
     }
     SetupDiDestroyDeviceInfoList(set);
     return keyboards;
+}
+
+std::map<std::wstring, std::optional<int>> bluetoothNodeBatteryLevels()
+{
+    std::map<std::wstring, std::optional<int>> levels;
+    // Windows may publish an HFP battery value on a BTHENUM service node
+    // instead of the display container (or a GATT battery interface).
+    for (const auto enumerator : {L"BTHENUM", L"BTHHFENUM", L"BTHLE", L"BTHLEDEVICE"}) {
+        const auto set = SetupDiGetClassDevsW(nullptr, enumerator, nullptr, DIGCF_PRESENT | DIGCF_ALLCLASSES);
+        if (set == INVALID_HANDLE_VALUE) continue;
+        for (DWORD index = 0;; ++index) {
+            SP_DEVINFO_DATA device{};
+            device.cbSize = sizeof(device);
+            if (!SetupDiEnumDeviceInfo(set, index, &device)) break;
+            DEVPROPTYPE type{};
+            BYTE percent{};
+            ULONG size = sizeof(percent);
+            if (CM_Get_DevNode_PropertyW(device.DevInst, &bluetoothBatteryLevelKey, &type, &percent, &size, 0)
+                    != CR_SUCCESS || type != DEVPROP_TYPE_BYTE || size != sizeof(percent) || percent > 100) continue;
+            auto container = nodeContainerId(device.DevInst);
+            if (container.empty()) continue;
+            const auto [entry, inserted] = levels.try_emplace(std::move(container), percent);
+            // Matching values can be duplicates. Conflicting nodes cannot
+            // establish a single reading for the physical device.
+            if (!inserted && entry->second != percent) entry->second.reset();
+        }
+        SetupDiDestroyDeviceInfoList(set);
+    }
+    return levels;
 }
 
 Sample readBattery(const Properties& props)
@@ -216,6 +252,19 @@ Sample readBattery(const Properties& props)
 
 } // namespace
 
+Sample WindowsBatteryReader::withBluetoothNodeProperty(const std::wstring& id, Sample sample)
+{
+    if (!permitsBluetoothNodeBatteryFallback(static_cast<WindowsBatteryDetail>(sample.detail))) return sample;
+    if (!bluetoothLevels_) bluetoothLevels_ = bluetoothNodeBatteryLevels();
+    const auto level = bluetoothLevels_->find(id);
+    if (level != bluetoothLevels_->end()) {
+        if (auto reading = windowsReading(level->second, std::nullopt)) {
+            return {Status::current, reading, 0, static_cast<unsigned>(WindowsBatteryDetail::bluetoothNodeProperty)};
+        }
+    }
+    return sample;
+}
+
 std::optional<std::vector<FoundDevice>> findWindowsDevices()
 {
     const auto& api = queryApi();
@@ -234,12 +283,13 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
         return {};
     }
     auto keyboards = presentKeyboards();
+    WindowsBatteryReader batteryReader;
     const auto cleanup = [&] { if (objects) api.free(count, objects); };
     std::vector<FoundDevice> devices;
     for (const auto& object : std::span(objects, count)) {
         const Properties props({object.properties, object.count});
-        const auto sample = readBattery(props);
-        const auto detail = static_cast<WindowsBatteryDetail>(sample.detail);
+        auto sample = readBattery(props);
+        auto detail = static_cast<WindowsBatteryDetail>(sample.detail);
         if (!object.id || props.flag(PKEY_Devices_LocalMachine) ||
             ((sample.status == Status::offline || detail == WindowsBatteryDetail::unknownConnection) &&
                 !props.flag(PKEY_Devices_Paired))) {
@@ -275,6 +325,10 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
         const auto folded = lower(name);
         const auto hardware = props.strings(PKEY_Devices_HardwareIds);
         const auto bus = windowsBus(methods, hardware);
+        if (bus == WindowsBus::bluetooth) {
+            sample = batteryReader.withBluetoothNodeProperty(id, sample);
+            detail = static_cast<WindowsBatteryDetail>(sample.detail);
+        }
         const bool namedBluetooth = bus == WindowsBus::bluetooth && knownBluetoothPeripheral(folded);
         const auto hasHardware = [&](std::wstring_view fragment) {
             return std::ranges::any_of(hardware, [&](std::wstring_view id) {
@@ -313,7 +367,7 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
     return devices;
 }
 
-Sample readWindowsDevice(const std::wstring& id)
+Sample WindowsBatteryReader::read(const std::wstring& id)
 {
     const auto& api = queryApi();
     if (!api.getProperties || !api.freeProperties) {
@@ -332,7 +386,12 @@ Sample readWindowsDevice(const std::wstring& id)
     if (properties) {
         api.freeProperties(count, properties);
     }
-    return sample;
+    return withBluetoothNodeProperty(id, sample);
+}
+
+Sample readWindowsDevice(const std::wstring& id)
+{
+    return WindowsBatteryReader{}.read(id);
 }
 
 WindowsConnectionEvidence inspectWindowsBleConnection(const std::wstring& id)
@@ -376,6 +435,9 @@ WindowsConnectionEvidence inspectWindowsBleConnection(const std::wstring& id)
 
 const char* windowsBatteryReason(const Sample& sample)
 {
+    if (sample.detail == static_cast<unsigned>(WindowsBatteryDetail::bluetoothNodeProperty)) {
+        return "windows_bluetooth_node_battery_ok";
+    }
     if (sample.reading) return "windows_battery_ok";
     switch (static_cast<WindowsBatteryDetail>(sample.detail)) {
     case WindowsBatteryDetail::disconnected: return "windows_offline";

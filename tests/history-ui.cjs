@@ -65,15 +65,32 @@ async function main() {
     await page.goto(pathToFileURL(join(__dirname, '../dist/ui/index.html')).href);
     await page.getByRole('button', { name: '记录', exact: true }).click();
     const skeleton = page.getByRole('status', { name: '正在加载电量历史' });
+    const lanes = skeleton.locator('[data-history-placeholder-lane]');
+    const summary = page.getByRole('table', { name: /记录摘要/ });
     await expect(skeleton).toBeVisible();
     await expect(page.getByRole('button', { name: '设置' })).toBeEnabled();
     await wait('Alpha');
+    const checkLoading = async (count, eventCount = count) => {
+      await expect(lanes).toHaveCount(eventCount);
+      await expect(summary.locator('tbody tr[data-pending="true"]')).toHaveCount(count);
+      await expect(summary.locator('tbody td [aria-hidden="true"]')).toHaveCount(count * 3);
+      await expect(picker.getByRole('button', { name: '对比设备' })).toBeDisabled();
+      await expect(page.getByRole('combobox', { name: '记录范围' })).toBeDisabled();
+    };
+    await checkLoading(1);
+    await expect(picker.getByRole('button', { name: 'Alpha', exact: true })).toBeDisabled();
+    await picker.getByRole('button', { name: '对比设备' }).click({ force: true });
+    await expect(page.getByRole('menu', { name: '可对比设备' })).toHaveCount(0);
     const height = await skeleton.evaluate(node => node.getBoundingClientRect().height);
-    const animations = await skeleton.evaluate(node => getComputedStyle(node, '::after').animationName);
-    expect(animations).toBe('none');
+    const sweep = page.locator('[data-history-skeleton]');
+    await expect(sweep).toHaveCSS('animation-name', 'none');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await expect(sweep).not.toHaveCSS('animation-name', 'none');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await resolve('Alpha');
     const graph = page.getByLabel(/近 24 小时电量曲线/);
     await expect(graph).toBeVisible();
+    await expect(picker.getByRole('button', { name: '对比设备' })).toBeEnabled();
     expect(Math.abs(await graph.evaluate(node => node.getBoundingClientRect().height) - height)).toBeLessThan(2);
     await expect(graph.locator('[data-event-series="0"] [data-event="invalid"]')).toHaveCount(1);
     const charge = graph.locator('[data-event-series="0"] [data-event="charging"]');
@@ -92,9 +109,22 @@ async function main() {
     await expect(page.getByText('正在更新，暂显示已有记录')).toBeVisible();
     await wait('Alpha', 0); // another device's selection does not reload Alpha
     await wait('Beta');
+    await add('Gamma'); // Cached Alpha keeps the picker usable while Beta is loading.
+    await wait('Gamma');
+    await openPicker();
+    await expect(option('Delta')).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await picker.getByRole('button', { name: '移除对比：Gamma' }).click();
+    await resolve('Gamma');
+    await expect(skeleton).toHaveCount(0);
     await resolve('Beta');
     await expect(graph.locator('[data-series="1"]')).toHaveCount(1);
     await expect(graph.locator('[data-event-series="1"] [data-event="invalid"],[data-event-series="1"] [data-event="charging"]')).toHaveCount(0);
+    await picker.getByRole('button', { name: '移除对比：Beta' }).click();
+    await expect(graph.locator('[data-series="1"]')).toHaveCount(0);
+    await add('Beta');
+    await expect(graph.locator('[data-series="1"]')).toHaveCount(1);
+    await wait('Beta', 0);
     await add('Gamma');
     await openPicker();
     await expect(option('Delta')).toBeDisabled();
@@ -121,6 +151,25 @@ async function main() {
     await resolve('Beta');
     await expect(page.getByLabel('实际查看时段')).toBeVisible();
     await expect(graph.locator('[data-series="1"]')).toHaveCount(1);
+
+    await page.getByRole('combobox', { name: '记录范围' }).click();
+    await page.getByRole('option', { name: '7 天', exact: true }).click();
+    await wait('Alpha'); await wait('Beta');
+    await checkLoading(2, 0);
+    await resolve('Alpha', true, []);
+    await resolve('Beta', true, []);
+    await expect(page.getByText('近 7 天暂无设备读数')).toBeVisible();
+    await add('Gamma');
+    await wait('Gamma');
+    await expect(skeleton).toHaveCount(0); // A settled empty result is also a usable cache.
+    await expect(page.getByText('正在更新，暂显示已有记录')).toBeVisible();
+    await picker.getByRole('button', { name: '移除对比：Alpha' }).click();
+    await picker.getByRole('button', { name: '移除对比：Beta' }).click();
+    await checkLoading(1, 0);
+    await expect(summary.locator('tbody tr[data-summary-device="Gamma"][data-pending="true"]')).toHaveCount(1);
+    await resolve('Gamma', true, []);
+    await expect(page.getByText('近 7 天暂无设备读数')).toBeVisible();
+    await expect(picker.getByRole('button', { name: '对比设备' })).toBeEnabled();
     await page.setViewportSize({ width: 520, height: 540 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     expect(errors).toEqual([]);

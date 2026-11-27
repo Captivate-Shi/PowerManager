@@ -8,10 +8,12 @@ Windows 能识别外设只说明系统看到了相应接口。要读到剩余电
 | --- | --- | --- |
 | USB | Windows 电量属性、DualSense USB HID、VGN V98 Pro 原版／V2 与 V3 有线适配 | 普通 USB 鼠标、键盘和接收器可能只暴露输入接口。即便 USB-IF 定义了电池和电量用途，也需要设备实际实现。Windows 显示 USB 时，H5 标为「USB（直连或接收器）」。 |
 | 2.4 GHz 私有接收器 | Razer Viper V3 HyperSpeed 与受支持的共享接收器键盘、VGN V98 Pro 原版／V2 与 V3 接收器、已识别的 Logitech HID++ 2.0 接收器 | USB 总线一般只识别到接收器。精确匹配接收器型号、配对槽位及固件上报后，才能区分每件外设。H5 只把明确适配的无线线路标为 2.4 GHz。 |
-| 蓝牙 | Windows 已提供的电量百分比，或 DualSense 蓝牙 HID | BLE 设备可实现 Battery Service 及 Battery Level（`0x180F`、`0x2A19`）。蓝牙经典设备、模糊的系统缓存、多个电池的耳机和充电盒需分别处理。实验分支新增单电池标准 BAS 读取；多电池不会猜测部件，不自动纳入提醒。 |
+| 蓝牙 | Windows 已提供的电量百分比，或 DualSense 蓝牙 HID | 容器缺少有效电量时，余电也读取 Windows 向同一已连接设备的蓝牙节点提供的电量，例如 FreeBuds 7i 的 Hands-Free 节点。节点读数一致时采用该百分比。BLE 可通过标准 Battery Service 和 Battery Level（`0x180F`、`0x2A19`）读取单电池电量。 |
 | Xbox 和其他游戏手柄 | Windows 已上报有效电量的已识别手柄默认监测 | XInput 只暴露有限电量档位，插线与未知电池类型也没有可靠剩余百分比。实验分支已在诊断中分别采集 Windows.Gaming.Input、XInput。槽位不能当作物理设备标识；结果暂不并入设备行或历史。 |
 
 Windows 发现阶段已根据总线和硬件 ID 区分蓝牙、USB 与连接方式未知。通用 HID 名称不会被自动认定是某种无线协议。查找列表会显示「Windows 暂无可用电量」，已连接、被 Windows 明确归入输入设备或耳麦，且有有效电量属性或单一标准 BLE BAS 的外设默认进入监测。不把手机、笔记本、未知蓝牙类或已有专用适配的容器重复收进去。未读到有效值不会触发提醒。已适配设备使用自己的协议状态。
+
+Windows 蓝牙节点电量按 Container ID 归属。余电扫描现存的经典蓝牙和低功耗蓝牙节点，对同一已连接设备采纳一致的 0–100 百分比。节点显示名可随驱动和系统语言变化。经典蓝牙可通过 HFP 指标上报电量，低功耗蓝牙可使用 BAS。节点电量属性由真机验证，覆盖范围取决于 Windows 驱动如何公开读数。 [Windows 设备容器文档](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-containerid) · [Microsoft 蓝牙电量指南](https://learn.microsoft.com/en-us/windows-hardware/design/accessory-guidelines/bluetooth-accessory-guidelines-battery-profiles-services)
 
 - **系统百分比**来自 Windows 或设备固件给出的剩余容量。对于真实容量，精度取决于外设本身的电量计、固件和使用条件。
 - **DualSense 蓝牙简化报文**：先被动读取；只在已识别的物理 DualSense／Edge 上实收简化报文，且厂商电量无法从该帧取得时，自动尝试请求完整报文。同接口每分钟最多一次，输出帧不设置灯光、振动或音频的有效位。Windows 写入按 HID 输出集合长度补零（测试手柄为 547 字节），协议帧和 CRC 仍在前 78 字节。继续只使用通过校验的完整报文或既有系统兜底，不会把简化报文里的旧数据当实时。参考 [controller-battery 的实测与报文](https://github.com/xuvoxuvo/controller-battery/blob/dcdb6cd9467a626d713af082eb3907b72e93cb3a/docs/protocol.md#3-切换到完整报文)。

@@ -1,8 +1,8 @@
 import { exactCurve, trendCurve } from './history-curve';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { RefreshCw, Zap } from 'lucide-react';
 import type { Device, HistoryDay, HistoryPoint, HistoryRange } from './model';
-import { historyDateTicks, historyRangeLabels, historyStart, plotHistory, sampleAt, type PlotSeries } from './history-plot';
+import { compareLimit, historyDateTicks, historyRangeLabels, historyStart, plotHistory, sampleAt, type PlotSeries } from './history-plot';
 import { api, Art, readingLabel } from './ui';
 import { ChartFrame, ChartProgress, ChartSkeleton, HistorySummary, historyColors, type ChartView } from './chart-loading';
 import s from './panel.module.css';
@@ -10,54 +10,88 @@ import s from './panel.module.css';
 const dayTick = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' });
 const tick = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const stamp = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-type ReadingResult = { points?: HistoryPoint[]; days?: HistoryDay[]; error?: string; query?: string; range: HistoryRange };
+type HistoryRead = { points?: HistoryPoint[]; days?: HistoryDay[]; error?: string };
+type ReadingResult = HistoryRead & { query: string; presented?: boolean };
+type HistoryResults = ReadonlyMap<string, ReadingResult>;
+const emptyResults: HistoryResults = new Map();
+const cacheLimit = compareLimit * 2;
 type Series = { device: Device; plot: PlotSeries; color: string; index: number; days?: HistoryDay[] };
 
 export function Chart({ device, threshold, large = false }: { device: Device; revision: number | null; threshold?: number; large?: boolean }) {
   return <HistoryComparison devices={[device]} threshold={threshold} large={large} reserveRows={1} />;
 }
 
-export function HistoryComparison({ devices, threshold, anchor, range = 'day', seriesSlots, large = true, reserveRows = 3 }: {
+export function HistoryComparison({ devices, threshold, anchor, range = 'day', seriesSlots, large = true, reserveRows = 3, layout }: {
   devices: Device[]; threshold?: number; anchor?: number; range?: HistoryRange; seriesSlots?: ReadonlyMap<string, number>; large?: boolean; reserveRows?: 1 | 3;
+  layout?: (chart: ReactNode, loading: boolean) => ReactNode;
 }) {
-  const [results, setResults] = useState<Record<string, ReadingResult>>({});
+  const [cache, setCache] = useState<Partial<Record<HistoryRange, HistoryResults>>>({});
+  const results = cache[range] ?? emptyResults;
   const [retry, setRetry] = useState(0);
   const [view, setView] = useState<ChartView>('trend');
   const [internalEnd, setEnd] = useState(() => Date.now());
   const end = anchor ?? internalEnd;
+  const controlled = anchor !== undefined;
   const requests = useRef(new Map<string, { query: string }>());
   // Each device has its own revision and request token: do not reload or
   // invalidate other series when devices report at different cadences.
   const signature = (device: Device) => JSON.stringify([device.status, device.historyUpdatedAt ?? device.lastRead, retry, range]);
   const request = JSON.stringify(devices.map(device => [device.id, signature(device)]));
+  const queries = useMemo(() => new Map<string, string>(JSON.parse(request)), [request]);
+  const activeQueries = useRef(queries);
+  useLayoutEffect(() => { activeQueries.current = queries; }, [queries]);
+  const pending = devices.some(device => results.get(device.id)?.query !== queries.get(device.id));
+  const hasPresentedResults = devices.some(device => results.get(device.id)?.presented);
+  const visibleResults = pending && !hasPresentedResults ? emptyResults : results;
+  useLayoutEffect(() => {
+    // A response held during the first load is not yet a cache the user saw.
+    const presented = [...queries.keys()].filter(id => {
+      const result = visibleResults.get(id);
+      return result && !result.presented && (result.points || result.days);
+    });
+    if (!presented.length) return;
+    setCache(previous => {
+      const updated = new Map(previous[range]);
+      for (const id of presented) {
+        const result = updated.get(id);
+        if (result === visibleResults.get(id) && result) updated.set(id, { ...result, presented: true });
+      }
+      return { ...previous, [range]: updated };
+    });
+  }, [queries, range, visibleResults]);
   useEffect(() => () => requests.current.clear(), []);
   useEffect(() => {
-    const keys = JSON.parse(request) as Array<[string, string]>;
-    const activeIds = new Set(keys.map(([id]) => id));
-    for (const id of requests.current.keys()) if (!activeIds.has(id)) requests.current.delete(id);
-    setResults(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => activeIds.has(id))));
-    setEnd(Date.now());
-    for (const [id, query] of keys) {
-      if (requests.current.get(id)?.query === query) continue;
+    for (const [id, token] of requests.current) {
+      if (queries.get(id) !== token.query) requests.current.delete(id);
+    }
+    for (const [id, query] of queries) {
+      if (results.get(id)?.query === query || requests.current.get(id)?.query === query) continue;
       const token = { query };
       requests.current.set(id, token);
-      void api.command({ type: 'history', id, range }).then(reply => {
-        if (requests.current.get(id) !== token) return;
-        setResults(previous => {
-          const retained = previous[id]?.range === range ? previous[id] : undefined;
-          const result = reply.ok ? { points: reply.history, days: reply.historyDays } : { ...retained, error: reply.error };
-          return { ...previous, [id]: { ...result, query, range } };
+      const store = (reading: HistoryRead) => {
+        if (requests.current.get(id) !== token || activeQueries.current.get(id) !== query) return;
+        setCache(previous => {
+          const updated = new Map(previous[range]);
+          const retained = updated.get(id);
+          updated.delete(id);
+          updated.set(id, {
+            ...(reading.error !== undefined ? retained : undefined), ...reading, query, presented: retained?.presented,
+          });
+          // Keep recently removed comparisons available for re-selection.
+          for (const candidate of updated.keys()) {
+            if (updated.size <= cacheLimit) break;
+            if (!activeQueries.current.has(candidate)) updated.delete(candidate);
+          }
+          return { ...previous, [range]: updated };
         });
-        setEnd(Date.now());
-      }).catch(() => {
-        if (requests.current.get(id) === token) setResults(previous => ({
-          ...previous, [id]: { ...(previous[id]?.range === range ? previous[id] : undefined), error: '暂时无法读取电量记录', query, range },
-        }));
-      });
+        if (!controlled) setEnd(Date.now());
+      };
+      void api.command({ type: 'history', id, range }).then(
+        reply => store(reply.ok ? { points: reply.history, days: reply.historyDays } : { error: reply.error }),
+        () => store({ error: '暂时无法读取电量记录' }));
     }
-  }, [request, range]);
+  }, [queries, range, results, controlled]);
 
-  const controlled = anchor !== undefined;
   useEffect(() => {
     if (controlled) return;
     const timer = window.setInterval(() => { if (!document.hidden) setEnd(Date.now()); }, 60_000);
@@ -65,34 +99,35 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', s
   }, [controlled]);
 
   const start = historyStart(end, range);
-  const daysById = useMemo(() => new Map(Object.entries(results).filter(([, result]) => result.range === range && result.days)
-    .map(([id, result]) => [id, result.days!.filter(bucket => bucket.day >= start && bucket.lowest.time <= end)])), [results, range, start, end]);
-  const plotById = useMemo(() => new Map(Object.entries(results).filter(([, result]) => result.range === range)
+  const daysById = useMemo(() => new Map([...visibleResults].filter(([id, result]) => queries.has(id) && result.days)
+    .map(([id, result]) => [id, result.days!.filter(bucket => bucket.day >= start && bucket.lowest.time <= end)])), [visibleResults, queries, start, end]);
+  const plotById = useMemo(() => new Map([...visibleResults].filter(([id]) => queries.has(id))
     .map(([id, result]): [string, PlotSeries] => {
       if (range === 'day') return [id, plotHistory(result.points ?? [], start, end)];
       const points = (daysById.get(id) ?? []).map(bucket => bucket.lowest);
       return [id, { points, runs: points.map(point => ({ kind: point.reading.low === point.reading.high ? 'exact' : 'range', points: [point] })),
         gaps: [], charging: [] }];
-    })), [results, range, start, end, daysById]);
+    })), [visibleResults, queries, range, start, end, daysById]);
   const activeSeries = useMemo(() => devices.flatMap((device, index): Series[] => {
     const plot = plotById.get(device.id);
     const slot = seriesSlots?.get(device.id) ?? index;
     return plot?.points.length ? [{ device, plot, color: historyColors[slot], index: slot, days: daysById.get(device.id) }] : [];
   }), [devices, plotById, daysById, seriesSlots]);
-  const hasData = (id: string) => results[id]?.range === range && !!(results[id].points || results[id].days);
-  const pending = devices.some(device => results[device.id]?.query !== signature(device));
-  const errors = devices.filter(({ id }) => results[id]?.range === range && !!results[id]?.error);
+  const showingRecords = hasPresentedResults || activeSeries.length > 0;
+  const loading = pending && !showingRecords;
+  const hasData = (id: string) => !!(visibleResults.get(id)?.points || visibleResults.get(id)?.days);
+  const errors = devices.filter(({ id }) => !!visibleResults.get(id)?.error);
   const settledEmpty = devices.filter(({ id }) => hasData(id) && !plotById.get(id)?.points.length);
   const onlyGaps = activeSeries.length > 0 && activeSeries.every(series => !series.plot.runs.length);
   const allFailed = !pending && errors.length > 0 && errors.length === devices.length;
   const retryButton = <button className={s.textButton} onClick={() => setRetry(value => value + 1)} disabled={pending}><RefreshCw size={13} aria-hidden="true" />重试</button>;
-  const status = errors.length && !(allFailed && !activeSeries.length) ? {
+  const status = pending && showingRecords ? {
+    text: '正在更新，暂显示已有记录',
+    progress: true,
+  } : errors.length && !(allFailed && !activeSeries.length) ? {
     text: allFailed ? '更新失败，仍显示上次记录' :
       errors.map(device => device.name + (hasData(device.id) ? '：保留上次记录' : '：读取失败')).join(' · '),
     retry: true,
-  } : pending && activeSeries.length ? {
-    text: '正在更新，暂显示已有记录',
-    progress: true,
   } : settledEmpty.length && activeSeries.length ? {
     text: settledEmpty.map(device => device.name).join('、') + '暂无记录',
   } : onlyGaps ? { text: '该时段仅有无效记录，尚不能绘制电量曲线' } : undefined;
@@ -105,8 +140,8 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', s
       {status.retry && retryButton}
     </div>}
   </>;
-  const summary = <HistorySummary range={range} rows={devices.map(device => {
-    const result = results[device.id];
+  const summary = <HistorySummary range={range} skeleton={reserveRows === 3} fullSkeleton={reserveRows === 3 && loading} rows={devices.map(device => {
+    const result = visibleResults.get(device.id);
     const days = daysById.get(device.id);
     const valid = (plotById.get(device.id)?.points ?? []).filter(point => !!point.reading);
     const lowest = valid.reduce<HistoryPoint | undefined>((best, point) => !best || point.reading!.low < best.reading!.low ||
@@ -114,20 +149,21 @@ export function HistoryComparison({ devices, threshold, anchor, range = 'day', s
     const latestCharge = days ? Math.max(0, ...days.map(bucket => bucket.lastCharge ?? 0)) :
       valid.findLast(point => point.reading?.power === 'charging')?.time;
     const count = days ? days.reduce((total, bucket) => total + bucket.count, 0) : valid.length;
-    return { device, slot: seriesSlots?.get(device.id), name: <Art device={device} />, pending: !hasData(device.id) && result?.query !== signature(device),
+    return { device, slot: seriesSlots?.get(device.id), name: <Art device={device} />, pending: !hasData(device.id) && result?.query !== queries.get(device.id),
       lowest: lowest && <>{readingLabel(lowest.reading)} <small>{(range === 'day' ? tick : stamp).format(lowest.time)}</small></>,
       charge: latestCharge ? stamp.format(latestCharge) : undefined,
       count: hasData(device.id) ? count.toLocaleString('zh-CN') + ' 次' : undefined };
   })} />;
-  return <ChartFrame large={large} pending={pending} threshold={threshold} notice={notice} summary={summary} reserveRows={reserveRows} range={range}
+  const chart = <ChartFrame large={large} pending={pending} threshold={threshold} notice={notice} summary={summary} reserveRows={reserveRows} range={range}
     view={view} hasIntervals={activeSeries.some(({ plot }) => plot.runs.some(run => run.kind === 'range'))} onView={activeSeries.some(item => item.plot.runs.length) ? setView : undefined}>
     {activeSeries.length ? <Graph key={range} series={activeSeries} start={start} end={end} threshold={threshold} range={range} view={view}
-      lanes={devices.map((device, i) => ({ device, index: seriesSlots?.get(device.id) ?? i, color: historyColors[seriesSlots?.get(device.id) ?? i], plot: plotById.get(device.id) }))} /> : pending ?
-      <ChartSkeleton large={large} /> : <div className={s.chartEmpty} data-large={large}>
+      lanes={devices.map((device, i) => ({ device, index: seriesSlots?.get(device.id) ?? i, color: historyColors[seriesSlots?.get(device.id) ?? i], plot: plotById.get(device.id) }))} /> : loading ?
+      <ChartSkeleton large={large} comparisonDevices={reserveRows === 3 ? devices : undefined} range={range} /> : <div className={s.chartEmpty} data-large={large}>
         {allFailed ? <div><span role="status">电量记录读取失败</span>{retryButton}</div> :
           <span role="status">{errors.length ? '没有可显示的电量读数' : '近 ' + historyRangeLabels[range] + '暂无设备读数'}</span>}
       </div>}
   </ChartFrame>;
+  return layout ? layout(chart, loading) : chart;
 }
 
 type HoverEvent = { device: string; name: string; kind: 'invalid' | 'unrecorded' | 'charging'; at: number; end?: number };

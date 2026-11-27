@@ -11,7 +11,26 @@ export function ChartProgress({ children }: { children: ReactNode }) {
   return <span className={s.chartProgress}><LoaderCircle size={16} aria-hidden="true" /><span>{children}</span></span>;
 }
 
-export function ChartSkeleton({ large = true }: { large?: boolean }) {
+function HistoryPlaceholder({ devices, range }: { devices: Device[]; range: HistoryRange }) {
+  return <div className={s.graph + ' ' + s.historyPlaceholder} data-history-placeholder=""
+    role="status" aria-label="正在加载电量历史">
+    <div className={s.graphCanvas + ' ' + s.historyPlaceholderCanvas} aria-hidden="true">
+      <div className={s.historyPlaceholderGrid}>
+        <i /><i /><i /><i />
+      </div>
+    </div>
+    {range === 'day' && devices.length > 0 && <div className={s.eventLanes + ' ' + s.historyPlaceholderLanes} aria-hidden="true">
+      {devices.map(device => <div className={s.eventLane} key={device.id} data-history-placeholder-lane="">
+        <span className={s.historyPlaceholderBar} /><span className={s.historyPlaceholderBar} />
+      </div>)}
+    </div>}
+  </div>;
+}
+
+export function ChartSkeleton({ large = true, comparisonDevices, range = 'day' }: {
+  large?: boolean; comparisonDevices?: Device[]; range?: HistoryRange;
+}) {
+  if (comparisonDevices) return <HistoryPlaceholder devices={comparisonDevices} range={range} />;
   return <div className={s.chartSkeleton} data-large={large} role="status" aria-label="正在加载电量历史">
     <svg className={s.chartSkeletonGrid} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
       <path d="M0 18H100 M0 34H100 M0 66H100 M0 82H100" vectorEffect="non-scaling-stroke" />
@@ -46,13 +65,24 @@ export function ChartFrame({ large, pending, threshold, children, notice, summar
 }
 
 type SummaryRow = { device: Device; slot?: number; name: ReactNode; lowest?: ReactNode; charge?: ReactNode; count?: ReactNode; pending?: boolean };
-export function HistorySummary({ rows, range = 'day' }: { rows: SummaryRow[]; range?: HistoryRange }) {
+export function HistorySummary({ rows, range = 'day', skeleton = false, fullSkeleton = false }: {
+  rows: SummaryRow[]; range?: HistoryRange; skeleton?: boolean; fullSkeleton?: boolean;
+}) {
   return <table className={s.historySummary} aria-label={'近 ' + historyRangeLabels[range] + '记录摘要'}>
-    <thead><tr><th scope="col">设备</th><th scope="col">最低记录</th><th scope="col">最近充电采样</th><th scope="col">有效采样</th></tr></thead>
+    <thead><tr>{['设备', '最低记录', '最近充电采样', '有效采样'].map(label => <th key={label} scope="col">
+      {fullSkeleton ? <><span className={s.chartSrOnly}>{label}</span><span className={s.historyPlaceholderBar} aria-hidden="true" /></> : label}
+    </th>)}</tr></thead>
     <tbody>{rows.map(({ device, name, lowest, charge, count, pending, slot }, index) => (
       <tr key={device.id} data-summary-device={device.id} data-pending={pending}>
-        <th scope="row"><div>{name}<i data-series-shape={slot ?? index} aria-hidden="true" style={{ background: historyColors[slot ?? index] }} /><span>{device.name}</span></div></th>
-        <td>{pending ? '读取中' : lowest ?? '—'}</td><td>{charge ?? '—'}</td><td>{count ?? '—'}</td>
+        <th scope="row"><div>{fullSkeleton ? <>
+          <span className={s.chartSrOnly}>{device.name}</span><span className={s.historyPlaceholderBar} aria-hidden="true" />
+          <span className={s.historyPlaceholderBar} aria-hidden="true" />
+        </> : <>{name}<i data-series-shape={slot ?? index} aria-hidden="true" style={{ background: historyColors[slot ?? index] }} /><span>{device.name}</span></>}</div></th>
+        {pending && skeleton ? <>
+          <td><span className={s.chartSrOnly}>读取中</span><span className={s.historyPlaceholderBar} aria-hidden="true" /></td>
+          <td><span className={s.historyPlaceholderBar} aria-hidden="true" /></td>
+          <td><span className={s.historyPlaceholderBar} aria-hidden="true" /></td>
+        </> : <><td>{pending ? '读取中' : lowest ?? '—'}</td><td>{charge ?? '—'}</td><td>{count ?? '—'}</td></>}
       </tr>
     ))}</tbody>
   </table>;
@@ -62,7 +92,8 @@ export function ChartLoadingFrame({ devices, large = true, threshold, reserveRow
   devices: Device[]; large?: boolean; threshold?: number; reserveRows: 1 | 3; renderArt: (device: Device) => ReactNode; range?: HistoryRange; seriesSlots?: ReadonlyMap<string, number>;
 }) {
   return <ChartFrame large={large} pending threshold={threshold} reserveRows={reserveRows} range={range}
-    summary={<HistorySummary range={range} rows={devices.map(device => ({ device, slot: seriesSlots?.get(device.id), name: renderArt(device), pending: true }))} />}>
-    <ChartSkeleton large={large} />
+    summary={<HistorySummary range={range} skeleton={reserveRows === 3} fullSkeleton={reserveRows === 3}
+      rows={devices.map(device => ({ device, slot: seriesSlots?.get(device.id), name: renderArt(device), pending: true }))} />}>
+    <ChartSkeleton large={large} comparisonDevices={reserveRows === 3 ? devices : undefined} range={range} />
   </ChartFrame>;
 }

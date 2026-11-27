@@ -36,10 +36,18 @@ const output = process.env.DIALOG_REVIEW_OUT;
                 await new Promise(resolve => setTimeout(resolve, 300));
                 if (count === 1) return { ok: false, error: '扫描设备失败，请重新扫描。' };
                 return { ok: true, found: [{ id: 'two', name: '新接入外设', connection: '蓝牙', connected: true, reading },
+                  { id: 'headset', name: '未读到电量的耳机', connection: '蓝牙', connected: true, automatic: true, reading: null },
+                  { id: 'with-battery', name: '等待首次采集的耳机', connection: '蓝牙', connected: true, automatic: true, reading },
                   { id: 'one', name: '蓝牙鼠标', connection: '蓝牙', connected: false, automatic: true, reading: null }] };
               }
-              if (command.type === 'add')
-                return count === 1 ? { ok: false, error: '暂时无法添加设备。' } : { ok: true };
+              if (command.type === 'add') {
+                if (count === 1) return { ok: false, error: '暂时无法添加设备。' };
+                window.publishAddedDevice = () => {
+                  state.devices.push({ ...state.devices[0], id: 'two', name: '新接入外设' });
+                  notify(structuredClone(state));
+                };
+                return { ok: true };
+              }
               if (command.type === 'diagnosticDevices') {
                 if (count === 1) return { ok: false, error: '采集程序尚未就绪，请稍后重新扫描。' };
                 if (count === 2) return { ok: false, error: '扫描设备失败，请重新扫描。' };
@@ -66,13 +74,18 @@ const output = process.env.DIALOG_REVIEW_OUT;
         expect(await close.boundingBox()).toEqual(anchor);
         await expect(page.getByText('扫描设备失败，请重新扫描。', { exact: true })).toHaveCount(1);
         await button(find, '重新扫描').click();
-        await expect(find.getByText('蓝牙 · 已加入监测', { exact: true })).toBeVisible();
+        await expect(find.getByText('蓝牙 · 已加入监测', { exact: true })).toHaveCount(1);
+        await expect(find.getByText('蓝牙 · 暂未读到电量', { exact: true })).toBeVisible();
+        await expect(find.getByText('蓝牙 · 等待首次采集', { exact: true })).toHaveCount(1);
         expect(await close.boundingBox()).toEqual(anchor);
         await button(find, '添加到监测').click();
         await expect(find.getByRole('alert')).toHaveText('暂时无法添加设备。');
         await expect(page.getByText('暂时无法添加设备。', { exact: true })).toHaveCount(1);
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '余电-添加失败可重试.png') });
         await button(find, '重试添加').click();
+        await expect(find.getByText('蓝牙 · 等待首次采集', { exact: true })).toHaveCount(2);
+        await expect(find.getByText('蓝牙 · 已加入监测', { exact: true })).toHaveCount(1);
+        await page.evaluate(() => window.publishAddedDevice());
         await expect(find.getByText('蓝牙 · 已加入监测', { exact: true })).toHaveCount(2);
         await expect(find.getByText(/已加入监测 · (?:未|已)连接/)).toHaveCount(0);
         await expect(find.getByRole('alert')).toHaveCount(0);

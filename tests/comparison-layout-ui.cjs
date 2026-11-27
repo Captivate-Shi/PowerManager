@@ -22,15 +22,20 @@ async function run() {
           window.studioReview.ready();
           const command = window.powerManager.command;
           const gates = Object.create(null);
+          const requested = [];
+          const completed = [];
           window.chartQa = {
             waiting: id => !!gates[id],
             finish: id => gates[id](),
+            requested,
+            completed,
           };
           window.powerManager.command = args => {
             if (args.type !== 'history') return command(args);
+            requested.push(args.id);
             return new Promise(done => { gates[args.id] = () => {
               delete gates[args.id];
-              void command(args).then(done);
+              void command(args).then(result => { done(result); completed.push(args.id); });
             }; });
           };
         });
@@ -58,6 +63,8 @@ async function run() {
         };
         await waiting('mouse'); await waiting('dual');
         await expect(plot.getByRole('status', { name: '正在加载电量历史' })).toBeVisible();
+        await expect(controller.getByRole('button', { name: '对比设备', exact: true })).toBeDisabled();
+        await expect(controller.getByRole('button', { name: /^移除对比：/ }).first()).toBeDisabled();
         await expect(summary.locator('[data-pending="true"]')).toHaveCount(2);
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '01-first-loading.png'), fullPage: true });
         await page.evaluate(() => window.scrollTo(0, 120));
@@ -65,13 +72,63 @@ async function run() {
         expect(initial.scroll[1]).toBe(0);
         expect(initial.scroll[2]).toBe(650);
         await finish('dual');
-        await expect(plot.getByLabel(/近 24 小时电量曲线/)).toBeVisible();
-        await expect(summary.locator('[data-pending="true"]')).toHaveCount(1);
+        await expect.poll(() => page.evaluate(() => window.chartQa.completed)).toEqual(['dual']);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await expect(plot.getByLabel(/近 24 小时电量曲线/)).toHaveCount(0);
+        await expect(summary.locator('[data-pending="true"]')).toHaveCount(2);
         expect(await rects()).toEqual(initial);
         await finish('mouse');
         await expect(plot).toHaveAttribute('aria-busy', 'false');
+        await expect(plot.getByLabel(/近 24 小时电量曲线/)).toBeVisible();
+        await expect(controller.getByRole('button', { name: '对比设备', exact: true })).toBeEnabled();
         expect(await rects()).toEqual(initial);
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '02-first-settled.png'), fullPage: true });
+
+        const samples = section.getByRole('button', { name: '原始采样' });
+        await samples.click();
+        await page.getByRole('button', { name: '总览', exact: true }).click();
+        await expect(section).toBeHidden();
+        await page.getByRole('button', { name: '记录', exact: true }).click();
+        await expect(samples).toHaveAttribute('aria-pressed', 'true');
+        await expect(plot).toHaveAttribute('aria-busy', 'false');
+        await expect(plot.getByRole('status', { name: '正在加载电量历史' })).toHaveCount(0);
+        expect((await page.evaluate(() => window.chartQa.requested)).sort()).toEqual(['dual', 'mouse']);
+        await section.getByRole('button', { name: '趋势' }).click();
+        if (width === 1250) {
+          await page.getByRole('button', { name: '总览', exact: true }).click();
+          await page.evaluate(() => window.studioReview.readAs('mouse', 85));
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+          expect((await page.evaluate(() => window.chartQa.requested)).sort()).toEqual(['dual', 'mouse']);
+          await page.getByRole('button', { name: '记录', exact: true }).click();
+          await waiting('mouse');
+          await expect(plot.getByLabel(/近 24 小时电量曲线/)).toBeVisible();
+          await expect(section.getByText('正在更新，暂显示已有记录')).toBeVisible();
+          const compare = controller.getByRole('button', { name: '对比设备', exact: true });
+          await compare.click();
+          await expect(page.getByRole('menuitemcheckbox', { name: /^Razer BlackWidow/ })).toBeEnabled();
+          await page.keyboard.press('Escape');
+          await expect(compare).toBeFocused();
+          expect((await page.evaluate(() => window.chartQa.requested)).sort()).toEqual(['dual', 'mouse', 'mouse']);
+          await finish('mouse');
+          await expect(plot).toHaveAttribute('aria-busy', 'false');
+
+          const chooseRange = async label => {
+            await section.getByRole('combobox', { name: '记录范围' }).click();
+            await page.getByRole('option', { name: label, exact: true }).click();
+          };
+          await chooseRange('7 天');
+          await waiting('mouse'); await waiting('dual');
+          await expect(plot.getByRole('status', { name: '正在加载电量历史' })).toBeVisible();
+          await expect(controller.getByRole('button', { name: '对比设备', exact: true })).toBeDisabled();
+          await expect(plot.locator('[data-history-placeholder-lane]')).toHaveCount(0);
+          await finish('mouse'); await finish('dual');
+          await expect(plot.getByLabel(/近 7 天每日最低读数/)).toBeVisible();
+          const requestedCount = await page.evaluate(() => window.chartQa.requested.length);
+          await chooseRange('24 小时');
+          await expect(plot.getByLabel(/近 24 小时电量曲线/)).toBeVisible();
+          await expect(plot).toHaveAttribute('aria-busy', 'false');
+          expect(await page.evaluate(() => window.chartQa.requested.length)).toBe(requestedCount);
+        }
 
         await page.evaluate(() => window.scrollTo(0, 0));
         const before = await rects();

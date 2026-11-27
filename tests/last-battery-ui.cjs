@@ -14,9 +14,9 @@ async function run() {
       const make = async status => {
         const snapshot = await base();
         return { ...snapshot, demo: false, collector: 'ready', devices: [{
-          id: 'mouse', name: '验收鼠标', art: 'mouse', watched: true, connection: 'USB',
+          id: 'dual', name: 'DualSense', art: 'dualsense', watched: true, connection: '蓝牙',
           status, reason: status === 'current' ? '设备读数正常' : '设备未连接',
-          lastRead: Date.now() - 1000, reading: { low: 42, high: 42, raw: 42, power: 'discharging', source: 'hid' },
+          lastRead: Date.now() - 1000, reading: { low: 70, high: 79, raw: 70, power: 'discharging', source: 'hid' },
         }] };
       };
       window.powerManager.snapshot = () => make('offline');
@@ -25,14 +25,33 @@ async function run() {
     await page.addInitScript({ content: '(' + installMock.toString() + ')();(' + attachBatteryFixture.toString() + ')();' });
     await page.goto(pathToFileURL(resolve('dist/ui/index.html')).href);
     const hero = page.getByRole('region', { name: '主设备' });
-    await expect(hero.locator('[data-last-battery]')).toHaveText('上次电量');
-    await expect(hero.getByRole('meter', { name: '上次电量', exact: true })).toHaveAttribute('aria-valuetext', '42%');
+    const lastLabel = hero.locator('[data-last-battery]');
+    const lastTrack = hero.getByRole('meter', { name: '上次电量', exact: true });
+    const lastValue = hero.getByText('70–79%', { exact: true });
+    await expect(lastLabel).toHaveText('上次电量');
+    await expect(lastTrack).toHaveAttribute('aria-valuetext', '70–79%');
+    const valueBox = await lastValue.boundingBox();
+    const trackBox = await lastTrack.boundingBox();
+    const labelBox = await lastLabel.boundingBox();
+    expect(trackBox.x).toBeGreaterThanOrEqual(valueBox.x + valueBox.width);
+    expect(Math.abs(trackBox.y + trackBox.height / 2 - (valueBox.y + valueBox.height / 2))).toBeLessThan(2);
+    expect(labelBox.y).toBeGreaterThanOrEqual(valueBox.y + valueBox.height);
+    await page.setViewportSize({ width: 720, height: 520 });
+    const narrowValue = await lastValue.boundingBox();
+    const narrowTrack = await lastTrack.boundingBox();
+    const narrowLabel = await lastLabel.boundingBox();
+    const narrowHero = await hero.boundingBox();
+    const narrowButton = await hero.getByRole('button', { name: '查看详情' }).boundingBox();
+    expect(narrowTrack.y).toBeGreaterThanOrEqual(narrowValue.y + narrowValue.height);
+    expect(narrowLabel.y).toBeGreaterThanOrEqual(narrowTrack.y + narrowTrack.height);
+    expect(narrowButton.y + narrowButton.height).toBeLessThanOrEqual(narrowHero.y + narrowHero.height);
+    await page.setViewportSize({ width: 1120, height: 740 });
     await hero.getByRole('button', { name: '查看详情' }).click();
     const detail = page.getByRole('region', { name: '设备详情' });
     await expect(detail.locator('[data-last-battery]')).toBeVisible();
     await page.evaluate(() => window.useFreshReading());
     await expect(detail.locator('[data-last-battery]')).toHaveCount(0);
-    await expect(detail.getByRole('meter', { name: '电量', exact: true })).toHaveAttribute('aria-valuetext', '42%');
+    await expect(detail.getByRole('meter', { name: '电量', exact: true })).toHaveAttribute('aria-valuetext', '70–79%');
     await page.getByRole('button', { name: '返回总览' }).click();
     await expect(hero.locator('[data-last-battery]')).toHaveCount(0);
     console.log('Offline history is labelled in overview and detail; live readings are not.');

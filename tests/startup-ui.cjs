@@ -65,7 +65,7 @@ async function main() {
     await expect(phase('cached')).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(hero.getByRole('heading', { name: '工作鼠标' })).toBeVisible();
-    await expect(hero.getByRole('meter', { name: '电量', exact: true })).toHaveAttribute('aria-valuetext', '9%');
+    await expect(hero.getByRole('meter', { name: '上次电量', exact: true })).toHaveAttribute('aria-valuetext', '9%');
     await expect(hero.getByText(/^最近更新时间：/)).toBeVisible();
     await expect(phase('cached').getByText('未连接', { exact: true })).toHaveCount(0);
     await expect(page.getByText(/0 台在线/)).toHaveCount(0);
@@ -76,7 +76,7 @@ async function main() {
     await page.getByRole('button', { name: '返回总览' }).click();
     await page.evaluate(() => window.publish('cache', 'retrying'));
     await expect(phase('cached')).toBeVisible();
-    await expect(hero.getByRole('meter', { name: '电量', exact: true })).toHaveAttribute('aria-valuetext', '9%');
+    await expect(hero.getByRole('meter', { name: '上次电量', exact: true })).toHaveAttribute('aria-valuetext', '9%');
     await page.evaluate(() => window.publish('live', 'ready'));
     await expect(hero.getByRole('meter', { name: '电量', exact: true })).toHaveAttribute('aria-valuetext', '75%');
     await expect(hero.getByText(/^最近更新时间：/)).toBeVisible();
