@@ -15,7 +15,7 @@ Windows 10 / 11（x64）。发布页提供两种下载：
 | `PowerManager-Setup-<版本>.exe` | 安装版。可选安装目录和桌面快捷方式；缺少 WebView2 时由安装器处理。 |
 | `PowerManager-<版本>-win-x64.zip` | 免安装版。完整解压后运行 `PowerManager.exe`；电脑需已安装 WebView2。换包前先退出托盘里的旧实例。 |
 
-从 0.2.0 升级可以覆盖安装，设置和电量记录保留。安装版与免安装版使用同一份本机数据。
+从 0.2.0 或 0.2.1 升级可以覆盖安装，设置和电量记录保留。安装版与免安装版使用同一份本机数据。
 
 ## 功能
 
@@ -29,13 +29,13 @@ Windows 10 / 11（x64）。发布页提供两种下载：
 
 ## 外设兼容性
 
-0.2.1 的兼容清单已记录 125 项读数路径（按型号和连接方式区分）：92 项专用读取，33 项使用 Windows 或标准蓝牙电量。
+0.2.2 的兼容清单已记录 129 项读数路径（按型号和连接方式区分）：96 项专用读取，33 项使用 Windows 或标准蓝牙电量。
 
 | 类型 | 品牌 | 代表型号 |
 | --- | --- | --- |
 | 手柄 | Sony | DualSense、DualSense Edge、DualShock 4（一代／二代） |
 | 手柄 | Nintendo、八位堂、盖世小鸡 | Switch Pro；8BitDo Pro 2、Pro 3、SN30 Pro；GameSir Super Nova、Nova Lite 2 |
-| 鼠标 | 罗技 | G502 LIGHTSPEED、G502 X PLUS、G305 LIGHTSPEED、G PRO Wireless、PRO X SUPERLIGHT（一代）、MX Master 2S／3S／4、MX Anywhere 3S、Lift |
+| 鼠标 | 罗技 | G502 LIGHTSPEED、G502 X LIGHTSPEED、G502 X PLUS、G305 LIGHTSPEED、G PRO Wireless、PRO X SUPERLIGHT（一代、二代）、MX Master 2S／3S／4、MX Anywhere 3S、Lift |
 | 鼠标 | 雷蛇、赛睿 | Viper V3 HyperSpeed、Viper V3 Pro、DeathAdder V3 Pro、Basilisk V3 Pro、Orochi V2；Aerox 3／5／9 Wireless |
 | 鼠标 | 雷柏、迈从、狼蛛、VXE | VT0 Air MAX、VT2S Air Max、VT3 双 8K、VT3S MAX 等 VT 系列；A7 V2 Pro、G3 V2；SC580／SC580X；R1 Pro Max |
 | 键盘 | 罗技、雷蛇 | MX Keys、MX Keys S、MX Keys Mini、K780、ERGO K860；BlackWidow V3 Mini HyperSpeed、BlackWidow V4 Tenkeyless HyperSpeed、BlackWidow V4 Low-profile TKL HyperSpeed、DeathStalker V2 Pro TKL |
