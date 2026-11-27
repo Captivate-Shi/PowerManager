@@ -13,7 +13,7 @@ declare global { interface Window { powerManager: DesktopApi } }
 export const api = window.powerManager;
 const artUrl = (name: string) => './assets/' + name + '.png';
 export function Brand() {
-  return <div className={s.brand}><img src={artUrl("yudian-mark")} width="28" height="28" alt="" /><b>余电</b></div>;
+  return <div className={s.brand}><img src={artUrl("yudian-mark")} width="28" height="28" alt="" draggable={false} /><b>余电</b></div>;
 }
 const renderedArt = new Set<Device['art']>(['dualsense', 'mouse', 'keyboard']);
 type ArtVariant = 'thumb' | 'card' | 'hero' | 'stage' | 'detail';

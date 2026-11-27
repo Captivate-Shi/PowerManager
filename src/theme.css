@@ -49,3 +49,8 @@
   --ink: #f5ece2; --muted: #c5b6a5; --quiet: #9d8e7e; --blue: #ddc3a9;
   --palette-header: #1b1714; --palette-light: #b9947324;
 }
+
+/* Desktop chrome is not a document; only editorial/input content opts back in. */
+body { user-select: none; }
+:is(input, textarea, [contenteditable="true"], [data-selectable]) { user-select: text; }
+img { -webkit-user-drag: none; }

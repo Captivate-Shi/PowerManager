@@ -1,7 +1,7 @@
 import type { CompatibilityPreview } from './compatibility-report';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
+import { Activity, ArrowLeft, Bell, BellOff, Cable, ChevronDown, ChevronRight, CircleAlert, Clock, Copy, Ellipsis, LayoutGrid, List, MonitorSmartphone, Pencil, Plus, RefreshCw, Search, ShieldCheck, TriangleAlert, Unplug, X, Zap } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ColdStartMotion } from './cold-start-motion';
 import { flushSync } from 'react-dom';
@@ -21,7 +21,8 @@ import { HelpTip } from './help-tip';
 import { ZoomControl } from './zoom';
 import preferences from './preferences.module.css';
 import { previewDevice as makePreviewDevice } from './demo';
-import { compareLimit, historyAnchor, historyRangeLabels, historyStart, toggleHistorySlots } from './history-plot';
+import { compareLimit, historyAnchor, historyRangeLabels, historyStart } from './history-plot';
+import { historyComparisonSlots, readHistorySlots, saveHistorySlots, updateHistoryComparison } from './history-preferences';
 import { historyStorageEstimate } from './history-storage';
 import { applyMainPalette, palettes, readPalette, savePalette, type Palette } from './theme';
 import { DetentSlider } from './detent-slider';
@@ -34,6 +35,7 @@ const pages = [
 type Page = typeof pages[number][0];
 type Filter = 'all' | 'online' | 'low' | 'offline' | 'recent';
 type Run = (command: Command) => Promise<CommandResult>;
+type ReportFeedback = (feedback: { text: string; error?: boolean }) => void;
 
 
 const level = (device: Device, state: Snapshot) => severity(device, state.settings, state.deviceSettings[device.id]);
@@ -75,7 +77,11 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   const settingsPosition = useRef({ category: 'appearance', top: 0 });
   const [finding, setFinding] = useState(false);
   const [currentHistoryRange, setCurrentHistoryRange] = useState<HistoryRange>();
-  const [historySlots, setHistorySlots] = useState<(string | undefined)[]>();
+  const [historySlots, setHistorySlots] = useState(readHistorySlots);
+  const chooseHistorySlots = (slots: (string | undefined)[]) => {
+    setHistorySlots(slots);
+    saveHistorySlots(slots);
+  };
   const [feedback, setFeedback] = useState<{ text: string; error?: boolean }>();
   const starting = state.collector === 'starting';
   const inventory = inventoryState(state);
@@ -227,7 +233,7 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
   return <div className={s.shell + ' ' + look.shell + ' ' + preferences.mainPalette} data-theme={palette} data-view={detailed ? 'detail' : page}
     style={{ '--studio-stage': `url("${studioPath('stage.webp')}")`, '--alert-stage': `url("${studioPath('alerts-stage.webp')}")` } as CSSProperties}>
     <ColdStartMotion cold={inventory === 'cold'} visible={page === 'overview' && !detailed} />
-    <a className={s.skipLink} href="#main-content">跳到主要内容</a>
+    <a className={s.skipLink} draggable={false} href="#main-content">跳到主要内容</a>
     <header className={s.topbar + ' ' + look.topbar}
       onMouseDown={event => { if (event.button === 0 && event.detail === 1 && api.windowAction && !(event.target as HTMLElement).closest?.('button, nav, a')) void api.windowAction('drag').catch(() => {}); }}
       onDoubleClick={event => { if (api.windowAction && !(event.target as HTMLElement).closest?.('button, nav, a')) void api.windowAction('maximize').catch(() => {}); }}>
@@ -262,16 +268,16 @@ export function Dashboard({ state, remembered }: { state: Snapshot; remembered?:
         chosen={featured} choose={chooseFeatured} mode={overviewMode} setMode={setOverviewMode} />}
       {page === 'devices' && (inventory === 'cold' ? <DeviceSkeleton /> :
         inventory === 'unavailable' ? <Empty button={() => setFinding(true)}>暂无法读取设备，等待采集恢复</Empty> :
-        <Devices state={state} sortConnections={sortConnections} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} sort={deviceSort} setSort={setDeviceSort} clearSearch={() => search('')} openDetail={openDetail} run={run} find={() => setFinding(true)} />)}
+        <Devices state={state} sortConnections={sortConnections} selected={selected} pick={select} filter={filter} setFilter={setFilter} query={query} sort={deviceSort} setSort={setDeviceSort} clearSearch={() => search('')} openDetail={openDetail} run={run} reportFeedback={setFeedback} find={() => setFinding(true)} />)}
       {page === 'alerts' && <Alerts state={state} run={run} open={openDetail} />}
-      {page === 'history' && <History state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={viewRange} retention={historyRetention} chooseRange={chooseHistoryRange} slots={historySlots} setSlots={setHistorySlots} />}
+      {page === 'history' && <History state={state} starting={inventory === 'cold'} find={() => setFinding(true)} range={viewRange} retention={historyRetention} chooseRange={chooseHistoryRange} slots={historySlots} setSlots={chooseHistorySlots} />}
       {page === 'settings' && <Settings state={state} run={run} palette={palette} choosePalette={choosePalette} retention={historyRetention} position={settingsPosition} />}
       </div>
       {detailed && <div className={s.pageBody}>
         <header className={s.fullHeader + ' ' + look.detailBack}>
           <button className={look.ghost} ref={detailBack} onClick={closeDetail}><ArrowLeft size={16} aria-hidden="true" />返回{pages.find(([id]) => id === page)?.[1]}</button>
         </header>
-        <Details key={detailed.id} device={detailed} state={state} run={run} full />
+        <Details key={detailed.id} device={detailed} state={state} run={run} reportFeedback={setFeedback} full />
       </div>}
       <footer className={s.appFooter + ' ' + look.footer} data-cold={page === 'overview' && !detailed && inventory === 'cold'}>
         <span className={s.monitorState}><i data-state={state.collector} />{state.collector === "ready" ? "后台监测中" : "等待采集"}</span>
@@ -769,8 +775,8 @@ function Overview({ state, openDetail, showDevices, find, chosen, choose, mode, 
   </div>;
 }
 
-function Devices({ state, sortConnections, selected, pick, filter, setFilter, query, sort, setSort, clearSearch, openDetail, run, find }: {
-  state: Snapshot; sortConnections: ReadonlyMap<string, boolean>; selected?: string; pick: (id?: string) => void; filter: Filter; setFilter: (value: Filter) => void; query: string; sort: string; setSort: (value: string) => void; clearSearch: () => void; openDetail: (id: string, source?: HTMLElement) => void; run: Run; find: () => void;
+function Devices({ state, sortConnections, selected, pick, filter, setFilter, query, sort, setSort, clearSearch, openDetail, run, reportFeedback, find }: {
+  state: Snapshot; sortConnections: ReadonlyMap<string, boolean>; selected?: string; pick: (id?: string) => void; filter: Filter; setFilter: (value: Filter) => void; query: string; sort: string; setSort: (value: string) => void; clearSearch: () => void; openDetail: (id: string, source?: HTMLElement) => void; run: Run; reportFeedback: ReportFeedback; find: () => void;
 }) {
   const split = useRef<HTMLDivElement>(null);
   const { devices, alerts } = state;
@@ -825,11 +831,11 @@ function Devices({ state, sortConnections, selected, pick, filter, setFilter, qu
           </tr>; })}</DeviceRowMotion>
         </table> : <Empty button={devices.length ? () => { setFilter('all'); clearSearch(); } : find} action={devices.length ? '清除筛选' : '查找设备'}>{devices.length ? '未找到匹配设备' : '暂无受监测设备'}</Empty>}
       </section>
-      {detail && <Details key={detail.id} device={detail} state={state} run={run} openFull={source => openDetail(detail.id, source)} />}
+      {detail && <Details key={detail.id} device={detail} state={state} run={run} reportFeedback={reportFeedback} openFull={source => openDetail(detail.id, source)} />}
     </div>
   </>;
 }
-function Details({ device, state, run, full, openFull }: { device: Device; state: Snapshot; run: Run; full?: boolean; openFull?: (source: HTMLElement) => void }) {
+function Details({ device, state, run, reportFeedback, full, openFull }: { device: Device; state: Snapshot; run: Run; reportFeedback: ReportFeedback; full?: boolean; openFull?: (source: HTMLElement) => void }) {
   const detailRef = useRef<HTMLElement>(null);
   const [editing, edit] = useState(false);
   const [alias, setAlias] = useState(state.deviceSettings[device.id]?.alias ?? '');
@@ -840,6 +846,17 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
   useEffect(() => { if (!full) prepareHero(device); }, [device.art, full]);
   const low = level(device, state);
   const send = (command: Command) => { void run(command); };
+  async function copyDevice() {
+    const reading = isLiveDualSenseFull(device) ? '已充满' : readingLabel(device.reading);
+    try {
+      await navigator.clipboard.writeText([
+        device.name, `电量：${reading}`, `读取状态：${device.reason}`,
+      ].join('\n'));
+      reportFeedback({ text: '已复制设备信息' });
+    } catch {
+      reportFeedback({ text: '无法复制设备信息', error: true });
+    }
+  }
   return <section ref={detailRef} className={s.details + ' ' + (full ? look.fullDetail : look.devicePreview)} data-full={!!full} aria-label={full ? "设备详情" : "设备预览"}>
     {!full && <h2 className={s.previewTitle}>设备预览</h2>}
     <div className={s.detailTop + (full ? ' ' + look.detailTop : '')}>
@@ -875,6 +892,7 @@ function Details({ device, state, run, full, openFull }: { device: Device; state
         <footer className={s.detailActions}>{openFull && <button className={s.primary} onClick={() => { if (detailRef.current) openFull(detailRef.current); }}>查看详情 <ChevronRight size={16} aria-hidden="true" /></button>}<button className={s.button} onClick={() => send({ type: 'preview', severity: low ?? 'low', id: device.id })}><Bell size={19} />提醒测试</button>
           <Menu.Root><Menu.Trigger asChild><button className={s.button}><Ellipsis size={20} />更多操作</button></Menu.Trigger>
             <Menu.Portal><Menu.Content align="end" sideOffset={5} className={s.popover}>
+              <Menu.Item className={s.menuOption} onSelect={() => void copyDevice()}><Copy size={15} aria-hidden="true" />复制设备信息</Menu.Item>
               <Menu.Item className={s.menuOption} onSelect={() => send({ type: 'refresh' })}><RefreshCw size={15} aria-hidden="true" />立即刷新</Menu.Item>
               <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'snooze', id: device.id })}><Clock size={15} aria-hidden="true" />{snoozeAction(state.settings.snooze)}</Menu.Item>
               <Menu.Item className={s.menuOption} disabled={!low} onSelect={() => send({ type: 'ignore', id: device.id })}><BellOff size={15} aria-hidden="true" />忽略本次</Menu.Item>
@@ -996,15 +1014,18 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
     document.addEventListener('visibilitychange', sync);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', sync); };
   }, []);
-  const first = state.devices.find(item => item.art === 'mouse') ?? state.devices[0];
-  const second = state.devices.find(item => item.id !== first?.id && item.art === 'dualsense');
-  const byId = new Map(state.devices.map(item => [item.id, item]));
-  const visibleSlots = (slots ?? [first?.id, second?.id]).map(id => id && byId.has(id) ? id : undefined);
-  if (!visibleSlots.some(Boolean) && first) visibleSlots[0] = first.id;
-  const seriesSlots = new Map(visibleSlots.flatMap((id, index) => id ? [[id, index] as const] : []));
-  const selected = [...seriesSlots.keys()].map(id => byId.get(id)!);
+  const ordered = [...state.devices].sort((a, b) => compareDevices(a, b, 'name'));
+  const first = ordered.find(item => item.art === 'mouse') ?? ordered[0];
+  const second = ordered.find(item => item.id !== first?.id && item.art === 'dualsense');
+  const available = new Set(ordered.map(item => item.id));
+  const colorSlots = historyComparisonSlots(slots, [first?.id, second?.id], available);
+  const seriesSlots = new Map(colorSlots.flatMap((id, index) => id && available.has(id) ? [[id, index] as const] : []));
+  const selected = ordered.filter(item => seriesSlots.has(item.id));
   const activeIds = selected.map(item => item.id);
-  const toggle = (id: string) => setSlots(toggleHistorySlots(visibleSlots, id));
+  const toggle = (id: string) => {
+    const next = updateHistoryComparison(colorSlots, id, available);
+    if (next !== colorSlots) setSlots(next);
+  };
   const single = selected.length === 1 ? selected[0] : undefined;
   const now = historyAnchor(clock, selected.map(item => item.lastRead), Date.now());
   const dateSpan = `${historyClock.format(historyStart(now, range))} – ${historyClock.format(now)}`;
@@ -1031,8 +1052,8 @@ function History({ state, starting, find, range, retention, chooseRange, slots, 
         {state.devices.length > 1 && <Menu.Root>
           <Menu.Trigger asChild><button ref={addDevice} className={s.historyAdd}><Plus size={15} aria-hidden="true" />对比设备</button></Menu.Trigger>
           <Menu.Portal><Menu.Content align="end" sideOffset={6} className={s.historyMenu} aria-label="可对比设备">
-            {state.devices.map(item => {
-              const checked = activeIds.includes(item.id);
+            {ordered.map(item => {
+              const checked = seriesSlots.has(item.id);
               return <Menu.CheckboxItem key={item.id} checked={checked} className={s.menuOption}
                 disabled={checked ? activeIds.length === 1 : activeIds.length >= compareLimit}
                 onCheckedChange={() => toggle(item.id)}>
@@ -1284,7 +1305,7 @@ function CompatibilityPicker({ run, close }: { run: Run; close: () => void }) {
     description={preview ? '只保存到本地，不会自动发送。' : '请选择遇到问题的设备。只显示通用名称时，也请先选中，再填写型号。'}
     onClose={() => { if (!working) close(); }}>
     {preview ? <>
-      <pre tabIndex={0} aria-label="兼容性报告内容" style={{ maxHeight: 'min(45vh, 430px)', overflow: 'auto',
+      <pre data-selectable="" tabIndex={0} aria-label="兼容性报告内容" style={{ maxHeight: 'min(45vh, 430px)', overflow: 'auto',
         whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', padding: 12, border: '1px solid var(--line)',
         borderRadius: 8, background: 'var(--panel)', fontSize: 12 }}>{preview.json}</pre>
       {error && <p className={s.formError} role="alert">{error}</p>}
