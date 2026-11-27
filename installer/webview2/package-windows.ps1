@@ -2,11 +2,11 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..\..')
 function Check-Native { if ($LASTEXITCODE -ne 0) { throw "Build command failed: $LASTEXITCODE" } }
 
-$version = node -p "require('./package.json').version"
+$version = node scripts/app-version.cjs
 Check-Native
-if ($version -notmatch '^\d+\.\d+\.\d+(-rc\.\d+)?$') { throw 'Invalid version' }
+$windowsVersion = node scripts/app-version.cjs --windows
+Check-Native
 $tauri = 'experiments/tauri/src-tauri'
-if ((Get-Content "$tauri/tauri.conf.json" -Raw | ConvertFrom-Json).version -ne $version) { throw 'Version mismatch' }
 
 pnpm exec tsc --noEmit
 Check-Native
@@ -53,7 +53,7 @@ if (!$nsis) { throw 'Could not locate makensis' }
 $out = (New-Item -ItemType Directory "out/$version" -Force).FullName
 $exe = Join-Path $out "PowerManager-Setup-$version.exe"
 $icon = (Resolve-Path "$tauri/icons/icon.ico").Path
-& $nsis /WX /V3 /INPUTCHARSET UTF8 "/DOUT=$exe" "/DAPP=$app" "/DAPP_ICON=$icon" "/DLOADER=$( (Get-Item -LiteralPath (Join-Path $payload WebView2Loader.dll)).FullName )" "/DCOLLECTOR=$( (Get-Item -LiteralPath (Join-Path $payload collector.exe)).FullName )" "/DBOOTSTRAPPER=$bootstrap" (Resolve-Path 'installer/webview2/setup.nsi').Path
+& $nsis /WX /V3 /INPUTCHARSET UTF8 "/DDISPLAY_VERSION=$version" "/DWINDOWS_VERSION=$windowsVersion" "/DOUT=$exe" "/DAPP=$app" "/DAPP_ICON=$icon" "/DLOADER=$( (Get-Item -LiteralPath (Join-Path $payload WebView2Loader.dll)).FullName )" "/DCOLLECTOR=$( (Get-Item -LiteralPath (Join-Path $payload collector.exe)).FullName )" "/DBOOTSTRAPPER=$bootstrap" (Resolve-Path 'installer/webview2/setup.nsi').Path
 Check-Native
 # Copy the same application, loader and collector used by Setup into a true extract-and-run ZIP.
 $staging = Join-Path ([IO.Path]::GetTempPath()) ("PowerManager-Portable-" + [Guid]::NewGuid().ToString("N"))

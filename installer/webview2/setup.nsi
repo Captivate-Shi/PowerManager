@@ -8,7 +8,12 @@ SetCompressor /SOLID lzma
 !include "nsDialogs.nsh"
 
 !define PRODUCT "PowerManager"
-!define DISPLAY_VERSION "0.2.4"
+!ifndef DISPLAY_VERSION
+  !error "Pass DISPLAY_VERSION from package.json"
+!endif
+!ifndef WINDOWS_VERSION
+  !error "Pass WINDOWS_VERSION from package.json"
+!endif
 !define APP_EXE "PowerManager.exe"
 !define PRODUCT_REG "Software\PowerManager\Desktop"
 !define UNINSTALL_REG "Software\Microsoft\Windows\CurrentVersion\Uninstall\PowerManager"
@@ -22,7 +27,7 @@ Name "${PRODUCT} ${DISPLAY_VERSION}"
 OutFile "${OUT}"
 InstallDir "$LOCALAPPDATA\Programs\PowerManager"
 InstallDirRegKey HKCU "${PRODUCT_REG}" "InstallDir"
-VIProductVersion "0.2.4.0"
+VIProductVersion "${WINDOWS_VERSION}"
 VIAddVersionKey "ProductName" "${PRODUCT}"
 VIAddVersionKey "ProductVersion" "${DISPLAY_VERSION}"
 VIAddVersionKey "FileDescription" "PowerManager x64 Setup"

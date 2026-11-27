@@ -10,12 +10,13 @@ assets="$root/verified-inputs"
 out="${1:?supply output directory}"
 mkdir -p "$out"
 out="$(cd -- "$out" && pwd)"
-version=$(node -p "require('./package.json').version")
+version=$(node scripts/app-version.cjs)
+windows_version=$(node scripts/app-version.cjs --windows)
 name="PowerManager-Setup-$version.exe"
 file "$app" | grep -Eq 'PE32\+.*x86-64'
 file "$assets/collector.exe" | grep -Eq 'PE32\+.*x86-64'
 file "$assets/WebView2Loader.dll" | grep -Eq 'PE32\+.*x86-64'
-"$MAKENSIS" -V3 -INPUTCHARSET UTF8 -DOUT="$out/$name" -DAPP="$app" \
+"$MAKENSIS" -V3 -INPUTCHARSET UTF8 -DDISPLAY_VERSION="$version" -DWINDOWS_VERSION="$windows_version" -DOUT="$out/$name" -DAPP="$app" \
   -DAPP_ICON="$root/experiments/tauri/src-tauri/icons/icon.ico" -DLOADER="$assets/WebView2Loader.dll" -DCOLLECTOR="$assets/collector.exe" \
   -DBOOTSTRAPPER="$WEBVIEW_BOOTSTRAPPER" "$root/installer/webview2/setup.nsi"
 "$SEVEN_ZIP" t "$out/$name"

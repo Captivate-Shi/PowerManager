@@ -12,6 +12,14 @@ if (!(Test-Path -LiteralPath $app) -or !(Test-Path -LiteralPath $uninstall)) { t
 $entry = Get-ItemProperty -LiteralPath $reg
 if ($entry.InstallLocation -ne $folder) { throw 'Incorrect install location' }
 $expectedVersion = [IO.Path]::GetFileNameWithoutExtension($setup) -replace '^PowerManager-Setup-', ''
+$expectedWindowsVersion = (($expectedVersion -split '-')[0]) + '.0'
+foreach ($exe in @($setup, $app)) {
+    $info = (Get-Item -LiteralPath $exe).VersionInfo
+    $numeric = @($info.ProductMajorPart, $info.ProductMinorPart, $info.ProductBuildPart, $info.ProductPrivatePart) -join '.'
+    if ($info.ProductVersion -ne $expectedVersion -or $numeric -ne $expectedWindowsVersion) {
+        throw "Unexpected product version in ${exe}: $($info.ProductVersion) ($numeric)"
+    }
+}
 if ($entry.DisplayVersion -ne $expectedVersion) { throw 'Installer version and installed version do not match' }
 if (Get-Process PowerManager -ErrorAction SilentlyContinue) { throw 'Silent setup launched the app' }
 $sentinel=Join-Path $folder 'do-not-delete.txt'
