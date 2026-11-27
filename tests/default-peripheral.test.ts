@@ -40,3 +40,28 @@ test('auto BLE path needs no Add and a missing sample cannot be mistaken for zer
     rmSync(statePath, { recursive: true, force: true });
   }
 });
+
+test('Windows device classification upgrades an existing row without replacing its battery reading', async t => {
+  const statePath = mkdtempSync(join(tmpdir(), 'pm-audio-art-'));
+  const device = { id: 'win:freebuds', name: 'HUAWEI FreeBuds 7i', connection: '蓝牙', art: 'unknown', automatic: true, aliases: [] };
+  const reading = { low: 100, high: 100, raw: 100, power: 'unknown', source: 'windows' };
+  let rows: unknown[] = [{ ...device, sample: { status: 'current', reason: '可用', reading } }];
+  t.mock.method(Collector.prototype, 'request', async () => rows);
+  const monitor = new Monitor(statePath, join(statePath, 'unused.exe'), () => {}, () => {});
+  try {
+    await monitor.poll(true);
+    assert.equal(monitor.state.devices[0].art, 'unknown');
+    rows = [{ ...device, windowsArt: 'earbuds', sample: null }];
+    await monitor.poll(true);
+    assert.equal(monitor.state.devices.length, 1);
+    assert.equal(monitor.state.devices[0].id, device.id);
+    assert.equal(monitor.state.devices[0].art, 'earbuds');
+    assert.deepEqual(monitor.state.devices[0].reading, reading);
+    rows = [{ ...device, sample: { status: 'offline', reason: '设备未连接', reading: null } }];
+    await monitor.poll(true);
+    assert.equal(monitor.state.devices[0].art, 'earbuds');
+  } finally {
+    monitor.close();
+    rmSync(statePath, { recursive: true, force: true });
+  }
+});

@@ -314,7 +314,9 @@ impl State{
    let sample=&row["sample"];
    previous["id"]=json!(id); previous["recognizedName"]=json!(name);
    previous["name"]=json!(self.snapshot["deviceSettings"][id]["alias"].as_str().unwrap_or(name));
-   for k in ["connection","art"]{previous[k]=row[k].clone()}
+   previous["connection"]=row["connection"].clone();
+   let art=json!(device_admission::display_art(row,&previous));
+   if previous["art"]!=art {previous["art"]=art;self.dirty=true;}
    previous["watched"]=json!(self.watched.iter().any(|w|w["id"]==id));
    if let Some(status)=sample["status"].as_str(){
     let live=status=="current"&&reading(&sample["reading"]);

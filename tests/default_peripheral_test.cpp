@@ -14,6 +14,33 @@ int main()
     static_assert(!knownBluetoothPeripheral(L"iphone"));
     static_assert(!knownBluetoothPeripheral(L"jbl tour pro 3 case"));
     static_assert(!knownBluetoothPeripheral(L"g915"));
+    static_assert(windowsHeadphoneCategory(L"Audio.Headphone"));
+    static_assert(windowsHeadphoneCategory(L"Communication.Headset"));
+    static_assert(windowsHeadphoneCategory(L"Communication.Headset.Bluetooth"));
+    static_assert(!windowsHeadphoneCategory(L"Audio.Speaker"));
+    static_assert(!windowsHeadphoneCategory(L"Communication.Phone.Speaker"));
+    constexpr std::wstring_view headphones[] = {L"Audio.Headphone", L"Communication.Headset.Bluetooth"};
+    constexpr std::wstring_view headset[] = {L"Communication.Headset.Bluetooth"};
+    constexpr std::wstring_view mouse[] = {L"Input.Mouse"};
+    constexpr std::wstring_view keyboard[] = {L"Input.Keyboard"};
+    constexpr std::wstring_view mixed[] = {L"Input.Keyboard", L"Input.Mouse"};
+    constexpr std::wstring_view controller[] = {L"Input.Gaming", L"Input.Gaming.Gamepad", L"Audio"};
+    constexpr std::wstring_view wheel[] = {L"Input.Gaming", L"Input.Gaming.Steering"};
+    constexpr std::wstring_view pen[] = {L"Input.Digitizer", L"Input.Digitizer.Pen"};
+    constexpr std::wstring_view touchscreen[] = {L"Input.Digitizer", L"Input.Digitizer.Touchscreen"};
+    constexpr std::wstring_view speaker[] = {L"Audio.Speakers.Wireless"};
+    static_assert(windowsCategoryArt(headphones, L"huawei freebuds 7i") == WindowsDeviceArt::earbuds);
+    static_assert(windowsCategoryArt(headset, L"bluetooth earbuds") == WindowsDeviceArt::earbuds);
+    static_assert(windowsCategoryArt(headphones, L"huawei freebuds studio") == WindowsDeviceArt::headset);
+    static_assert(windowsCategoryArt(headset, L"generic model") == WindowsDeviceArt::headset);
+    static_assert(windowsCategoryArt(mouse, L"generic model") == WindowsDeviceArt::mouse);
+    static_assert(windowsCategoryArt(keyboard, L"generic model") == WindowsDeviceArt::keyboard);
+    static_assert(windowsCategoryArt(mixed, L"generic model") == WindowsDeviceArt::unknown);
+    static_assert(windowsCategoryArt(controller, L"generic model") == WindowsDeviceArt::controller);
+    static_assert(windowsCategoryArt(wheel, L"generic model") == WindowsDeviceArt::unknown);
+    static_assert(windowsCategoryArt(pen, L"generic model") == WindowsDeviceArt::stylus);
+    static_assert(windowsCategoryArt(touchscreen, L"generic model") == WindowsDeviceArt::unknown);
+    static_assert(windowsCategoryArt(speaker, L"huawei freebuds 7i") == WindowsDeviceArt::unknown);
 
     FoundDevice candidate{L"{container}", L"keyboard", L"蓝牙", true, false, {}};
     assert(!defaultPeripheralMonitoring(candidate, false)); // not a peripheral

@@ -161,6 +161,7 @@ type StateFile = {
 };
 type Observation = {
   id: string; name: string; connection: string; aliases: string[]; art: Device['art']; automatic?: boolean;
+  windowsArt?: 'mouse' | 'keyboard' | 'controller' | 'headset' | 'earbuds' | 'stylus';
   sample: Sample | null; pending?: boolean; sampleSequence?: number | null; voltage: { millivolts: number | null; status: string; detail: number } | null;
 };
 export type Scene = { mode: 'desktop' | 'fullscreen' | 'quiet'; allowed: boolean | null; shellAccepts?: boolean; point: { x: number; y: number } | null };
@@ -720,13 +721,21 @@ export class Monitor {
 
   private accept(observation: Observation, now: number, watched: boolean, regularPoll?: number) {
     const { id, name, connection, art, sample, voltage } = observation;
+    const windowsArt = observation.windowsArt;
+    const categoryArt = windowsArt && ['mouse', 'keyboard', 'controller', 'headset', 'earbuds', 'stylus'].includes(windowsArt)
+      ? windowsArt : undefined;
+    const reportedArt = art !== 'unknown' ? art : categoryArt;
     let changed = false;
     for (const alias of new Set(observation.aliases)) changed = this.merge(alias, id) || changed;
     let row = this.rows.get(id);
     if (!row) {
-      row = { device: { id, name, connection, art: art === 'unknown' ? classify(name) : art, status: 'stale',
+      row = { device: { id, name, connection, art: reportedArt ?? classify(name), status: 'stale',
         reason: '等待新读数', reading: null, lastRead: null, watched }, due: 0, failures: 0 };
       this.rows.set(id, row);
+      changed = this.dirty = true;
+    }
+    if (reportedArt && row.device.art !== reportedArt) {
+      row.device.art = reportedArt;
       changed = this.dirty = true;
     }
     if (row.device.watched !== watched) {
