@@ -72,7 +72,7 @@ jobs:
           if-no-files-found: error
           path: out/*/
   publish:
-    if: github.ref == 'refs/heads/release/0.2.3' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/release/0.2.4' && github.event_name != 'pull_request'
     needs: build
     runs-on: windows-2025
     permissions:
@@ -85,12 +85,12 @@ jobs:
         with:
           name: windows-x64
           path: artifact
-      - name: Create v0.2.3 release
+      - name: Create v0.2.4 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = node -p "require('./package.json').version"
-          if ($v -ne '0.2.3') { throw 'Unexpected release version' }
+          if ($v -ne '0.2.4') { throw 'Unexpected release version' }
           $main = gh api "repos/$env:GITHUB_REPOSITORY/branches/main" --jq .commit.sha
           if ($LASTEXITCODE -ne 0 -or $main -ne $env:GITHUB_SHA) { throw 'Release commit must be the current main head' }
           $files = @(Get-ChildItem artifact -Recurse -File | Where-Object Name -in "PowerManager-Setup-$v.exe", "PowerManager-$v-win-x64.zip", "SHA256SUMS.txt")

@@ -66,14 +66,15 @@ const output = process.env.DIALOG_REVIEW_OUT;
         expect(await close.boundingBox()).toEqual(anchor);
         await expect(page.getByText('扫描设备失败，请重新扫描。', { exact: true })).toHaveCount(1);
         await button(find, '重新扫描').click();
-        await expect(find.getByText('蓝牙 · 已加入监测 · 未连接', { exact: true })).toBeVisible();
+        await expect(find.getByText('蓝牙 · 已加入监测', { exact: true })).toBeVisible();
         expect(await close.boundingBox()).toEqual(anchor);
         await button(find, '添加到监测').click();
         await expect(find.getByRole('alert')).toHaveText('暂时无法添加设备。');
         await expect(page.getByText('暂时无法添加设备。', { exact: true })).toHaveCount(1);
         if (output && width === 1250) await page.screenshot({ path: resolve(output, '余电-添加失败可重试.png') });
         await button(find, '重试添加').click();
-        await expect(find.getByText('蓝牙 · 已加入监测 · 已连接', { exact: true })).toBeVisible();
+        await expect(find.getByText('蓝牙 · 已加入监测', { exact: true })).toHaveCount(2);
+        await expect(find.getByText(/已加入监测 · (?:未|已)连接/)).toHaveCount(0);
         await expect(find.getByRole('alert')).toHaveCount(0);
         await page.keyboard.press('Escape');
 
