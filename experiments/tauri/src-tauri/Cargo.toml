@@ -1,6 +1,7 @@
 [package]
 name = "powermanager-tauri-lab"
-version = "0.2.4"
+# Internal crate version. The app version comes from tauri.conf.json → package.json.
+version = "0.0.0"
 edition = "2021"
 
 [build-dependencies]

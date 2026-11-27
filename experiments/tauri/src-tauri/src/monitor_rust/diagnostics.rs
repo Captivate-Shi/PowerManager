@@ -156,7 +156,7 @@ impl State{
     }
     let captured_token=key();
     self.diagnostics.capture=Some((captured_token.clone(),deadline(),subject.clone()));
-    Ok(json!({"captureToken":captured_token,"metadata":{"appVersion":env!("CARGO_PKG_VERSION"),"capture":if live{"live"}else{"inventory"},
+    Ok(json!({"captureToken":captured_token,"metadata":{"appVersion":self.app.package_info().version.to_string(),"capture":if live{"live"}else{"inventory"},
      "collectorStatus":self.snapshot["collector"],"context":"","windowsRelease":""},
      "snapshot":projected(report.unwrap_or_default(),tag),"subject":subject}))
    }

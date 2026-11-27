@@ -60,11 +60,13 @@ jobs:
           & ./installer/webview2/package-windows.ps1
       - name: Verify silent install and uninstall
         run: |
-          $v = node -p "require('./package.json').version"
+          $v = node scripts/app-version.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./installer/webview2/test-install.ps1 -SetupPath "out/$v/PowerManager-Setup-$v.exe"
       - name: Verify portable ZIP launch and collector
         run: |
-          $v = node -p "require('./package.json').version"
+          $v = node scripts/app-version.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ./installer/webview2/test-portable.ps1 -ZipPath "out/$v/PowerManager-$v-win-x64.zip"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -72,7 +74,7 @@ jobs:
           if-no-files-found: error
           path: out/*/
   publish:
-    if: github.ref == 'refs/heads/release/0.2.4' && github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/heads/release/') && github.event_name != 'pull_request'
     needs: build
     runs-on: windows-2025
     permissions:
@@ -85,16 +87,19 @@ jobs:
         with:
           name: windows-x64
           path: artifact
-      - name: Create v0.2.4 release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $v = node -p "require('./package.json').version"
-          if ($v -ne '0.2.4') { throw 'Unexpected release version' }
+          $v = node scripts/app-version.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($v.Contains('-') -or $env:GITHUB_REF -cne "refs/heads/release/$v") { throw "Release branch must match the stable version in package.json ($v)" }
+          $notes = ".github/release-notes/$v.md"
+          if (!(Test-Path -LiteralPath $notes -PathType Leaf)) { throw "Missing release notes: $notes" }
           $main = gh api "repos/$env:GITHUB_REPOSITORY/branches/main" --jq .commit.sha
           if ($LASTEXITCODE -ne 0 -or $main -ne $env:GITHUB_SHA) { throw 'Release commit must be the current main head' }
           $files = @(Get-ChildItem artifact -Recurse -File | Where-Object Name -in "PowerManager-Setup-$v.exe", "PowerManager-$v-win-x64.zip", "SHA256SUMS.txt")
           if ($files.Count -ne 3) { throw 'Missing or ambiguous release assets' }
           $assetPaths = @($files.FullName)
-          gh release create "v$v" @assetPaths --target $env:GITHUB_SHA --title "PowerManager $v" --notes-file ".github/release-notes/$v.md"
+          gh release create "v$v" @assetPaths --target $env:GITHUB_SHA --title "PowerManager $v" --notes-file $notes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
