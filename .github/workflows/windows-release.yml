@@ -39,7 +39,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pnpm exec vite build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($test in @("detail-transition-ui", "dialog-feedback-ui", "last-battery-ui")) {
+          foreach ($test in @("detail-transition-ui", "dialog-feedback-ui", "last-battery-ui", "compatibility-report-ui")) {
             node "tests/$test.cjs"
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

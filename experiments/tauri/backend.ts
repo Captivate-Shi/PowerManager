@@ -82,7 +82,7 @@ async function call(method: string, data: any) {
     case 'diagnosticDevices': return { ok: true, diagnosticDevices: await monitor.listDiagnosticDevices() };
     case 'diagnosticFirmware': return { ok: true, diagnosticFirmware: await monitor.readDiagnosticFirmware(command.deviceKey) };
     case 'compatibility':
-      if ('reportToken' in command) { monitor.exportCompatibility(command.reportToken); return { ok: true, message: '已保存至实验版诊断目录' }; }
+      if ('reportToken' in command) return { ok: true, reportName: monitor.exportCompatibility(command.reportToken) };
       return { ok: true, compatibility: await monitor.previewCompatibility(command.selection, pkg.version) };
     case 'mute':
       state.mutedUntil = state.mutedUntil > Date.now() ? 0 : Date.now() + state.settings.muteMinutes * 60_000;

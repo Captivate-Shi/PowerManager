@@ -485,6 +485,10 @@ async fn desktop(window: tauri::WebviewWindow, method: String, data: Value) -> R
             }).map_err(|e| e.to_string())?;
             return Ok(json!({"ok":true}));
         }
+        ("main", "command", "revealCompatibility") => {
+            monitor_rust::reveal_report(&state.directory, data["reportName"].as_str().unwrap_or_default())?;
+            return Ok(json!({"ok":true}));
+        }
         ("main", "command", "diagnostics") => {
             #[cfg(windows)]
             Command::new("explorer.exe").arg(&state.directory).spawn().map_err(|e| e.to_string())?;
@@ -521,7 +525,7 @@ fn main() {
         let preview=MenuItem::with_id(app,"preview","测试右下角提醒",true,None::<&str>)?;
         let refresh=MenuItem::with_id(app,"refresh","立即刷新",true,None::<&str>)?;
         let mute=MenuItem::with_id(app,"mute","静音 / 恢复提醒",true,None::<&str>)?;
-        let diagnose=MenuItem::with_id(app,"diagnostics","打开诊断目录",true,None::<&str>)?;
+        let diagnose=MenuItem::with_id(app,"diagnostics","打开日志目录",true,None::<&str>)?;
         let menu = Menu::with_items(app, &[&show, &panel, &preview, &refresh, &mute, &diagnose, &close])?;
         let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.ico"))?;
         let icon = TrayIconBuilder::with_id("pm-tray").icon(icon).tooltip("余电")

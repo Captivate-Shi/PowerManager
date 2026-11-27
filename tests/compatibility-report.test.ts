@@ -124,7 +124,7 @@ test('只可保存已预览的有效快照，不重放、不允许用错误令�
   time += 10 * 60_000;
   assert.throws(() => cache.save(third.token, () => assert.fail()), /预览已失效/);
 });
-test('实机采集模拟：预览不落盘，明确确认后文件与屏幕内容一致', async t => {
+test('实机采集模拟：草稿不落盘，连续导出独立文件且内容不变', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'power-compat-report-'));
   t.mock.method(Collector.prototype, 'request', async (action: string) => action === 'compatibility' ? rawReport :
     action === 'diagnostic_devices' ? [{ id: 'sensitive-interface', target: 'W1', model: 'MX Keys', firmwareReadable: true,
@@ -150,15 +150,26 @@ test('实机采集模拟：预览不落盘，明确确认后文件与屏幕内�
     assert.deepEqual(firstReport.selectedEvidence, {
       scope: 'selected_device_only', hidInterfaceCount: 1, batteryAttemptCount: 2,
     });
-    const file = join(dir, 'compatibility-report.json');
-    assert.equal(existsSync(file), false);
+    const reportFiles = () => readdirSync(dir).filter(name => name.startsWith('compatibility-report-'));
+    assert.deepEqual(reportFiles(), []);
     assert.throws(() => monitor.exportCompatibility('bad token'), /预览已失效/);
-    assert.equal(existsSync(file), false);
-    monitor.exportCompatibility(first.token);
+    assert.deepEqual(reportFiles(), []);
+    const filename = monitor.exportCompatibility(first.token);
+    const file = monitor.compatibilityReportPath(filename);
     assert.equal(readFileSync(file, 'utf8'), first.json);
+    assert.throws(() => monitor.compatibilityReportPath('../' + filename), /报告文件名无效/);
+    assert.throws(() => monitor.exportCompatibility(first.token), /预览已失效/);
     assert.ok(readdirSync(dir).every(name => !name.endsWith('.tmp')));
     await assert.rejects(monitor.previewCompatibility({ kind: 'device', deviceKey: 'unknown' }, '0.0.5'), /设备列表已失效/);
-    const manual = JSON.parse((await monitor.previewCompatibility({ kind: 'manual', model: '未知设备 C:\\Users\\Alice', firmware: '0.7' }, '0.0.5')).json);
+    const second = await monitor.previewCompatibility({ kind: 'manual', model: '未知设备 C:\\Users\\Alice', firmware: '0.7' }, '0.0.5');
+    const secondFilename = monitor.exportCompatibility(second.token);
+    assert.notEqual(secondFilename, filename);
+    assert.equal(readFileSync(file, 'utf8'), first.json);
+    assert.equal(readFileSync(monitor.compatibilityReportPath(secondFilename), 'utf8'), second.json);
+    assert.equal(reportFiles().length, 2);
+    rmSync(file);
+    assert.throws(() => monitor.compatibilityReportPath(filename), /报告文件已移动或删除/);
+    const manual = JSON.parse(second.json);
     assert.equal(manual.selectedDevice.model, '未知设备 [路径已遮盖]');
     assert.equal(manual.selectedDevice.evidence, 'not_correlated');
     assert.equal(manual.windowsDevices.length, 0);

@@ -389,7 +389,7 @@ function refreshTrayMenu() {
     { label: '测试右下角提醒', click: () => { void showPreview('low'); } },
     { label: '立即刷新', click: () => { void monitor?.refresh(); } },
     { label: snapshot.mutedUntil > Date.now() ? '恢复提醒' : '静音 ' + muteDurationLabel(snapshot.settings.muteMinutes), click: toggleMute },
-    { label: '打开诊断目录', click: () => { void shell.openPath(dataDir); } },
+    { label: '打开日志目录', click: () => { void shell.openPath(dataDir); } },
     { type: 'separator' },
     { label: '退出', click: () => app.quit() },
   ]));
@@ -484,7 +484,7 @@ function canAccess(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>): S
   return surface as Surface;
 }
 const actions: Record<Surface, string[]> = {
-  main: ['refresh', 'discover', 'diagnostics', 'diagnosticDevices', 'diagnosticFirmware', 'compatibility', 'mute', 'open', 'history', 'add', 'remove',
+  main: ['refresh', 'discover', 'diagnostics', 'diagnosticDevices', 'diagnosticFirmware', 'compatibility', 'revealCompatibility', 'mute', 'open', 'history', 'add', 'remove',
     'snooze', 'ignore', 'settings', 'toggleAlertSetting', 'deviceSettings', 'preview'],
   tray: ['mute', 'pin', 'refresh', 'open', 'closeSurface'],
   toast: ['open', 'closeSurface'],
@@ -547,8 +547,7 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
       if ('reportToken' in command) {
         if (typeof command.reportToken !== 'string' || !/^[0-9a-f-]{36}$/.test(command.reportToken))
           throw new Error('预览已失效，请重新生成。');
-        monitor.exportCompatibility(command.reportToken);
-        return { ok: true, message: '兼容性报告已保存，可在诊断目录查看' };
+        return { ok: true, reportName: monitor.exportCompatibility(command.reportToken) };
       }
       const selection = command.selection;
       if (!object(selection) ||
@@ -560,9 +559,13 @@ async function run(surface: Surface, command: Command): Promise<CommandResult> {
         throw new Error('请选择设备或填写有效的型号、固件。');
       return { ok: true, compatibility: await monitor.previewCompatibility(selection, app.getVersion()) };
     }
+    case 'revealCompatibility':
+      if (!monitor) throw new Error('报告不可用。');
+      shell.showItemInFolder(monitor.compatibilityReportPath(command.reportName));
+      return { ok: true };
     case 'diagnostics': {
       const error = await shell.openPath(dataDir);
-      if (error) throw new Error('无法打开诊断目录');
+      if (error) throw new Error('无法打开日志目录');
       break;
     }
     case 'closeSurface': if (surface === 'toast') closeToast(); else windows.tray?.hide(); break;

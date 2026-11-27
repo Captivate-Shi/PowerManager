@@ -63,4 +63,4 @@ WebView2 版不再随应用分发浏览器运行库。关掉主窗口后会释�
 
 ## 设备反馈
 
-电量读不到或读错了，在「设置 → 诊断 → 生成兼容性报告」选中设备、预览并保存，到 [GitHub Issues](https://github.com/Captivate-Shi/PowerManager/issues)附上报告和连接方式。报告不会自动发出。
+电量读不到或读错了，在「设置 → 诊断 → 导出兼容性报告」选择设备并导出。可以复制报告内容，或在资源管理器中定位 JSON 文件，再到 [GitHub Issues](https://github.com/Captivate-Shi/PowerManager/issues) 反馈。报告不会自动发送。

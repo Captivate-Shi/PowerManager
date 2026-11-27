@@ -80,8 +80,8 @@ const output = process.env.DIALOG_REVIEW_OUT;
 
         await button(page, '设置').click();
         await button(page.getByRole('navigation', { name: '设置分类' }), '诊断').click();
-        await button(page, '生成兼容性报告').click();
-        const diag = page.getByRole('dialog', { name: '选择要诊断的设备' });
+        await button(page, '导出兼容性报告').click();
+        const diag = page.getByRole('dialog', { name: '导出兼容性报告' });
         const combo = diag.getByRole('combobox', { name: '设备型号' });
         for (const message of ['采集程序尚未就绪，请稍后重新扫描。', '扫描设备失败，请重新扫描。', '未收到设备列表，请重新扫描。']) {
           await expect(diag.getByRole('alert')).toHaveText(message);
