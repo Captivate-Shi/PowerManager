@@ -19,6 +19,17 @@ pub(super) fn may_enroll(row: &Value, known: bool, watched: bool) -> bool {
         && row["sample"]["status"] == "basic_bluetooth";
     known || watched || live_input || measured(&row["sample"])
 }
+
+pub(super) fn display_art<'a>(row: &'a Value, previous: &'a Value) -> &'a str {
+    let native = row["art"].as_str().unwrap_or("unknown");
+    if native != "unknown" { return native; }
+    for art in [&row["windowsArt"], &previous["art"]] {
+        if let Some(kind @ ("mouse" | "keyboard" | "controller" | "headset" | "earbuds" | "stylus")) = art.as_str() {
+            return kind;
+        }
+    }
+    "unknown"
+}
 pub(super) fn phantom(device: &Value, storage: &Value) -> bool {
     let Some(id) = device["id"].as_str() else { return false };
     device["art"] == "unknown"
@@ -116,6 +127,18 @@ mod tests {
         assert!(may_enroll(&json!({"sample":{"status":"current","reading":{"low":0,"high":9,"power":"discharging"}}}),false,false));
         assert!(may_enroll(&json!({"art":"dualsense","sample":{"status":"basic_bluetooth"}}),false,false));
         assert!(!may_enroll(&json!({"art":"unknown","sample":{"status":"basic_bluetooth"}}),false,false));
+    }
+    #[test]
+    fn windows_art_updates_known_devices_without_affecting_admission() {
+        let unknown = json!({"art":"unknown"});
+        let earbuds = json!({"art":"unknown","windowsArt":"earbuds","sample":{"status":"offline"}});
+        let native = json!({"art":"dualsense","windowsArt":"controller"});
+        assert_eq!(display_art(&earbuds, &unknown), "earbuds");
+        assert_eq!(display_art(&unknown, &json!({"art":"earbuds"})), "earbuds");
+        assert_eq!(display_art(&native, &unknown), "dualsense");
+        assert_eq!(display_art(&json!({"art":"unknown","windowsArt":"mouse"}), &unknown), "mouse");
+        assert_eq!(display_art(&json!({"art":"unknown","windowsArt":"dualsense"}), &unknown), "unknown");
+        assert!(!may_enroll(&earbuds, false, false));
     }
     #[test]
     fn same_model_with_other_identity_remains_separate() {

@@ -1326,14 +1326,16 @@ private:
             }
         }
         std::erase_if(vendorDue_, [&](const auto& entry) { return !vendorDevices.contains(entry.first); });
-        struct GenericTarget { std::string id, name, connection; bool automatic; };
+        struct GenericTarget { std::string id, name, connection; bool automatic; WindowsDeviceArt windowsArt; };
         std::map<std::wstring, GenericTarget> targets;
         for (const auto& device : request.at("watched")) {
             const auto id = device.at("id").get<std::string>();
             const auto key = wide(id);
             if (claimed.contains(key) || groups.contains(key)) continue;
+            const auto found = std::ranges::find(windows, key, &FoundDevice::id);
             targets.try_emplace(key, GenericTarget{id, device.at("name").get<std::string>(),
-                device.at("connection").get<std::string>(), false});
+                device.at("connection").get<std::string>(), false,
+                found == windows.end() ? WindowsDeviceArt::unknown : found->windowsArt});
         }
         unsigned automaticCount = 0;
         for (bool vendorPass : {true, false}) {
@@ -1349,7 +1351,8 @@ private:
                     basCandidates.contains(device.id));
                 if (vendor != vendorPass ||
                     (!vendor && !canVerifyBle && !defaultPeripheralMonitoring(device, alreadyClaimed))) continue;
-                targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name), utf8(device.connection), true});
+                targets.insert_or_assign(device.id, GenericTarget{utf8(device.id), utf8(device.name),
+                    utf8(device.connection), true, device.windowsArt});
                 ++automaticCount;
             }
         }
@@ -1438,6 +1441,9 @@ private:
             json row = {{"id", id}, {"name", device.name}, {"connection", device.connection},
                 {"aliases", json::array()}, {"sample", value}, {"automatic", device.automatic},
                 {"art", "unknown"}, {"voltage", nullptr}};
+            // This presentation hint does not make the Windows row a native
+            // identity owner or change which devices qualify for monitoring.
+            if (const auto windowsArt = windowsDeviceArtName(device.windowsArt)) row["windowsArt"] = windowsArt;
             if (pending) row["pending"] = true;
             if (async) row["sampleSequence"] = std::move(sampleSequence);
             rows.push_back(std::move(row));

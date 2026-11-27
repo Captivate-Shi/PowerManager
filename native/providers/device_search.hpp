@@ -3,7 +3,9 @@
 #include "battery.hpp"
 
 #include <map>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pm {
@@ -42,6 +44,62 @@ constexpr bool needsIndependentBleConnection(WindowsBatteryDetail detail)
     return detail != WindowsBatteryDetail::missingProperty && detail != WindowsBatteryDetail::invalidPercent;
 }
 
+enum class WindowsDeviceArt { unknown, mouse, keyboard, controller, headset, earbuds, stylus };
+
+constexpr bool windowsHeadphoneCategory(std::wstring_view category)
+{
+    return category.starts_with(L"Audio.Headphone") || category.starts_with(L"Audio.Headset") ||
+           category == L"Communication.Headset" || category.starts_with(L"Communication.Headset.");
+}
+
+constexpr WindowsDeviceArt windowsCategoryArt(std::span<const std::wstring_view> categories, std::wstring_view foldedName)
+{
+    WindowsDeviceArt art{};
+    bool steering = false;
+    for (const auto category : categories) {
+        WindowsDeviceArt candidate{};
+        if (windowsHeadphoneCategory(category)) {
+            // The category establishes the audio type. The recognized model
+            // or an explicit in-ear descriptor distinguishes its form factor.
+            const bool earbuds = foldedName == L"huawei freebuds 7i" || foldedName == L"freebuds 7i" ||
+                foldedName.find(L"earbud") != foldedName.npos || foldedName.find(L"耳塞") != foldedName.npos ||
+                foldedName.find(L"入耳") != foldedName.npos;
+            candidate = earbuds ? WindowsDeviceArt::earbuds : WindowsDeviceArt::headset;
+        } else if (category == L"Input.Mouse") {
+            candidate = WindowsDeviceArt::mouse;
+        } else if (category == L"Input.Keyboard") {
+            candidate = WindowsDeviceArt::keyboard;
+        } else if (category == L"Input.Digitizer.Pen") {
+            candidate = WindowsDeviceArt::stylus;
+        } else if (category == L"Input.Gaming" || category == L"Input.Gaming.Common" ||
+                   category == L"Input.Gaming.Controller" || category == L"Input.Gaming.Gamepad" ||
+                   category == L"Input.Gaming.Generic") {
+            candidate = WindowsDeviceArt::controller;
+        } else if (category == L"Input.Gaming.Steering") {
+            steering = true;
+        }
+        if (candidate == WindowsDeviceArt::unknown) continue;
+        // A shared receiver can report multiple functional categories.
+        if (art != WindowsDeviceArt::unknown && art != candidate) return WindowsDeviceArt::unknown;
+        art = candidate;
+    }
+    return steering && art == WindowsDeviceArt::controller ? WindowsDeviceArt::unknown : art;
+}
+
+constexpr const char* windowsDeviceArtName(WindowsDeviceArt art)
+{
+    switch (art) {
+        case WindowsDeviceArt::mouse: return "mouse";
+        case WindowsDeviceArt::keyboard: return "keyboard";
+        case WindowsDeviceArt::controller: return "controller";
+        case WindowsDeviceArt::headset: return "headset";
+        case WindowsDeviceArt::earbuds: return "earbuds";
+        case WindowsDeviceArt::stylus: return "stylus";
+        case WindowsDeviceArt::unknown: return nullptr;
+    }
+    return nullptr;
+}
+
 struct FoundDevice {
     std::wstring id;
     std::wstring name;
@@ -53,6 +111,7 @@ struct FoundDevice {
     WindowsBatteryDetail batteryDetail{};
     bool inputOrHeadset{};
     bool knownBluetooth{};
+    WindowsDeviceArt windowsArt{};
 };
 
 // A present Bluetooth Keyboard devnode can outlive the live radio link.

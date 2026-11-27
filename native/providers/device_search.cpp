@@ -318,9 +318,9 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
         // Offer input devices and headsets even when no usable battery property exists.
         const auto categories = props.strings(PKEY_Devices_CategoryIds);
         const auto methods = props.strings(PKEY_Devices_DiscoveryMethod);
-        const bool peripheral = std::ranges::any_of(categories, [](std::wstring_view value) {
-            return value.starts_with(L"Input.") || value == L"Input" ||
-                   value.starts_with(L"Audio.Headphone") || value.starts_with(L"Audio.Headset");
+        const bool headphones = std::ranges::any_of(categories, windowsHeadphoneCategory);
+        const bool peripheral = headphones || std::ranges::any_of(categories, [](std::wstring_view value) {
+            return value.starts_with(L"Input.") || value == L"Input";
         });
         const auto folded = lower(name);
         const auto hardware = props.strings(PKEY_Devices_HardwareIds);
@@ -351,7 +351,8 @@ std::optional<std::vector<FoundDevice>> findWindowsDevices()
                            razer || sony || (!keyboard.empty() && keyboard.mapped().automaticallyMonitored), sample.reading,
                            false, detail, peripheral || namedBluetooth || !keyboard.empty(),
                            bus == WindowsBus::bluetooth || (bus == WindowsBus::unknown && !keyboard.empty() &&
-                               keyboard.mapped().connection == windowsConnection(WindowsBus::bluetooth))});
+                               keyboard.mapped().connection == windowsConnection(WindowsBus::bluetooth)),
+                           windowsCategoryArt(categories, folded)});
     }
     cleanup();
     for (auto& [id, keyboard] : keyboards) {
